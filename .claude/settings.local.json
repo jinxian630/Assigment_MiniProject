@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-expo-app@latest . --template blank-typescript)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(test -d \"D:\\Mini Project Asg\\ios\")",
+      "Bash(npm list:*)",
+      "Bash(node --version:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
