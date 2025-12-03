@@ -1,21 +1,20 @@
-import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
-import { getStorage, FirebaseStorage } from 'firebase/storage';
+import { initializeApp, FirebaseApp } from "firebase/app";
+import { getAuth, Auth } from "firebase/auth";
+import { getFirestore, Firestore } from "firebase/firestore";
+import { getStorage, FirebaseStorage } from "firebase/storage";
 // Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyDaXlRP4lPsW566s41jfeoo1UpsJSBOvCw",
+  authDomain: "myminiproject-f6d7e.firebaseapp.com",
+  projectId: "myminiproject-f6d7e",
+  storageBucket: "myminiproject-f6d7e.firebasestorage.app",
+  messagingSenderId: "586003701721",
+  appId: "1:586003701721:web:6fd82962bc46f98fcb83c8",
 };
 
 // Validate environment variables
 if (!firebaseConfig.apiKey) {
-  throw new Error('Missing EXPO_PUBLIC_FIREBASE_API_KEY environment variable');
+  throw new Error("Missing EXPO_PUBLIC_FIREBASE_API_KEY environment variable");
 }
 
 // Initialize Firebase
@@ -30,9 +29,9 @@ try {
   db = getFirestore(app);
   storage = getStorage(app);
 
-  console.log('✅ Firebase initialized successfully');
+  console.log("✅ Firebase initialized successfully");
 } catch (error) {
-  console.error('❌ Firebase initialization error:', error);
+  console.error("❌ Firebase initialization error:", error);
   throw error;
 }
 

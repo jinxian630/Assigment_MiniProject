@@ -1,10 +1,18 @@
 export type RootStackParamList = {
-  '(auth)': undefined;
-  '(tabs)': undefined;
-  'modules/memory-book': undefined;
-  'modules/health-fitness': undefined;
-  'modules/money-management': undefined;
-  'modules/task-management': undefined;
+  "(auth)": undefined;
+  "(tabs)": undefined;
+  "modules/memory-book": undefined;
+  "modules/health-fitness": undefined;
+  "modules/money-management": undefined;
+  "modules/task-management": undefined;
+  TaskMenu: undefined;
+  TaskAdd: undefined;
+  EventAdd: undefined;
+  EventList: undefined;
+  EventEdit: undefined;
+  TaskChart: undefined;
+  TaskDashboard: undefined;
+  Gamification: undefined;
 };
 
 export type AuthStackParamList = {
