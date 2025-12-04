@@ -9,7 +9,19 @@ import {
   Platform,
   StyleSheet,
 } from "react-native";
+<<<<<<< HEAD:app/modules/memory-book/MemoryPostCreate.tsx
 import { SafeAreaView } from "react-native-safe-area-context";
+=======
+import { useRouter } from "expo-router";
+import {
+  Layout,
+  TopNav,
+  TextInput,
+  Button,
+  useTheme,
+  themeColor,
+} from "react-native-rapi-ui";
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-post-create.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { TextInput, Button } from "react-native-rapi-ui";
 import { useRouter } from "expo-router";
@@ -24,12 +36,18 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
 
+<<<<<<< HEAD:app/modules/memory-book/MemoryPostCreate.tsx
 const MODULE_COLOR = "#FF6B9D";
 
 export default function MemoryPostCreateScreen() {
   const router = useRouter();
   const { isDarkMode } = useTheme();
 
+=======
+export default function MemoryPostCreate() {
+  const router = useRouter();
+  const { isDarkmode, setTheme } = useTheme();
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-post-create.tsx
   const [image, setImage] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
   const [description, setDescription] = useState<string>("");
@@ -181,6 +199,20 @@ export default function MemoryPostCreateScreen() {
             variant="secondary"
             size="medium"
           />
+<<<<<<< HEAD:app/modules/memory-book/MemoryPostCreate.tsx
+=======
+        }
+        leftAction={() => router.back()}
+        rightContent={
+          <Ionicons
+            name={isDarkmode ? "sunny" : "moon"}
+            size={20}
+            color={isDarkmode ? themeColor.white100 : themeColor.dark}
+          />
+        }
+        rightAction={() => setTheme(isDarkmode ? "light" : "dark")}
+      />
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-post-create.tsx
 
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>NEW MEMORY</Text>

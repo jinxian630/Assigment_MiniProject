@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
+<<<<<<< HEAD:app/modules/memory-book/MemoryPostDetail.tsx
 
 import { getFirestore, doc, getDoc } from "firebase/firestore";
 
@@ -19,6 +20,10 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
 
+=======
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-post-detail.tsx
 type PostData = {
   title: string;
   description: string;
@@ -26,10 +31,19 @@ type PostData = {
   startDate?: number;
 };
 
+<<<<<<< HEAD:app/modules/memory-book/MemoryPostDetail.tsx
 export default function MemoryPostDetailScreen() {
   const router = useRouter();
   const { isDarkMode } = useTheme();
   const { postId } = useLocalSearchParams<{ postId?: string | string[] }>();
+=======
+export default function MemoryPostDetail() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ postId?: string }>();
+  const postId = typeof params.postId === 'string' ? params.postId : '';
+  const { isDarkmode } = useTheme();
+  const db = getFirestore();
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-post-detail.tsx
 
   const [post, setPost] = useState<PostData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,6 +65,11 @@ export default function MemoryPostDetailScreen() {
     }
 
     const loadPost = async () => {
+      if (!postId) {
+        setPost(null);
+        setLoading(false);
+        return;
+      }
       try {
         const ref = doc(db, "MemoryPosts", resolvedPostId);
         const snap = await getDoc(ref);
@@ -88,6 +107,7 @@ export default function MemoryPostDetailScreen() {
   };
 
   return (
+<<<<<<< HEAD:app/modules/memory-book/MemoryPostDetail.tsx
     <GradientBackground>
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
         {/* Header */}
@@ -102,6 +122,42 @@ export default function MemoryPostDetailScreen() {
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>
               {post?.title ? "MEMORY DETAIL" : "MEMORY"}
+=======
+    <Layout>
+      <TopNav
+        middleContent={post?.title || "Memory Detail"}
+        leftContent={
+          <Ionicons
+            name="chevron-back"
+            size={20}
+            color={isDarkmode ? themeColor.white100 : themeColor.dark}
+          />
+        }
+        leftAction={() => router.back()}
+      />
+      {loading ? (
+        <View style={styles.center}>
+          <Text>Loading...</Text>
+        </View>
+      ) : !post ? (
+        <View style={styles.center}>
+          <Text>Post not found.</Text>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+          {post.imageURL && (
+            <Image source={{ uri: post.imageURL }} style={styles.image} />
+          )}
+          <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: "700",
+                marginBottom: 4,
+              }}
+            >
+              {post.title}
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-post-detail.tsx
             </Text>
             <Text style={styles.headerSubtitle}>View this moment in full</Text>
           </View>

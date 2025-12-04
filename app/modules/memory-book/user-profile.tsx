@@ -15,8 +15,7 @@ import {
   themeColor,
 } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   getFirestore,
   doc,
@@ -27,8 +26,6 @@ import {
   orderBy,
   onSnapshot,
 } from "firebase/firestore";
-
-type Props = NativeStackScreenProps<MainStackParamList, "UserProfile">;
 
 type UserProfileData = {
   displayName?: string;
@@ -50,10 +47,11 @@ type MemoryPost = {
   savesCount?: number;
 };
 
-export default function UserProfile({ navigation, route }: Props) {
-  const { userId } = route.params;
+export default function UserProfile() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ userId?: string }>();
+  const userId = typeof params.userId === 'string' ? params.userId : '';
   const { isDarkmode } = useTheme();
-  const colors = themeColor[isDarkmode ? "dark" : "light"];
 
   const [user, setUser] = useState<UserProfileData | null>(null);
   const [posts, setPosts] = useState<MemoryPost[]>([]);
@@ -63,6 +61,12 @@ export default function UserProfile({ navigation, route }: Props) {
   const db = getFirestore();
 
   useEffect(() => {
+    if (!userId) {
+      setLoadingProfile(false);
+      setLoadingPosts(false);
+      return;
+    }
+
     // Load user profile once
     const loadUser = async () => {
       try {
@@ -148,10 +152,10 @@ export default function UserProfile({ navigation, route }: Props) {
           <Ionicons
             name="arrow-back"
             size={22}
-            color={isDarkmode ? colors.white100 : colors.dark}
+            color={isDarkmode ? themeColor.white100 : themeColor.dark}
           />
         }
-        leftAction={() => navigation.goBack()}
+        leftAction={() => router.back()}
       />
 
       {loadingProfile ? (
@@ -189,7 +193,7 @@ export default function UserProfile({ navigation, route }: Props) {
                     fontSize: 18,
                     fontWeight: "700",
                     marginBottom: 2,
-                    color: isDarkmode ? colors.white100 : colors.dark,
+                    color: isDarkmode ? themeColor.white100 : themeColor.dark,
                   }}
                 >
                   {user.displayName}
@@ -244,7 +248,7 @@ export default function UserProfile({ navigation, route }: Props) {
                 fontSize: 16,
                 fontWeight: "700",
                 marginBottom: 8,
-                color: isDarkmode ? colors.white100 : colors.dark,
+                color: isDarkmode ? themeColor.white100 : themeColor.dark,
               }}
             >
               Memories
@@ -262,11 +266,11 @@ export default function UserProfile({ navigation, route }: Props) {
                   key={post.id}
                   style={[
                     styles.card,
-                    { marginBottom: 12, backgroundColor: colors.white100 },
+                    { marginBottom: 12, backgroundColor: isDarkmode ? "#1e293b" : "#ffffff" },
                   ]}
                   activeOpacity={0.9}
                   onPress={() =>
-                    navigation.navigate("MemoryPostDetail", { postId: post.id })
+                    router.push(`/modules/memory-book/memory-post-detail?postId=${post.id}`)
                   }
                 >
                   {/* Thumbnail */}
@@ -283,7 +287,7 @@ export default function UserProfile({ navigation, route }: Props) {
                         fontSize: 15,
                         fontWeight: "600",
                         marginBottom: 4,
-                        color: isDarkmode ? colors.dark : "#111827",
+                        color: isDarkmode ? "#e2e8f0" : "#111827",
                       }}
                       numberOfLines={1}
                     >

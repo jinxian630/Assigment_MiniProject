@@ -8,8 +8,13 @@ import {
   Alert,
   StyleSheet,
 } from "react-native";
+<<<<<<< HEAD:app/modules/memory-book/MemoryTimeline.tsx
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+=======
+import { useRouter } from "expo-router";
+import { Layout, TopNav, useTheme, themeColor } from "react-native-rapi-ui";
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-timeline.tsx
 import { Ionicons } from "@expo/vector-icons";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
@@ -27,6 +32,7 @@ import {
 } from "firebase/firestore";
 import { getStorage, ref, deleteObject } from "firebase/storage";
 
+<<<<<<< HEAD:app/modules/memory-book/MemoryTimeline.tsx
 type MemoryDoc = {
   id: string;
   title: string;
@@ -44,6 +50,13 @@ export default function MemoryTimelineScreen() {
   const { isDarkMode } = useTheme(); // adjust if your hook exposes different keys
 
   const [memories, setMemories] = useState<MemoryDoc[]>([]);
+=======
+export default function MemoryTimeline() {
+  const router = useRouter();
+  // ⬇️ now using setTheme as well
+  const { isDarkmode, setTheme } = useTheme();
+  const [memories, setMemories] = useState<any[]>([]);
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-timeline.tsx
   const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -126,6 +139,23 @@ export default function MemoryTimelineScreen() {
             variant="secondary"
             size="medium"
           />
+<<<<<<< HEAD:app/modules/memory-book/MemoryTimeline.tsx
+=======
+        }
+        leftAction={() => router.back()}
+        // ⬇️ theme toggle here (same style as Home / MemoryMenu)
+        rightContent={
+          <Ionicons
+            name={isDarkmode ? "sunny" : "moon"}
+            size={20}
+            color={isDarkmode ? themeColor.white100 : themeColor.dark}
+          />
+        }
+        rightAction={() => {
+          setTheme(isDarkmode ? "light" : "dark");
+        }}
+      />
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e:app/modules/memory-book/memory-timeline.tsx
 
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>MEMORY TIMELINE</Text>

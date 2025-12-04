@@ -10,7 +10,11 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+<<<<<<< HEAD
     "@react-native-community/slider": "^5.1.1",
+=======
+    "@react-native-community/slider": "5.0.1",
+>>>>>>> 851a76ba5c9a61789fc7c92a775fb143bf42899e
     "@react-native-picker/picker": "2.11.1",
     "@react-navigation/native": "^7.0.0",
     "all": "^0.0.0",
