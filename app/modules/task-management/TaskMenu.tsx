@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
+  Text,
+  StyleSheet,
   FlatList,
   TouchableOpacity,
   Modal,
@@ -8,19 +10,14 @@ import {
   Alert,
   TextInput as RNTextInput,
   ScrollView,
+  Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import * as Print from "expo-print"; // 👈 NEW
+import * as Print from "expo-print";
 import { shareAsync } from "expo-sharing";
-import {
-  Layout,
-  TopNav,
-  Text,
-  useTheme,
-  themeColor,
-  Button,
-} from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
+import { Calendar } from "react-native-calendars";
 import {
   getFirestore,
   collection,
@@ -31,14 +28,22 @@ import {
   deleteDoc,
   doc,
   updateDoc,
-  getDocs,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { Calendar } from "react-native-calendars";
+
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { IconButton } from "@/components/common/IconButton";
+import { Card } from "@/components/common/Card";
+import { Badge } from "@/components/common/Badge";
+import { useTheme } from "@/hooks/useTheme";
 import {
   awardSubtaskCompletion,
   removeSubtaskCompletion,
 } from "./taskGamifications";
+
+const MODULE_COLOR = "#6C4DFF";
+
+// ------------ TYPES ------------
 
 type TaskType = {
   id: string;
@@ -52,7 +57,6 @@ type TaskType = {
   updatedAt: number;
   CreatedUser: { id: string; name: string; email?: string };
   priorityScore?: number;
-  // reminderIds?: string[]; // 👈 we’ll skip notifications for now
 };
 
 type CommentType = {
@@ -63,7 +67,10 @@ type CommentType = {
   user: { id: string; name: string; email?: string };
 };
 
-// same priority helper used by Dashboard / TaskAdd
+type FilterType = "all" | "active" | "completed" | "overdue";
+
+// ------------ PRIORITY HELPER ------------
+
 const computePriorityScore = (params: {
   dueDate?: number | null;
   startDate?: number | null;
@@ -110,11 +117,11 @@ const computePriorityScore = (params: {
   return Math.round(score);
 };
 
-type FilterType = "all" | "active" | "completed" | "overdue";
+// ------------ MAIN COMPONENT ------------
 
 export default function TaskMenuScreen() {
   const router = useRouter();
-  const { isDarkmode, setTheme } = useTheme();
+  const { theme } = useTheme();
   const db = getFirestore();
   const auth = getAuth();
 
@@ -152,10 +159,310 @@ export default function TaskMenuScreen() {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showListMenu, setShowListMenu] = useState(false);
 
-  // NEW: filter mode for list
+  // filter mode
   const [filter, setFilter] = useState<FilterType>("all");
 
   const todayStr = new Date().toISOString().split("T")[0];
+
+  const styles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+        },
+        list: {
+          flex: 1,
+        },
+        listContent: {
+          paddingHorizontal: theme.spacing.screenPadding,
+          paddingBottom: theme.spacing.xxl + 80,
+        },
+        headerRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: theme.spacing.screenPadding,
+          paddingTop: theme.spacing.md,
+          paddingBottom: theme.spacing.sm,
+        },
+        headerTitle: {
+          fontSize: theme.typography.fontSizes.xl,
+          fontWeight: theme.typography.fontWeights.bold,
+          color: theme.colors.textPrimary,
+        },
+        headerSpacer: { width: 48 },
+        iconSection: {
+          alignItems: "center",
+          marginBottom: theme.spacing.xl,
+        },
+        iconContainer: {
+          width: 120,
+          height: 120,
+          borderRadius: 60,
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: theme.spacing.md,
+          ...theme.shadows.medium,
+        },
+        moduleTitle: {
+          fontSize: theme.typography.fontSizes.xxl,
+          fontWeight: theme.typography.fontWeights.bold,
+          color: theme.colors.textPrimary,
+          marginBottom: theme.spacing.xs,
+        },
+        moduleSubtitle: {
+          fontSize: theme.typography.fontSizes.md,
+          color: theme.colors.textSecondary,
+        },
+        section: {
+          marginBottom: theme.spacing.lg,
+        },
+        calendarRibbon: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          paddingVertical: theme.spacing.md,
+        },
+        calendarEmoji: {
+          fontSize: 24,
+          marginRight: theme.spacing.sm,
+        },
+        calendarText: {
+          fontSize: theme.typography.fontSizes.md,
+          fontWeight: theme.typography.fontWeights.semibold,
+          color: theme.colors.textPrimary,
+        },
+        summaryRow: {
+          flexDirection: "row",
+          columnGap: theme.spacing.sm,
+        },
+        summaryCard: {
+          flex: 1,
+          borderRadius: 14,
+          paddingVertical: theme.spacing.md,
+          paddingHorizontal: theme.spacing.sm,
+        },
+        summaryLabel: {
+          fontSize: theme.typography.fontSizes.xs,
+          color: theme.colors.textSecondary,
+        },
+        summaryValue: {
+          fontSize: theme.typography.fontSizes.xl,
+          fontWeight: theme.typography.fontWeights.bold,
+          marginTop: 4,
+        },
+        actionsRow: {
+          flexDirection: "row",
+          columnGap: theme.spacing.sm,
+          marginTop: theme.spacing.md,
+        },
+        smallButton: {
+          flex: 1,
+          borderRadius: 999,
+          paddingVertical: theme.spacing.sm,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        smallButtonText: {
+          fontSize: theme.typography.fontSizes.sm,
+          fontWeight: theme.typography.fontWeights.semibold,
+        },
+        filterRow: {
+          flexDirection: "row",
+          marginTop: theme.spacing.md,
+          marginBottom: theme.spacing.xs,
+        },
+        filterChip: {
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.xs,
+          borderRadius: 999,
+          borderWidth: 1,
+          marginRight: theme.spacing.sm,
+        },
+        filterChipText: {
+          fontSize: theme.typography.fontSizes.xs,
+        },
+        filterMeta: {
+          fontSize: theme.typography.fontSizes.xs,
+          color: theme.colors.textSecondary,
+          marginBottom: theme.spacing.sm,
+        },
+        taskCard: {
+          flexDirection: "row",
+          alignItems: "center",
+          padding: theme.spacing.md,
+          borderRadius: 16,
+          marginBottom: theme.spacing.sm,
+          borderWidth: 1,
+        },
+        taskTitle: {
+          fontSize: theme.typography.fontSizes.md,
+          fontWeight: theme.typography.fontWeights.semibold,
+        },
+        taskDetails: {
+          fontSize: theme.typography.fontSizes.sm,
+          color: theme.colors.textSecondary,
+          marginTop: 2,
+        },
+        taskDatesRow: {
+          flexDirection: "row",
+          marginTop: 4,
+        },
+        taskDateText: {
+          fontSize: theme.typography.fontSizes.xs,
+          color: theme.colors.textSecondary,
+        },
+
+        // MODAL STYLES (updated to match index.ts look)
+        modalBackdrop: {
+          flex: 1,
+          justifyContent: "center",
+          padding: theme.spacing.md,
+          backgroundColor: theme.isDark
+            ? "rgba(15, 23, 42, 0.55)"
+            : "rgba(241, 245, 249, 0.55)",
+        },
+        modalCard: {
+          borderRadius: 20,
+          padding: theme.spacing.lg,
+          maxHeight: "90%",
+          backgroundColor: theme.isDark ? "#0F172A" : "#FFFFFF",
+          shadowColor: "#000",
+          shadowOpacity: 0.15,
+          shadowRadius: 20,
+          shadowOffset: { width: 0, height: 10 },
+          elevation: 10,
+          borderWidth: 1,
+          borderColor: theme.isDark ? "#1E293B" : "#E2E8F0",
+        },
+        modalHeaderRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          marginBottom: theme.spacing.sm,
+        },
+        modalHero: {
+          padding: theme.spacing.md,
+          borderRadius: 16,
+          marginBottom: theme.spacing.md,
+          alignItems: "center",
+          backgroundColor: theme.isDark
+            ? "rgba(108,77,255,0.25)"
+            : "rgba(108,77,255,0.08)",
+        },
+        modalHeroTitle: {
+          fontSize: theme.typography.fontSizes.lg,
+          fontWeight: theme.typography.fontWeights.bold,
+          color: theme.colors.textPrimary,
+        },
+        modalHeroSubtitle: {
+          fontSize: theme.typography.fontSizes.xs,
+          color: theme.colors.textSecondary,
+          marginTop: 2,
+          textAlign: "center",
+        },
+
+        label: {
+          fontSize: theme.typography.fontSizes.xs,
+          color: theme.colors.textSecondary,
+          marginBottom: 4,
+        },
+        input: {
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 12,
+          paddingHorizontal: theme.spacing.sm,
+          paddingVertical:
+            Platform.OS === "ios" ? theme.spacing.sm : theme.spacing.xs,
+          color: theme.colors.textPrimary,
+          backgroundColor: theme.isDark ? "#020617" : theme.colors.card,
+          fontSize: theme.typography.fontSizes.sm,
+          marginBottom: theme.spacing.sm,
+        },
+
+        chipRow: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+        },
+        emailChip: {
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: theme.spacing.sm,
+          paddingVertical: theme.spacing.xs,
+          borderRadius: 999,
+          marginRight: theme.spacing.xs,
+          marginBottom: theme.spacing.xs,
+          backgroundColor: `${MODULE_COLOR}22`,
+        },
+        emailChipText: {
+          fontSize: theme.typography.fontSizes.xs,
+          color: theme.colors.textPrimary,
+          marginRight: 4,
+        },
+        subtaskRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          paddingVertical: 4,
+        },
+        subtaskText: {
+          fontSize: theme.typography.fontSizes.sm,
+        },
+        commentCard: {
+          marginTop: 6,
+          padding: 8,
+          borderRadius: 8,
+          backgroundColor: theme.colors.cardMuted || theme.colors.card,
+        },
+        commentHeaderRow: {
+          flexDirection: "row",
+          justifyContent: "space-between",
+        },
+        commentAuthor: {
+          fontSize: theme.typography.fontSizes.xs,
+          fontWeight: theme.typography.fontWeights.semibold,
+        },
+        commentText: {
+          fontSize: theme.typography.fontSizes.sm,
+          marginTop: 2,
+        },
+        commentRow: {
+          flexDirection: "row",
+          columnGap: theme.spacing.sm,
+          marginTop: theme.spacing.sm,
+        },
+        commentInput: {
+          flex: 1,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 999,
+          paddingHorizontal: theme.spacing.sm,
+          paddingVertical:
+            Platform.OS === "ios" ? theme.spacing.sm : theme.spacing.xs,
+          color: theme.colors.textPrimary,
+          backgroundColor: theme.colors.card,
+          fontSize: theme.typography.fontSizes.sm,
+        },
+        chipButton: {
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm,
+          borderRadius: 999,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        chipButtonText: {
+          fontSize: theme.typography.fontSizes.sm,
+          fontWeight: theme.typography.fontWeights.semibold,
+        },
+        floatingAdd: {
+          position: "absolute",
+          right: theme.spacing.screenPadding,
+          bottom: theme.spacing.screenPadding,
+        },
+      }),
+    [theme]
+  );
+
+  const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
 
   const formatDate = (date: Date) =>
     date.toLocaleDateString("en-GB", {
@@ -164,23 +471,19 @@ export default function TaskMenuScreen() {
       year: "numeric",
     });
 
-  // load tasks
+  // ---------- FIRESTORE LOADERS ----------
+
   useEffect(() => {
     const q = query(collection(db, "Tasks"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const allTasks: TaskType[] = snapshot.docs.map(
-        (docSnap) =>
-          ({
-            id: docSnap.id,
-            ...docSnap.data(),
-          } as TaskType)
+        (docSnap) => ({ id: docSnap.id, ...docSnap.data() } as TaskType)
       );
       setTasks(allTasks);
     });
     return () => unsubscribe();
   }, []);
 
-  // load comments + subtasks when open a task
   useEffect(() => {
     if (!selectedTask) return;
 
@@ -191,11 +494,7 @@ export default function TaskMenuScreen() {
       ),
       (snapshot) => {
         const allComments: CommentType[] = snapshot.docs.map(
-          (docSnap) =>
-            ({
-              id: docSnap.id,
-              ...docSnap.data(),
-            } as CommentType)
+          (docSnap) => ({ id: docSnap.id, ...docSnap.data() } as CommentType)
         );
         setComments(allComments);
       }
@@ -208,11 +507,7 @@ export default function TaskMenuScreen() {
       ),
       (snapshot) => {
         const allSubtasks: TaskType[] = snapshot.docs.map(
-          (docSnap) =>
-            ({
-              id: docSnap.id,
-              ...docSnap.data(),
-            } as TaskType)
+          (docSnap) => ({ id: docSnap.id, ...docSnap.data() } as TaskType)
         );
         setSubtasks(allSubtasks);
       }
@@ -224,7 +519,6 @@ export default function TaskMenuScreen() {
     };
   }, [selectedTask]);
 
-  // sync editing fields when open/close modal
   useEffect(() => {
     if (selectedTask) {
       setEditingTaskName(selectedTask.taskName);
@@ -256,10 +550,12 @@ export default function TaskMenuScreen() {
     }
   }, [selectedTask]);
 
-  // overdue helper
+  // ---------- OVERDUE & FILTER ----------
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayStart = today.getTime();
+
   const isTimestampOverdue = (due?: number) => {
     if (typeof due !== "number") return false;
     const d = new Date(due);
@@ -267,9 +563,45 @@ export default function TaskMenuScreen() {
     return d.getTime() < todayStart;
   };
 
-  const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
+  const filteredTasks = useMemo(() => {
+    let list = tasks;
 
-  // MAIN assignees
+    list = list.filter((t) => {
+      const overdue = isTimestampOverdue(t.dueDate);
+      switch (filter) {
+        case "active":
+          return !t.completed;
+        case "completed":
+          return !!t.completed;
+        case "overdue":
+          return overdue && !t.completed;
+        default:
+          return true;
+      }
+    });
+
+    return [...list].sort((a, b) => {
+      const aCompleted = !!a.completed;
+      const bCompleted = !!b.completed;
+
+      if (!aCompleted && !bCompleted) {
+        const ad = typeof a.dueDate === "number" ? a.dueDate : Infinity;
+        const bd = typeof b.dueDate === "number" ? b.dueDate : Infinity;
+        if (ad !== bd) return ad - bd;
+      }
+
+      return b.createdAt - a.createdAt;
+    });
+  }, [tasks, filter]);
+
+  const overdueCount = filteredTasks.filter(
+    (t) => !t.completed && isTimestampOverdue(t.dueDate)
+  ).length;
+  const activeCount = filteredTasks.filter((t) => !t.completed).length;
+  const completedCount = filteredTasks.filter((t) => t.completed).length;
+
+  // ---------- MAIN ASSIGNEE HANDLERS ----------
+
   const handleAddMainAssignee = () => {
     const trimmed = mainAssignedInput.trim();
     if (!trimmed) return;
@@ -292,7 +624,6 @@ export default function TaskMenuScreen() {
     setMainAssignedList((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // ✅ save main task
   const handleSaveMainTask = async () => {
     if (!selectedTask) return;
 
@@ -347,7 +678,6 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // main task date pickers
   const onSelectTaskStartDate = (day: any) => {
     const date = new Date(day.dateString);
     setTaskStartDate(date);
@@ -369,8 +699,6 @@ export default function TaskMenuScreen() {
       return;
     }
 
-    // 👉 Allow any logged-in user to toggle completed
-    // (good enough for your FYP single-user scenario)
     try {
       const ref = doc(db, "Tasks", task.id);
       await updateDoc(ref, {
@@ -383,7 +711,6 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // delete main task
   const handleDeleteTask = async (taskId: string) => {
     if (!taskId) return;
 
@@ -396,15 +723,14 @@ export default function TaskMenuScreen() {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
 
-    const handleCompleteTaskToggle = async (task: TaskType) => {
+    // inner function kept as in your original
+    const handleCompleteTaskToggleInner = async (task: TaskType) => {
       if (!task) return;
-
       const user = auth.currentUser;
       if (!user) {
         Alert.alert("Not logged in", "Please log in to update tasks.");
         return;
       }
-
       try {
         const ref = doc(db, "Tasks", task.id);
         await updateDoc(ref, {
@@ -430,7 +756,8 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ✅ subtask toggle complete
+  // ---------- SUBTASKS ----------
+
   const handleCompleteSubtask = async (subtask: TaskType) => {
     if (!selectedTask) return;
 
@@ -457,7 +784,6 @@ export default function TaskMenuScreen() {
         updatedAt: new Date().getTime(),
       });
 
-      // ⭐ GAMIFICATION for subtasks
       if (newCompleted) {
         await awardSubtaskCompletion(user.uid);
       } else {
@@ -468,7 +794,6 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // add subtask
   const handleAddSubtask = async () => {
     if (!selectedTask) return;
     if (!subtaskName.trim()) {
@@ -504,7 +829,6 @@ export default function TaskMenuScreen() {
     setSubtaskDueDate(null);
   };
 
-  // subtask date pickers
   const onSelectSubtaskDate = (day: any) => {
     const date = new Date(day.dateString);
     setSubtaskDueDate(date);
@@ -517,7 +841,6 @@ export default function TaskMenuScreen() {
     setShowSubtaskStartCalendar(false);
   };
 
-  // delete subtask
   const handleDeleteSubtask = async (subtask: TaskType) => {
     if (!selectedTask) return;
 
@@ -544,7 +867,8 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // comments
+  // ---------- COMMENTS ----------
+
   const handleDeleteComment = async (commentId: string) => {
     if (!selectedTask) return;
     await deleteDoc(doc(db, "Tasks", selectedTask.id, "Comments", commentId));
@@ -567,6 +891,9 @@ export default function TaskMenuScreen() {
 
     setCommentText("");
   };
+
+  // ---------- PRINT ----------
+
   const handlePrintTasks = async () => {
     try {
       const user = auth.currentUser;
@@ -575,7 +902,6 @@ export default function TaskMenuScreen() {
         return;
       }
 
-      // ----- Summary stats -----
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayMs = today.getTime();
@@ -594,7 +920,6 @@ export default function TaskMenuScreen() {
       ).length;
       const activeTasks = totalTasks - completedTasks;
 
-      // ----- Table rows -----
       const taskRowsHtml =
         tasks.length === 0
           ? `<tr><td colspan="6" class="empty-cell">No tasks found.</td></tr>`
@@ -645,15 +970,12 @@ export default function TaskMenuScreen() {
 
       const generatedAt = new Date().toLocaleString();
 
-      // ----- HTML -----
       const html = `
       <html>
         <head>
           <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0" />
           <style>
-            * {
-              box-sizing: border-box;
-            }
+            * { box-sizing: border-box; }
             body {
               margin: 0;
               padding: 0;
@@ -702,7 +1024,6 @@ export default function TaskMenuScreen() {
               font-size: 11px;
               opacity: 0.8;
             }
-
             .section-card {
               background: #ffffff;
               border-radius: 14px;
@@ -711,7 +1032,6 @@ export default function TaskMenuScreen() {
               margin-bottom: 16px;
               border: 1px solid #e5e7eb;
             }
-
             .section-title {
               font-size: 14px;
               font-weight: 600;
@@ -722,8 +1042,6 @@ export default function TaskMenuScreen() {
               color: #6b7280;
               margin-bottom: 10px;
             }
-
-            /* Summary cards */
             .summary-row {
               display: flex;
               flex-wrap: wrap;
@@ -753,15 +1071,12 @@ export default function TaskMenuScreen() {
               color: #1d4ed8;
               margin-top: 2px;
             }
-
             table {
               width: 100%;
               border-collapse: collapse;
               font-size: 11px;
             }
-            thead {
-              background-color: #f3f4f6;
-            }
+            thead { background-color: #f3f4f6; }
             th, td {
               border: 1px solid #e5e7eb;
               padding: 6px 7px;
@@ -799,9 +1114,7 @@ export default function TaskMenuScreen() {
               font-weight: 600;
               font-size: 11px;
             }
-            .status-cell {
-              text-align: center;
-            }
+            .status-cell { text-align: center; }
             .status {
               display: inline-block;
               padding: 2px 8px;
@@ -817,24 +1130,11 @@ export default function TaskMenuScreen() {
               background-color: #fee2e2;
               color: #b91c1c;
             }
-
             .footer-text {
               margin-top: 4px;
               font-size: 9px;
               color: #9ca3af;
               text-align: right;
-            }
-
-            @media print {
-              .page {
-                padding: 12px;
-              }
-              .header-card {
-                box-shadow: none;
-              }
-              .section-card {
-                box-shadow: none;
-              }
             }
           </style>
         </head>
@@ -848,7 +1148,6 @@ export default function TaskMenuScreen() {
               </div>
               <div class="generated-text">Generated on ${generatedAt}</div>
             </div>
-
             <div class="section-card">
               <div class="section-title">Summary</div>
               <div class="section-subtitle">
@@ -884,7 +1183,6 @@ export default function TaskMenuScreen() {
                 </div>
               </div>
             </div>
-
             <div class="section-card">
               <div class="section-title">Task List</div>
               <div class="section-subtitle">
@@ -922,38 +1220,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- FILTERED + SORTED TASKS ----------
-  const filteredTasks = useMemo(() => {
-    let list = tasks;
-
-    list = list.filter((t) => {
-      const overdue = isTimestampOverdue(t.dueDate);
-      switch (filter) {
-        case "active":
-          return !t.completed;
-        case "completed":
-          return !!t.completed;
-        case "overdue":
-          return overdue && !t.completed;
-        default:
-          return true;
-      }
-    });
-
-    // sort: active ones by due date (soonest first), others by createdAt desc
-    return [...list].sort((a, b) => {
-      const aCompleted = !!a.completed;
-      const bCompleted = !!b.completed;
-
-      if (!aCompleted && !bCompleted) {
-        const ad = typeof a.dueDate === "number" ? a.dueDate : Infinity;
-        const bd = typeof b.dueDate === "number" ? b.dueDate : Infinity;
-        if (ad !== bd) return ad - bd;
-      }
-
-      return b.createdAt - a.createdAt;
-    });
-  }, [tasks, filter]);
+  // ---------- UI HELPERS ----------
 
   const renderFilterChip = (mode: FilterType, label: string) => {
     const isActive = filter === mode;
@@ -961,22 +1228,24 @@ export default function TaskMenuScreen() {
       <TouchableOpacity
         key={mode}
         onPress={() => setFilter(mode)}
-        style={{
-          paddingHorizontal: 10,
-          paddingVertical: 6,
-          borderRadius: 999,
-          borderWidth: 1,
-          borderColor: isActive ? "#2563EB" : "#4b5563",
-          backgroundColor: isActive ? "#2563EB" : "transparent",
-          marginRight: 8,
-        }}
+        style={[
+          styles.filterChip,
+          {
+            borderColor: isActive ? MODULE_COLOR : theme.colors.border,
+            backgroundColor: isActive ? `${MODULE_COLOR}22` : "transparent",
+          },
+        ]}
       >
         <Text
-          style={{
-            fontSize: 12,
-            color: isActive ? "#ffffff" : "#e5e7eb",
-            fontWeight: isActive ? "bold" : "normal",
-          }}
+          style={[
+            styles.filterChipText,
+            {
+              color: isActive ? MODULE_COLOR : theme.colors.textSecondary,
+              fontWeight: isActive
+                ? theme.typography.fontWeights.semibold
+                : theme.typography.fontWeights.regular,
+            },
+          ]}
         >
           {label}
         </Text>
@@ -1011,853 +1280,506 @@ export default function TaskMenuScreen() {
           marginLeft: 8,
         }}
       >
-        <Text style={{ fontSize: 10, fontWeight: "600", color: textColor }}>
+        <Text
+          style={{
+            fontSize: theme.typography.fontSizes.xs,
+            fontWeight: theme.typography.fontWeights.semibold,
+            color: textColor,
+          }}
+        >
           {label} · {score}
         </Text>
       </View>
     );
   };
 
-  // ---------- UI ----------
+  // ---------- RENDER ----------
+
   return (
-    <KeyboardAvoidingView behavior="height" style={{ flex: 1 }}>
-      <Layout>
-        <TopNav
-          middleContent="My Task"
-          leftContent={
-            <Ionicons
-              name="arrow-back"
-              size={22}
-              color={isDarkmode ? themeColor.white100 : themeColor.dark}
-            />
-          }
-          leftAction={() => {
-            router.back();
-          }}
-          rightContent={
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "flex-end",
-              }}
-            >
-              <TouchableOpacity
-                onPress={() => setTheme(isDarkmode ? "light" : "dark")}
-                style={{ marginRight: 12 }}
-              >
-                <Ionicons
-                  name={isDarkmode ? "sunny" : "moon"}
-                  size={20}
-                  color={isDarkmode ? themeColor.white100 : themeColor.dark}
-                />
-              </TouchableOpacity>
+    <GradientBackground>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        {/* HEADER */}
+        <View style={styles.headerRow}>
+          <IconButton
+            icon="arrow-back"
+            onPress={() => router.back()}
+            variant="secondary"
+            size="medium"
+          />
+          <Text style={styles.headerTitle}>My Task</Text>
+          <View style={styles.headerSpacer} />
+        </View>
 
-              <TouchableOpacity onPress={() => setShowListMenu(true)}>
-                <Ionicons
-                  name="list"
-                  size={22}
-                  color={isDarkmode ? themeColor.white100 : themeColor.dark}
-                />
-              </TouchableOpacity>
-            </View>
-          }
-        />
-
-        <View style={{ flex: 1, padding: 20 }}>
-          {/* Header + AI Dashboard shortcut */}
-          <View style={{ alignItems: "center", marginBottom: 10 }}>
-            <Text fontWeight="bold" style={{ fontSize: 24 }}>
-              My Task
-            </Text>
-            <Text size="sm" style={{ marginTop: 4, opacity: 0.7 }}>
-              {new Date().toLocaleDateString("en-US", {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-              })}
-            </Text>
-          </View>
-
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "center",
-              marginBottom: 12,
-            }}
-          >
-            <Button
-              text="AI Task Dashboard"
-              size="sm"
-              status="info"
-              onPress={() =>
-                router.push("/modules/task-management/TaskDashboard")
-              }
-              style={{ marginRight: 8 }}
-            />
-
-            <Button
-              text="Export Tasks (PDF)"
-              size="sm"
-              onPress={handlePrintTasks}
-            />
-          </View>
-
-          {/* Filter bar */}
-          <View
-            style={{
-              flexDirection: "row",
-              marginBottom: 6,
-            }}
-          >
-            {renderFilterChip("all", "All")}
-            {renderFilterChip("active", "Active")}
-            {renderFilterChip("completed", "Completed")}
-            {renderFilterChip("overdue", "Overdue")}
-          </View>
-          <Text size="sm" style={{ opacity: 0.6, marginBottom: 8 }}>
-            {filteredTasks.length} task(s) · filter: {filter}
-          </Text>
-
-          {/* TASK LIST */}
-          <FlatList
-            data={filteredTasks}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingBottom: 80 }}
-            renderItem={({ item }) => {
-              const isCompleted = !!item.completed;
-              const isOverdue = isTimestampOverdue(item.dueDate);
-
-              const cardBackgroundColor = isOverdue
-                ? "#fee2e2"
-                : isCompleted
-                ? "#e5e7eb"
-                : "#e0f2fe";
-
-              const cardBorderColor = isOverdue
-                ? "#f97373"
-                : isCompleted
-                ? "#cbd5e1"
-                : "#38bdf8";
-
-              return (
+        {/* MAIN LIST with HEADER COMPONENT */}
+        <FlatList
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          data={filteredTasks}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={
+            <>
+              {/* Module icon + title */}
+              <View style={styles.iconSection}>
                 <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginBottom: 10,
-                    borderWidth: 1,
-                    borderColor: cardBorderColor,
-                    borderRadius: 10,
-                    backgroundColor: cardBackgroundColor,
-                    padding: 12,
-                    opacity: isCompleted ? 0.6 : 1,
-                  }}
+                  style={[
+                    styles.iconContainer,
+                    { backgroundColor: `${MODULE_COLOR}20` },
+                  ]}
+                >
+                  <Ionicons
+                    name="checkmark-done-outline"
+                    size={64}
+                    color={MODULE_COLOR}
+                  />
+                </View>
+                <Text style={styles.moduleTitle}>Task Management</Text>
+                <Text style={styles.moduleSubtitle}>
+                  Stay organized and productive
+                </Text>
+              </View>
+
+              {/* Date ribbon */}
+              <View style={styles.section}>
+                <Card>
+                  <View style={styles.calendarRibbon}>
+                    <Text style={styles.calendarEmoji}>📅</Text>
+                    <Text style={styles.calendarText}>
+                      {new Date().toLocaleDateString("en-US", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </Text>
+                  </View>
+                </Card>
+              </View>
+
+              {/* Summary cards */}
+              <View style={[styles.section]}>
+                <View style={styles.summaryRow}>
+                  <Card
+                    style={[styles.summaryCard, { backgroundColor: "#fee2e2" }]}
+                  >
+                    <Text style={styles.summaryLabel}>Overdue</Text>
+                    <Text style={[styles.summaryValue, { color: "#b91c1c" }]}>
+                      {overdueCount}
+                    </Text>
+                  </Card>
+                  <Card
+                    style={[styles.summaryCard, { backgroundColor: "#dcfce7" }]}
+                  >
+                    <Text style={styles.summaryLabel}>Active</Text>
+                    <Text style={[styles.summaryValue, { color: "#166534" }]}>
+                      {activeCount}
+                    </Text>
+                  </Card>
+                  <Card
+                    style={[styles.summaryCard, { backgroundColor: "#e5e7eb" }]}
+                  >
+                    <Text style={styles.summaryLabel}>Completed</Text>
+                    <Text style={[styles.summaryValue, { color: "#374151" }]}>
+                      {completedCount}
+                    </Text>
+                  </Card>
+                </View>
+
+                {/* AI + Print buttons */}
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push("/modules/task-management/TaskDashboard")
+                    }
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: `${MODULE_COLOR}20` },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.smallButtonText, { color: MODULE_COLOR }]}
+                    >
+                      AI Task Dashboard
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handlePrintTasks}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: "#16a34a20" },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.smallButtonText, { color: "#166534" }]}
+                    >
+                      Print Tasks (PDF)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Filter chips */}
+              <View style={styles.filterRow}>
+                {renderFilterChip("all", "All")}
+                {renderFilterChip("active", "Active")}
+                {renderFilterChip("completed", "Completed")}
+                {renderFilterChip("overdue", "Overdue")}
+              </View>
+              <Text style={styles.filterMeta}>
+                {filteredTasks.length} task(s) · filter: {filter}
+              </Text>
+            </>
+          }
+          renderItem={({ item }) => {
+            const isCompleted = !!item.completed;
+            const isOverdue = isTimestampOverdue(item.dueDate);
+
+            const bg = isOverdue
+              ? "#fee2e2"
+              : isCompleted
+              ? "#e5e7eb"
+              : "#e0f2fe";
+            const border = isOverdue
+              ? "#f97373"
+              : isCompleted
+              ? "#cbd5e1"
+              : "#38bdf8";
+
+            return (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => {
+                  setSelectedTask(item);
+                  setModalVisible(true);
+                }}
+              >
+                <View
+                  style={[
+                    styles.taskCard,
+                    {
+                      backgroundColor: bg,
+                      borderColor: border,
+                      opacity: isCompleted ? 0.6 : 1,
+                    },
+                  ]}
                 >
                   <TouchableOpacity
                     onPress={() => handleCompleteTaskToggle(item)}
                     style={{ marginRight: 10 }}
                   >
                     <Ionicons
-                      name="checkmark-circle-outline"
+                      name={
+                        isCompleted
+                          ? "checkmark-circle"
+                          : "checkmark-circle-outline"
+                      }
                       size={24}
                       color={isCompleted ? "#9ca3af" : "#16a34a"}
                     />
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={{ flex: 1 }}
-                    onPress={() => {
-                      setSelectedTask(item);
-                      setModalVisible(true);
-                    }}
-                  >
+                  <View style={{ flex: 1 }}>
                     <View
-                      style={{ flexDirection: "row", alignItems: "center" }}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        marginBottom: 2,
+                      }}
                     >
                       <Text
-                        fontWeight="bold"
-                        style={{
-                          textDecorationLine: isCompleted
-                            ? "line-through"
-                            : "none",
-                          color: isCompleted ? "#6b7280" : "#111827",
-                          marginRight: 4,
-                          fontSize: 16,
-                        }}
+                        style={[
+                          styles.taskTitle,
+                          {
+                            textDecorationLine: isCompleted
+                              ? "line-through"
+                              : "none",
+                            color: isCompleted
+                              ? "#6b7280"
+                              : theme.colors.textPrimary,
+                          },
+                        ]}
                       >
                         {item.taskName}
                       </Text>
-
                       {isOverdue && (
-                        <View
-                          style={{
-                            paddingHorizontal: 8,
-                            paddingVertical: 2,
-                            borderRadius: 999,
-                            backgroundColor: "#ef4444",
-                          }}
-                        >
-                          <Text
-                            style={{
-                              color: "#fff",
-                              fontSize: 10,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            OVERDUE
-                          </Text>
-                        </View>
+                        <Badge variant="danger" style={{ marginLeft: 6 }}>
+                          OVERDUE
+                        </Badge>
                       )}
-
                       {getPriorityChip(item.priorityScore)}
                     </View>
 
-                    {item.details && (
+                    {!!item.details && (
                       <Text
-                        style={{
-                          marginTop: 2,
-                          textDecorationLine: isCompleted
-                            ? "line-through"
-                            : "none",
-                          color: isCompleted ? "#6b7280" : "#374151",
-                          fontSize: 13,
-                        }}
+                        style={[
+                          styles.taskDetails,
+                          {
+                            textDecorationLine: isCompleted
+                              ? "line-through"
+                              : "none",
+                          },
+                        ]}
                         numberOfLines={2}
                       >
                         {item.details}
                       </Text>
                     )}
-                    <View style={{ marginTop: 4, flexDirection: "row" }}>
+
+                    <View style={styles.taskDatesRow}>
                       {item.startDate && (
-                        <Text style={{ fontSize: 11, color: "#4b5563" }}>
+                        <Text style={styles.taskDateText}>
                           Start: {formatDate(new Date(item.startDate))}
                           {"  "}
                         </Text>
                       )}
                       {item.dueDate && (
-                        <Text style={{ fontSize: 11, color: "#4b5563" }}>
+                        <Text style={styles.taskDateText}>
                           Due: {formatDate(new Date(item.dueDate))}
                         </Text>
                       )}
                     </View>
-                  </TouchableOpacity>
+                  </View>
 
                   <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
                     <Ionicons name="trash-outline" size={22} color="#f97373" />
                   </TouchableOpacity>
                 </View>
-              );
-            }}
-          />
+              </TouchableOpacity>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={{ alignItems: "center", marginTop: 40 }}>
+              <Text style={{ fontSize: 40, marginBottom: 8 }}>📝</Text>
+              <Text style={{ color: theme.colors.textSecondary }}>
+                No tasks yet. Tap + to add one.
+              </Text>
+            </View>
+          }
+        />
 
-          {/* Task Modal (unchanged layout, just uses new handlers) */}
-          {selectedTask && (
-            <Modal
-              visible={modalVisible}
-              transparent
-              animationType="slide"
-              onRequestClose={() => {
-                setModalVisible(false);
-                setSelectedTask(null);
-              }}
+        {/* FLOATING + BUTTON */}
+        <View style={styles.floatingAdd}>
+          <IconButton
+            icon="add"
+            onPress={() => setShowAddMenu(true)}
+            variant="primary"
+            size="large"
+          />
+        </View>
+
+        {/* TASK DETAIL MODAL */}
+        {selectedTask && (
+          <Modal
+            visible={modalVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setModalVisible(false)}
+          >
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              style={styles.modalBackdrop}
             >
-              <KeyboardAvoidingView
-                behavior="height"
-                style={{
-                  flex: 1,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  backgroundColor: "rgba(0,0,0,0.45)",
-                }}
-              >
-                <View
-                  style={{
-                    width: "92%",
-                    maxHeight: "92%",
-                    backgroundColor: isDarkmode ? "#111827" : themeColor.white,
-                    borderRadius: 16,
-                    padding: 16,
-                    position: "relative",
-                  }}
-                >
-                  {/* Close button */}
+              <View style={styles.modalCard}>
+                {/* top-right close */}
+                <View style={styles.modalHeaderRow}>
                   <TouchableOpacity
-                    onPress={() => {
-                      setModalVisible(false);
-                      setSelectedTask(null);
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: 10,
-                      right: 10,
-                      padding: 6,
-                      borderRadius: 999,
-                      backgroundColor: isDarkmode
-                        ? "rgba(255,255,255,0.1)"
-                        : "rgba(0,0,0,0.05)",
-                    }}
+                    onPress={() => setModalVisible(false)}
+                    style={{ padding: 4 }}
                   >
                     <Ionicons
                       name="close"
-                      size={18}
-                      color={isDarkmode ? themeColor.white : themeColor.dark}
+                      size={22}
+                      color={theme.colors.textSecondary}
                     />
                   </TouchableOpacity>
+                </View>
 
-                  <ScrollView
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 24 }}
+                {/* hero header inside modal (gradient-feel block) */}
+                <View style={styles.modalHero}>
+                  <Ionicons
+                    name="checkmark-done-outline"
+                    size={40}
+                    color={MODULE_COLOR}
+                    style={{ marginBottom: 6 }}
+                  />
+                  <Text style={styles.modalHeroTitle}>Task Details</Text>
+                  <Text style={styles.modalHeroSubtitle}>
+                    Edit task info, assignees, subtasks and comments.
+                  </Text>
+                </View>
+
+                <ScrollView
+                  style={{ marginTop: 4 }}
+                  contentContainerStyle={{ paddingBottom: 16 }}
+                >
+                  {/* Title & details */}
+                  <Text style={styles.label}>Title</Text>
+                  <RNTextInput
+                    value={editingTaskName}
+                    onChangeText={setEditingTaskName}
+                    placeholder="Task name"
+                    placeholderTextColor={theme.colors.textMuted}
+                    style={styles.input}
+                  />
+
+                  <Text style={styles.label}>Details</Text>
+                  <RNTextInput
+                    value={editingTaskDetails}
+                    onChangeText={setEditingTaskDetails}
+                    placeholder="Task details"
+                    placeholderTextColor={theme.colors.textMuted}
+                    multiline
+                    style={[
+                      styles.input,
+                      { minHeight: 70, textAlignVertical: "top" },
+                    ]}
+                  />
+
+                  {/* Dates */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      marginVertical: theme.spacing.sm,
+                    }}
                   >
-                    {/* Task Info */}
-                    <Text
-                      fontWeight="bold"
-                      style={{ fontSize: 16, marginBottom: 6 }}
+                    <View style={{ flex: 1, marginRight: theme.spacing.sm }}>
+                      <Text style={styles.label}>Start Date</Text>
+                      <TouchableOpacity
+                        onPress={() => setShowTaskStartCalendar(true)}
+                        style={[
+                          styles.chipButton,
+                          {
+                            backgroundColor: theme.colors.card,
+                            borderWidth: 1,
+                            borderColor: theme.colors.border,
+                          },
+                        ]}
+                      >
+                        <Text style={styles.chipButtonText}>
+                          {taskStartDate
+                            ? formatDate(taskStartDate)
+                            : "Set date"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
+                      <Text style={styles.label}>Due Date</Text>
+                      <TouchableOpacity
+                        onPress={() => setShowTaskDueCalendar(true)}
+                        style={[
+                          styles.chipButton,
+                          {
+                            backgroundColor: theme.colors.card,
+                            borderWidth: 1,
+                            borderColor: theme.colors.border,
+                          },
+                        ]}
+                      >
+                        <Text style={styles.chipButtonText}>
+                          {taskDueDate ? formatDate(taskDueDate) : "Set date"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Assignees */}
+                  <Text style={styles.label}>Assign to (Gmail)</Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      columnGap: theme.spacing.sm,
+                      marginBottom: theme.spacing.sm,
+                    }}
+                  >
+                    <RNTextInput
+                      placeholder="friend@gmail.com"
+                      placeholderTextColor={theme.colors.textMuted}
+                      value={mainAssignedInput}
+                      onChangeText={setMainAssignedInput}
+                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                    />
+                    <TouchableOpacity
+                      onPress={handleAddMainAssignee}
+                      style={[
+                        styles.chipButton,
+                        { backgroundColor: MODULE_COLOR },
+                      ]}
                     >
-                      Task Info
-                    </Text>
-                    <RNTextInput
-                      value={editingTaskName}
-                      onChangeText={setEditingTaskName}
-                      placeholder="Task title"
-                      style={{
-                        fontSize: 18,
-                        fontWeight: "700",
-                        marginBottom: 8,
-                        borderBottomWidth: 1,
-                        borderColor: "#d1d5db",
-                        paddingVertical: 4,
-                        color: isDarkmode ? "#f9fafb" : "#111827",
-                      }}
-                    />
+                      <Text style={[styles.chipButtonText, { color: "#fff" }]}>
+                        Add
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
-                    <RNTextInput
-                      value={editingTaskDetails}
-                      onChangeText={setEditingTaskDetails}
-                      placeholder="Add description..."
-                      multiline
-                      scrollEnabled={false}
-                      style={{
-                        marginTop: 4,
-                        fontSize: 13,
-                        lineHeight: 18,
-                        paddingVertical: 2,
-                        paddingHorizontal: 0,
-                        textAlignVertical: "top",
-                        color: isDarkmode ? "#f9fafb" : "#111827",
-                        backgroundColor: "transparent",
-                        borderWidth: 0,
-                      }}
-                      placeholderTextColor={isDarkmode ? "#6b7280" : "#9ca3af"}
-                    />
+                  <View style={styles.chipRow}>
+                    {mainAssignedList.map((email, idx) => (
+                      <View key={email + idx} style={styles.emailChip}>
+                        <Text style={styles.emailChipText}>{email}</Text>
+                        <TouchableOpacity
+                          onPress={() => handleRemoveMainAssignee(idx)}
+                        >
+                          <Ionicons
+                            name="close"
+                            size={14}
+                            color={theme.colors.textSecondary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
 
-                    {selectedTask.CreatedUser && (
+                  {/* Subtasks */}
+                  <View style={{ marginTop: theme.spacing.md }}>
+                    <Text style={styles.modalHeroTitle}>Subtasks</Text>
+                    {subtasks.length === 0 && (
                       <Text
                         style={{
-                          marginTop: 6,
-                          color: "#6b7280",
-                          fontSize: 12,
+                          fontSize: theme.typography.fontSizes.xs,
+                          color: theme.colors.textSecondary,
+                          marginTop: 4,
                         }}
                       >
-                        Created By: {selectedTask.CreatedUser.name}
-                        {selectedTask.CreatedUser.email
-                          ? ` (${selectedTask.CreatedUser.email})`
-                          : ""}
+                        No subtasks yet.
                       </Text>
                     )}
-
-                    <View
-                      style={{
-                        height: 1,
-                        backgroundColor: isDarkmode ? "#1f2937" : "#e5e7eb",
-                        marginVertical: 10,
-                      }}
-                    />
-
-                    {/* Schedule */}
-                    <Text
-                      fontWeight="bold"
-                      style={{ fontSize: 16, marginBottom: 6 }}
-                    >
-                      Schedule
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        marginBottom: 4,
-                        color: "#6b7280",
-                      }}
-                    >
-                      Start Date
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => setShowTaskStartCalendar(true)}
-                      style={{
-                        padding: 10,
-                        borderWidth: 1,
-                        borderColor: "#d1d5db",
-                        borderRadius: 8,
-                        marginBottom: 8,
-                        backgroundColor: isDarkmode ? "#020617" : "#f9fafb",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: isDarkmode ? "#e5e7eb" : "#111827",
-                          fontSize: 13,
-                        }}
-                      >
-                        {taskStartDate
-                          ? formatDate(taskStartDate)
-                          : "Select start date (optional)"}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        marginBottom: 4,
-                        color: "#6b7280",
-                      }}
-                    >
-                      Due Date
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => setShowTaskDueCalendar(true)}
-                      style={{
-                        padding: 10,
-                        borderWidth: 1,
-                        borderColor: "#d1d5db",
-                        borderRadius: 8,
-                        marginBottom: 8,
-                        backgroundColor: isDarkmode ? "#020617" : "#f9fafb",
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: isDarkmode ? "#e5e7eb" : "#111827",
-                          fontSize: 13,
-                        }}
-                      >
-                        {taskDueDate
-                          ? formatDate(taskDueDate)
-                          : "Select due date"}
-                      </Text>
-                      {taskDueDate &&
-                        isTimestampOverdue(taskDueDate.getTime()) && (
-                          <View
-                            style={{
-                              marginLeft: 8,
-                              paddingHorizontal: 8,
-                              paddingVertical: 2,
-                              borderRadius: 999,
-                              backgroundColor: "#ef4444",
-                            }}
+                    {subtasks.map((st) => (
+                      <View key={st.id} style={styles.subtaskRow}>
+                        <TouchableOpacity
+                          onPress={() => handleCompleteSubtask(st)}
+                          style={{ marginRight: 8 }}
+                        >
+                          <Ionicons
+                            name={st.completed ? "checkbox" : "square-outline"}
+                            size={18}
+                            color={st.completed ? "#16a34a" : "#6b7280"}
+                          />
+                        </TouchableOpacity>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.subtaskText,
+                              {
+                                textDecorationLine: st.completed
+                                  ? "line-through"
+                                  : "none",
+                              },
+                            ]}
                           >
+                            {st.taskName}
+                          </Text>
+                          {st.dueDate && (
                             <Text
                               style={{
-                                color: "#fff",
-                                fontSize: 10,
-                                fontWeight: "bold",
+                                fontSize: theme.typography.fontSizes.xs,
+                                color: theme.colors.textSecondary,
                               }}
                             >
-                              OVERDUE
-                            </Text>
-                          </View>
-                        )}
-                    </TouchableOpacity>
-
-                    {/* Assignees */}
-                    <View
-                      style={{
-                        height: 1,
-                        backgroundColor: isDarkmode ? "#1f2937" : "#e5e7eb",
-                        marginVertical: 10,
-                      }}
-                    />
-                    <Text
-                      fontWeight="bold"
-                      style={{ fontSize: 16, marginBottom: 6 }}
-                    >
-                      Assignees
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        color: "#6b7280",
-                        marginBottom: 6,
-                      }}
-                    >
-                      Add or remove users (Gmail) for this task.
-                    </Text>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        flexWrap: "wrap",
-                        marginBottom: 8,
-                      }}
-                    >
-                      {mainAssignedList.map((email, index) => (
-                        <View
-                          key={`${email}-${index}`}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            paddingHorizontal: 10,
-                            paddingVertical: 4,
-                            borderRadius: 999,
-                            backgroundColor: isDarkmode ? "#0ea5e9" : "#e0f2fe",
-                            marginRight: 6,
-                            marginBottom: 6,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 12,
-                              color: isDarkmode ? "#0b1120" : "#0f172a",
-                            }}
-                          >
-                            {email}
-                          </Text>
-                          <TouchableOpacity
-                            onPress={() => handleRemoveMainAssignee(index)}
-                            style={{ marginLeft: 6 }}
-                          >
-                            <Ionicons name="close" size={14} color="#4b5563" />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        columnGap: 8,
-                        marginTop: 4,
-                      }}
-                    >
-                      <RNTextInput
-                        placeholder="Enter user's Gmail..."
-                        value={mainAssignedInput}
-                        onChangeText={setMainAssignedInput}
-                        style={{
-                          flex: 1,
-                          borderWidth: 1,
-                          color: isDarkmode ? "#f9fafb" : "#111827",
-                          backgroundColor: isDarkmode ? "#020617" : "#f9fafb",
-                          borderColor: "#d1d5db",
-                          borderRadius: 8,
-                          padding: 8,
-                          fontSize: 13,
-                        }}
-                      />
-                      <Button
-                        text="Add"
-                        onPress={handleAddMainAssignee}
-                        style={{ alignSelf: "center" }}
-                      />
-                    </View>
-
-                    {/* Save main task */}
-                    <Button
-                      text="Save Changes"
-                      onPress={handleSaveMainTask}
-                      style={{ marginTop: 12 }}
-                    />
-
-                    {/* Subtasks */}
-                    <View
-                      style={{
-                        height: 1,
-                        backgroundColor: isDarkmode ? "#1f2937" : "#e5e7eb",
-                        marginVertical: 12,
-                      }}
-                    />
-                    <Text
-                      fontWeight="bold"
-                      style={{ fontSize: 16, marginBottom: 6 }}
-                    >
-                      Subtasks
-                    </Text>
-
-                    {subtasks.map((s) => {
-                      const isSubtaskCompleted = !!s.completed;
-                      return (
-                        <View
-                          key={s.id}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            marginBottom: 6,
-                            opacity: isSubtaskCompleted ? 0.7 : 1,
-                            backgroundColor: isSubtaskCompleted
-                              ? isDarkmode
-                                ? "#020617"
-                                : "#e5e7eb"
-                              : isDarkmode
-                              ? "#0f172a"
-                              : "#f9fafb",
-                            borderRadius: 10,
-                            paddingVertical: 8,
-                            paddingHorizontal: 10,
-                            borderWidth: 1,
-                            borderColor: isDarkmode ? "#1f2937" : "#e5e7eb",
-                          }}
-                        >
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              flex: 1,
-                              marginRight: 8,
-                            }}
-                          >
-                            <TouchableOpacity
-                              onPress={() => handleCompleteSubtask(s)}
-                              disabled={isSubtaskCompleted}
-                              style={{ marginRight: 10 }}
-                            >
-                              <Ionicons
-                                name="checkmark-circle-outline"
-                                size={20}
-                                color={
-                                  isSubtaskCompleted ? "#9ca3af" : "#22c55e"
-                                }
-                              />
-                            </TouchableOpacity>
-                            <View style={{ flex: 1 }}>
-                              <Text
-                                style={{
-                                  textDecorationLine: isSubtaskCompleted
-                                    ? "line-through"
-                                    : "none",
-                                  color: isSubtaskCompleted
-                                    ? "#9ca3af"
-                                    : isDarkmode
-                                    ? "#f9fafb"
-                                    : "#111827",
-                                  fontSize: 14,
-                                }}
-                              >
-                                {s.taskName}
-                              </Text>
-                              {s.details && (
-                                <Text
-                                  style={{
-                                    fontSize: 12,
-                                    color: "#6b7280",
-                                    textDecorationLine: isSubtaskCompleted
-                                      ? "line-through"
-                                      : "none",
-                                  }}
-                                  numberOfLines={2}
-                                >
-                                  {s.details}
-                                </Text>
-                              )}
-                              <View
-                                style={{ marginTop: 2, flexDirection: "row" }}
-                              >
-                                {s.startDate && (
-                                  <Text
-                                    style={{ fontSize: 11, color: "#6b7280" }}
-                                  >
-                                    Start: {formatDate(new Date(s.startDate))}
-                                    {"  "}
-                                  </Text>
-                                )}
-                                {s.dueDate && (
-                                  <Text
-                                    style={{ fontSize: 11, color: "#6b7280" }}
-                                  >
-                                    Due: {formatDate(new Date(s.dueDate))}
-                                  </Text>
-                                )}
-                              </View>
-                              {s.CreatedUser && (
-                                <Text
-                                  style={{ fontSize: 11, color: "#9ca3af" }}
-                                >
-                                  By: {s.CreatedUser.name}
-                                </Text>
-                              )}
-                            </View>
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => handleDeleteSubtask(s)}
-                          >
-                            <Ionicons
-                              name="trash-outline"
-                              size={20}
-                              color="#f97373"
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })}
-
-                    {/* add subtask form */}
-                    <View
-                      style={{
-                        marginTop: 8,
-                        padding: 10,
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: isDarkmode ? "#1f2937" : "#e5e7eb",
-                        backgroundColor: isDarkmode ? "#020617" : "#f9fafb",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          fontWeight: "600",
-                          marginBottom: 6,
-                        }}
-                      >
-                        Add Subtask
-                      </Text>
-                      <RNTextInput
-                        placeholder="Subtask name"
-                        value={subtaskName}
-                        onChangeText={setSubtaskName}
-                        style={{
-                          borderWidth: 1,
-                          backgroundColor: isDarkmode ? "#020617" : "#ffffff",
-                          color: isDarkmode ? "#f9fafb" : "#111827",
-                          borderColor: "#d1d5db",
-                          borderRadius: 8,
-                          padding: 8,
-                          marginBottom: 6,
-                          fontSize: 13,
-                        }}
-                      />
-                      <RNTextInput
-                        placeholder="Subtask description"
-                        value={subtaskDetails}
-                        onChangeText={setSubtaskDetails}
-                        style={{
-                          borderWidth: 1,
-                          backgroundColor: isDarkmode ? "#020617" : "#ffffff",
-                          color: isDarkmode ? "#f9fafb" : "#111827",
-                          borderColor: "#d1d5db",
-                          borderRadius: 8,
-                          padding: 8,
-                          marginBottom: 6,
-                          fontSize: 13,
-                        }}
-                      />
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          marginBottom: 4,
-                          color: "#6b7280",
-                        }}
-                      >
-                        Start Date
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => setShowSubtaskStartCalendar(true)}
-                        style={{
-                          padding: 8,
-                          borderWidth: 1,
-                          borderColor: "#d1d5db",
-                          borderRadius: 8,
-                          marginBottom: 6,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 13,
-                            color: isDarkmode ? "#e5e7eb" : "#111827",
-                          }}
-                        >
-                          {subtaskStartDate
-                            ? formatDate(subtaskStartDate)
-                            : "Select start date (optional)"}
-                        </Text>
-                      </TouchableOpacity>
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          marginBottom: 4,
-                          color: "#6b7280",
-                        }}
-                      >
-                        Due Date
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => setShowSubtaskCalendar(true)}
-                        style={{
-                          padding: 8,
-                          borderWidth: 1,
-                          borderColor: "#d1d5db",
-                          borderRadius: 8,
-                          marginBottom: 8,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 13,
-                            color: isDarkmode ? "#e5e7eb" : "#111827",
-                          }}
-                        >
-                          {subtaskDueDate
-                            ? formatDate(subtaskDueDate)
-                            : "Select due date"}
-                        </Text>
-                      </TouchableOpacity>
-                      <Button text="Add Subtask" onPress={handleAddSubtask} />
-                    </View>
-
-                    {/* Comments */}
-                    <View
-                      style={{
-                        height: 1,
-                        backgroundColor: isDarkmode ? "#1f2937" : "#e5e7eb",
-                        marginVertical: 12,
-                      }}
-                    />
-                    <Text
-                      fontWeight="bold"
-                      style={{ fontSize: 16, marginBottom: 6 }}
-                    >
-                      Comments
-                    </Text>
-                    {comments.map((c) => (
-                      <View
-                        key={c.id}
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          paddingVertical: 6,
-                        }}
-                      >
-                        <View style={{ flex: 1, marginRight: 10 }}>
-                          <Text
-                            style={{
-                              color: isDarkmode ? "#f9fafb" : "#111827",
-                              fontSize: 13,
-                            }}
-                          >
-                            {c.text}
-                          </Text>
-                          {c.createdAt && (
-                            <Text style={{ fontSize: 11, color: "#9ca3af" }}>
-                              {new Date(c.createdAt).toLocaleString()}
-                            </Text>
-                          )}
-                          {c.user && (
-                            <Text style={{ fontSize: 11, color: "#9ca3af" }}>
-                              By: {c.user.name}
+                              Due: {formatDate(new Date(st.dueDate))}
                             </Text>
                           )}
                         </View>
                         <TouchableOpacity
-                          onPress={() => handleDeleteComment(c.id)}
+                          onPress={() => handleDeleteSubtask(st)}
+                          style={{ paddingHorizontal: 4 }}
                         >
                           <Ionicons
                             name="trash-outline"
@@ -1867,202 +1789,303 @@ export default function TaskMenuScreen() {
                         </TouchableOpacity>
                       </View>
                     ))}
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        columnGap: 8,
-                        marginTop: 4,
-                      }}
-                    >
+
+                    {/* Add subtask */}
+                    <Card style={{ marginTop: theme.spacing.sm }}>
+                      <Text style={styles.label}>New Subtask</Text>
+                      <RNTextInput
+                        placeholder="Subtask name"
+                        placeholderTextColor={theme.colors.textMuted}
+                        value={subtaskName}
+                        onChangeText={setSubtaskName}
+                        style={styles.input}
+                      />
+                      <RNTextInput
+                        placeholder="Subtask details (optional)"
+                        placeholderTextColor={theme.colors.textMuted}
+                        value={subtaskDetails}
+                        onChangeText={setSubtaskDetails}
+                        style={styles.input}
+                      />
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          columnGap: theme.spacing.sm,
+                          marginBottom: theme.spacing.sm,
+                        }}
+                      >
+                        <TouchableOpacity
+                          onPress={() => setShowSubtaskStartCalendar(true)}
+                          style={[
+                            styles.chipButton,
+                            {
+                              flex: 1,
+                              backgroundColor: theme.colors.card,
+                              borderWidth: 1,
+                              borderColor: theme.colors.border,
+                            },
+                          ]}
+                        >
+                          <Text style={styles.chipButtonText}>
+                            {subtaskStartDate
+                              ? formatDate(subtaskStartDate)
+                              : "Start date"}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => setShowSubtaskCalendar(true)}
+                          style={[
+                            styles.chipButton,
+                            {
+                              flex: 1,
+                              backgroundColor: theme.colors.card,
+                              borderWidth: 1,
+                              borderColor: theme.colors.border,
+                            },
+                          ]}
+                        >
+                          <Text style={styles.chipButtonText}>
+                            {subtaskDueDate
+                              ? formatDate(subtaskDueDate)
+                              : "Due date"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity
+                        onPress={handleAddSubtask}
+                        style={[
+                          styles.chipButton,
+                          { backgroundColor: MODULE_COLOR },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.chipButtonText, { color: "#fff" }]}
+                        >
+                          Add Subtask
+                        </Text>
+                      </TouchableOpacity>
+                    </Card>
+                  </View>
+
+                  {/* Comments */}
+                  <View style={{ marginTop: theme.spacing.md }}>
+                    <Text style={styles.modalHeroTitle}>Comments</Text>
+                    {comments.length === 0 && (
+                      <Text
+                        style={{
+                          fontSize: theme.typography.fontSizes.xs,
+                          color: theme.colors.textSecondary,
+                          marginTop: 4,
+                        }}
+                      >
+                        No comments yet.
+                      </Text>
+                    )}
+                    {comments.map((c) => (
+                      <View key={c.id} style={styles.commentCard}>
+                        <View style={styles.commentHeaderRow}>
+                          <Text style={styles.commentAuthor}>
+                            {c.user?.name || "User"}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => handleDeleteComment(c.id)}
+                          >
+                            <Ionicons
+                              name="trash-outline"
+                              size={16}
+                              color={theme.colors.textSecondary}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                        <Text style={styles.commentText}>{c.text}</Text>
+                      </View>
+                    ))}
+
+                    <View style={styles.commentRow}>
                       <RNTextInput
                         placeholder="Add comment..."
+                        placeholderTextColor={theme.colors.textMuted}
                         value={commentText}
                         onChangeText={setCommentText}
-                        style={{
-                          flex: 1,
-                          backgroundColor: isDarkmode ? "#020617" : "#ffffff",
-                          color: isDarkmode ? "#f9fafb" : "#111827",
-                          borderColor: "#d1d5db",
-                          borderWidth: 1,
-                          borderRadius: 8,
-                          paddingHorizontal: 10,
-                          height: 40,
-                          fontSize: 13,
-                        }}
+                        style={styles.commentInput}
                       />
-                      <Button text="Comment" onPress={handleAddComment} />
+                      <TouchableOpacity
+                        onPress={handleAddComment}
+                        style={[
+                          styles.chipButton,
+                          { backgroundColor: MODULE_COLOR },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.chipButtonText, { color: "#fff" }]}
+                        >
+                          Comment
+                        </Text>
+                      </TouchableOpacity>
                     </View>
+                  </View>
 
-                    {/* Delete Task */}
-                    <Button
-                      text="Delete Task"
-                      color="red"
+                  {/* Save & Delete buttons */}
+                  <View style={{ marginTop: theme.spacing.lg }}>
+                    <TouchableOpacity
+                      onPress={handleSaveMainTask}
+                      style={[
+                        styles.chipButton,
+                        { backgroundColor: MODULE_COLOR },
+                      ]}
+                    >
+                      <Text style={[styles.chipButtonText, { color: "#fff" }]}>
+                        Save Changes
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       onPress={() => handleDeleteTask(selectedTask.id)}
-                      style={{ marginTop: 12 }}
-                    />
-                  </ScrollView>
-
-                  {/* Calendars inside modal */}
-                  {showTaskStartCalendar && (
-                    <Modal transparent animationType="fade">
-                      <TouchableOpacity
-                        style={{
-                          flex: 1,
-                          backgroundColor: "rgba(0,0,0,0.5)",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                        activeOpacity={1}
-                        onPress={() => setShowTaskStartCalendar(false)}
+                      style={[
+                        styles.chipButton,
+                        {
+                          marginTop: theme.spacing.sm,
+                          backgroundColor: "#fee2e2",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.chipButtonText, { color: "#b91c1c" }]}
                       >
-                        <View
-                          style={{
-                            width: "90%",
-                            backgroundColor: isDarkmode
-                              ? "#020617"
-                              : themeColor.white,
-                            borderRadius: 12,
-                            padding: 10,
-                          }}
-                        >
-                          <Calendar
-                            current={
-                              taskStartDate
-                                ? taskStartDate.toISOString().split("T")[0]
-                                : todayStr
-                            }
-                            onDayPress={onSelectTaskStartDate}
-                          />
-                          <Button
-                            text="Close"
-                            onPress={() => setShowTaskStartCalendar(false)}
-                            style={{ marginTop: 10 }}
-                          />
-                        </View>
-                      </TouchableOpacity>
-                    </Modal>
-                  )}
+                        Delete Task
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </KeyboardAvoidingView>
+          </Modal>
+        )}
 
-                  {showTaskDueCalendar && (
-                    <Modal transparent animationType="fade">
-                      <TouchableOpacity
-                        style={{
-                          flex: 1,
-                          backgroundColor: "rgba(0,0,0,0.5)",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                        activeOpacity={1}
-                        onPress={() => setShowTaskDueCalendar(false)}
-                      >
-                        <View
-                          style={{
-                            width: "90%",
-                            backgroundColor: isDarkmode
-                              ? "#020617"
-                              : themeColor.white,
-                            borderRadius: 12,
-                            padding: 10,
-                          }}
-                        >
-                          <Calendar
-                            current={
-                              taskDueDate
-                                ? taskDueDate.toISOString().split("T")[0]
-                                : todayStr
-                            }
-                            onDayPress={onSelectTaskDueDate}
-                          />
-                          <Button
-                            text="Close"
-                            onPress={() => setShowTaskDueCalendar(false)}
-                            style={{ marginTop: 10 }}
-                          />
-                        </View>
-                      </TouchableOpacity>
-                    </Modal>
-                  )}
+        {/* CALENDAR MODALS (unchanged logic) */}
+        {showTaskStartCalendar && (
+          <Modal transparent animationType="fade">
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: "rgba(0,0,0,0.5)",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              activeOpacity={1}
+              onPress={() => setShowTaskStartCalendar(false)}
+            >
+              <View
+                style={{
+                  width: "90%",
+                  backgroundColor: theme.colors.card,
+                  borderRadius: 12,
+                  padding: theme.spacing.sm,
+                }}
+              >
+                <Calendar
+                  current={
+                    taskStartDate
+                      ? taskStartDate.toISOString().split("T")[0]
+                      : todayStr
+                  }
+                  onDayPress={onSelectTaskStartDate}
+                />
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
 
-                  {showSubtaskStartCalendar && (
-                    <Modal transparent animationType="fade">
-                      <TouchableOpacity
-                        style={{
-                          flex: 1,
-                          backgroundColor: "rgba(0,0,0,0.5)",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                        activeOpacity={1}
-                        onPress={() => setShowSubtaskStartCalendar(false)}
-                      >
-                        <View
-                          style={{
-                            width: "90%",
-                            backgroundColor: isDarkmode
-                              ? "#020617"
-                              : themeColor.white,
-                            borderRadius: 12,
-                            padding: 10,
-                          }}
-                        >
-                          <Calendar
-                            current={
-                              subtaskStartDate
-                                ? subtaskStartDate.toISOString().split("T")[0]
-                                : todayStr
-                            }
-                            onDayPress={onSelectSubtaskStartDate}
-                          />
-                          <Button
-                            text="Close"
-                            onPress={() => setShowSubtaskStartCalendar(false)}
-                            style={{ marginTop: 10 }}
-                          />
-                        </View>
-                      </TouchableOpacity>
-                    </Modal>
-                  )}
+        {showTaskDueCalendar && (
+          <Modal transparent animationType="fade">
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: "rgba(0,0,0,0.5)",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              activeOpacity={1}
+              onPress={() => setShowTaskDueCalendar(false)}
+            >
+              <View
+                style={{
+                  width: "90%",
+                  backgroundColor: theme.colors.card,
+                  borderRadius: 12,
+                  padding: theme.spacing.sm,
+                }}
+              >
+                <Calendar
+                  current={
+                    taskDueDate
+                      ? taskDueDate.toISOString().split("T")[0]
+                      : todayStr
+                  }
+                  onDayPress={onSelectTaskDueDate}
+                />
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
 
-                  {showSubtaskCalendar && (
-                    <Modal transparent animationType="fade">
-                      <TouchableOpacity
-                        style={{
-                          flex: 1,
-                          backgroundColor: "rgba(0,0,0,0.5)",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                        activeOpacity={1}
-                        onPress={() => setShowSubtaskCalendar(false)}
-                      >
-                        <View
-                          style={{
-                            width: "90%",
-                            backgroundColor: isDarkmode
-                              ? "#020617"
-                              : themeColor.white,
-                            borderRadius: 12,
-                            padding: 10,
-                          }}
-                        >
-                          <Calendar
-                            current={todayStr}
-                            onDayPress={onSelectSubtaskDate}
-                          />
-                          <Button
-                            text="Close"
-                            onPress={() => setShowSubtaskCalendar(false)}
-                            style={{ marginTop: 10 }}
-                          />
-                        </View>
-                      </TouchableOpacity>
-                    </Modal>
-                  )}
-                </View>
-              </KeyboardAvoidingView>
-            </Modal>
-          )}
-        </View>
+        {showSubtaskStartCalendar && (
+          <Modal transparent animationType="fade">
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: "rgba(0,0,0,0.5)",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              activeOpacity={1}
+              onPress={() => setShowSubtaskStartCalendar(false)}
+            >
+              <View
+                style={{
+                  width: "90%",
+                  backgroundColor: theme.colors.card,
+                  borderRadius: 12,
+                  padding: theme.spacing.sm,
+                }}
+              >
+                <Calendar
+                  current={
+                    subtaskStartDate
+                      ? subtaskStartDate.toISOString().split("T")[0]
+                      : todayStr
+                  }
+                  onDayPress={onSelectSubtaskStartDate}
+                />
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
+
+        {showSubtaskCalendar && (
+          <Modal transparent animationType="fade">
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: "rgba(0,0,0,0.5)",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              activeOpacity={1}
+              onPress={() => setShowSubtaskCalendar(false)}
+            >
+              <View
+                style={{
+                  width: "90%",
+                  backgroundColor: theme.colors.card,
+                  borderRadius: 12,
+                  padding: theme.spacing.sm,
+                }}
+              >
+                <Calendar current={todayStr} onDayPress={onSelectSubtaskDate} />
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
 
         {/* ADD MENU */}
         <Modal
@@ -2081,35 +2104,60 @@ export default function TaskMenuScreen() {
             activeOpacity={1}
             onPressOut={() => setShowAddMenu(false)}
           >
-            <View
+            <Card
               style={{
                 width: "70%",
-                backgroundColor: isDarkmode
-                  ? themeColor.dark
-                  : themeColor.white,
-                borderRadius: 12,
-                padding: 16,
+                borderRadius: 16,
+                padding: theme.spacing.md,
               }}
             >
-              <Text fontWeight="bold" style={{ marginBottom: 10 }}>
+              <Text
+                style={{
+                  fontSize: theme.typography.fontSizes.md,
+                  fontWeight: theme.typography.fontWeights.bold,
+                  marginBottom: theme.spacing.sm,
+                  color: theme.colors.textPrimary,
+                }}
+              >
                 Add...
               </Text>
-              <Button
-                text="Add Task"
+              <TouchableOpacity
                 onPress={() => {
                   setShowAddMenu(false);
                   router.push("/modules/task-management/TaskAdd");
                 }}
-                style={{ marginBottom: 8 }}
-              />
-              <Button
-                text="Add Event"
+                style={[
+                  styles.chipButton,
+                  {
+                    backgroundColor: MODULE_COLOR,
+                    marginBottom: theme.spacing.sm,
+                  },
+                ]}
+              >
+                <Text style={[styles.chipButtonText, { color: "#fff" }]}>
+                  Add Task
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => {
                   setShowAddMenu(false);
                   router.push("/modules/task-management/EventAdd");
                 }}
-              />
-            </View>
+                style={[
+                  styles.chipButton,
+                  { backgroundColor: theme.colors.cardMuted || "#e5e7eb" },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chipButtonText,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  Add Event
+                </Text>
+              </TouchableOpacity>
+            </Card>
           </TouchableOpacity>
         </Modal>
 
@@ -2130,78 +2178,107 @@ export default function TaskMenuScreen() {
             activeOpacity={1}
             onPressOut={() => setShowListMenu(false)}
           >
-            <View
+            <Card
               style={{
                 width: "70%",
-                backgroundColor: isDarkmode
-                  ? themeColor.dark
-                  : themeColor.white,
-                borderRadius: 12,
-                padding: 16,
+                borderRadius: 16,
+                padding: theme.spacing.md,
               }}
             >
-              <Text fontWeight="bold" style={{ marginBottom: 10 }}>
+              <Text
+                style={{
+                  fontSize: theme.typography.fontSizes.md,
+                  fontWeight: theme.typography.fontWeights.bold,
+                  marginBottom: theme.spacing.sm,
+                  color: theme.colors.textPrimary,
+                }}
+              >
                 Go to...
               </Text>
-              <Button
-                text="My Event"
+              <TouchableOpacity
                 onPress={() => {
                   setShowListMenu(false);
                   router.push("/modules/task-management/EventList");
                 }}
-                style={{ marginBottom: 8 }}
-              />
-              <Button
-                text="AI Task Dashboard"
+                style={[
+                  styles.chipButton,
+                  {
+                    backgroundColor: theme.colors.cardMuted || "#e5e7eb",
+                    marginBottom: theme.spacing.sm,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chipButtonText,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  My Event
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => {
                   setShowListMenu(false);
                   router.push("/modules/task-management/TaskDashboard");
                 }}
-                style={{ marginBottom: 8 }}
-              />
-
-              <Button
-                text="My Productivity"
+                style={[
+                  styles.chipButton,
+                  {
+                    backgroundColor: `${MODULE_COLOR}20`,
+                    marginBottom: theme.spacing.sm,
+                  },
+                ]}
+              >
+                <Text style={[styles.chipButtonText, { color: MODULE_COLOR }]}>
+                  AI Task Dashboard
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => {
                   setShowListMenu(false);
                   router.push("/modules/task-management/Gamification");
                 }}
-                style={{ marginBottom: 8 }}
-              />
-              <Button
-                text="My Chart"
+                style={[
+                  styles.chipButton,
+                  {
+                    backgroundColor: theme.colors.cardMuted || "#e5e7eb",
+                    marginBottom: theme.spacing.sm,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chipButtonText,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  My Productivity
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => {
                   setShowListMenu(false);
                   router.push("/modules/task-management/TaskChart");
                 }}
-              />
-            </View>
+                style={[
+                  styles.chipButton,
+                  { backgroundColor: theme.colors.cardMuted || "#e5e7eb" },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chipButtonText,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  My Chart
+                </Text>
+              </TouchableOpacity>
+            </Card>
           </TouchableOpacity>
         </Modal>
-
-        {/* Floating + button */}
-        <TouchableOpacity
-          onPress={() => setShowAddMenu(true)}
-          style={{
-            position: "absolute",
-            right: 24,
-            bottom: 24,
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            backgroundColor: "#2563EB",
-            justifyContent: "center",
-            alignItems: "center",
-            shadowColor: "#000",
-            shadowOpacity: 0.2,
-            shadowRadius: 6,
-            shadowOffset: { width: 0, height: 3 },
-            elevation: 4,
-          }}
-        >
-          <Ionicons name="add" size={28} color="#ffffff" />
-        </TouchableOpacity>
-      </Layout>
-    </KeyboardAvoidingView>
+      </SafeAreaView>
+    </GradientBackground>
   );
 }
