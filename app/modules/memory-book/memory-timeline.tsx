@@ -7,8 +7,7 @@ import {
   Image,
   Alert,
 } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
+import { useRouter } from "expo-router";
 import { Layout, TopNav, useTheme, themeColor } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -23,9 +22,8 @@ import {
 
 import { getStorage, ref, deleteObject } from "firebase/storage";
 
-export default function ({
-  navigation,
-}: NativeStackScreenProps<MainStackParamList, "MemoryTimeline">) {
+export default function MemoryTimeline() {
+  const router = useRouter();
   // ⬇️ now using setTheme as well
   const { isDarkmode, setTheme } = useTheme();
   const [memories, setMemories] = useState<any[]>([]);
@@ -111,7 +109,7 @@ export default function ({
             color={isDarkmode ? themeColor.white100 : themeColor.dark}
           />
         }
-        leftAction={() => navigation.goBack()}
+        leftAction={() => router.back()}
         // ⬇️ theme toggle here (same style as Home / MemoryMenu)
         rightContent={
           <Ionicons
