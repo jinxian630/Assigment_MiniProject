@@ -15,8 +15,7 @@ import {
   themeColor,
 } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
+import { useRouter } from "expo-router";
 import {
   getFirestore,
   collection,
@@ -25,17 +24,15 @@ import {
   where,
 } from "firebase/firestore";
 
-type Props = NativeStackScreenProps<MainStackParamList, "UserSearch">;
-
 type UserItem = {
   id: string;
   displayName?: string;
   email?: string;
 };
 
-export default function UserSearch({ navigation }: Props) {
+export default function UserSearch() {
+  const router = useRouter();
   const { isDarkmode } = useTheme();
-  const colors = themeColor[isDarkmode ? "dark" : "light"];
 
   const [searchText, setSearchText] = useState("");
   const [results, setResults] = useState<UserItem[]>([]);
@@ -92,14 +89,12 @@ export default function UserSearch({ navigation }: Props) {
   const renderItem = ({ item }: { item: UserItem }) => (
     <TouchableOpacity
       onPress={() =>
-        navigation.navigate("UserProfile", {
-          userId: item.id,
-        })
+        router.push(`/modules/memory-book/user-profile?userId=${item.id}`)
       }
       style={styles.resultItem}
     >
       <View style={styles.avatar}>
-        <Ionicons name="person-outline" size={20} color={colors.white100} />
+        <Ionicons name="person-outline" size={20} color={themeColor.white100} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.nameText}>{item.displayName || "No name"}</Text>
@@ -108,7 +103,7 @@ export default function UserSearch({ navigation }: Props) {
       <Ionicons
         name="chevron-forward"
         size={18}
-        color={colors.gray300 || "#9ca3af"}
+        color="#9ca3af"
       />
     </TouchableOpacity>
   );
@@ -121,10 +116,10 @@ export default function UserSearch({ navigation }: Props) {
           <Ionicons
             name="arrow-back"
             size={22}
-            color={isDarkmode ? colors.white100 : colors.dark}
+            color={isDarkmode ? themeColor.white100 : themeColor.dark}
           />
         }
-        leftAction={() => navigation.goBack()}
+        leftAction={() => router.back()}
       />
 
       <View style={styles.container}>

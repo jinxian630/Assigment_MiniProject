@@ -8,8 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
+import { useRouter } from "expo-router";
 import {
   Layout,
   TopNav,
@@ -26,9 +25,8 @@ import * as ImagePicker from "expo-image-picker";
 
 import EmotionSelector, { MoodData } from "./EmotionSelector";
 
-type Props = NativeStackScreenProps<MainStackParamList, "MemoryPostCreate">;
-
-export default function MemoryPostCreate({ navigation }: Props) {
+export default function MemoryPostCreate() {
+  const router = useRouter();
   const { isDarkmode, setTheme } = useTheme();
   const [image, setImage] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
@@ -159,7 +157,7 @@ export default function MemoryPostCreate({ navigation }: Props) {
       });
       setLoading(false);
       alert("Memory post created successfully!");
-      navigation.goBack();
+      router.back();
     } catch (err: any) {
       console.log(err);
       setLoading(false);
@@ -178,7 +176,7 @@ export default function MemoryPostCreate({ navigation }: Props) {
             color={isDarkmode ? themeColor.white100 : themeColor.dark}
           />
         }
-        leftAction={() => navigation.goBack()}
+        leftAction={() => router.back()}
         rightContent={
           <Ionicons
             name={isDarkmode ? "sunny" : "moon"}

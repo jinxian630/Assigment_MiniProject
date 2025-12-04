@@ -8,11 +8,8 @@ import {
   themeColor,
 } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
-
-type Props = NativeStackScreenProps<MainStackParamList, "MemoryPostDetail">;
 
 type PostData = {
   title: string;
@@ -21,10 +18,11 @@ type PostData = {
   startDate?: number;
 };
 
-export default function MemoryPostDetail({ navigation, route }: Props) {
-  const { postId } = route.params;
+export default function MemoryPostDetail() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ postId?: string }>();
+  const postId = typeof params.postId === 'string' ? params.postId : '';
   const { isDarkmode } = useTheme();
-  const colors = themeColor[isDarkmode ? "dark" : "light"];
   const db = getFirestore();
 
   const [post, setPost] = useState<PostData | null>(null);
@@ -32,6 +30,11 @@ export default function MemoryPostDetail({ navigation, route }: Props) {
 
   useEffect(() => {
     const loadPost = async () => {
+      if (!postId) {
+        setPost(null);
+        setLoading(false);
+        return;
+      }
       try {
         const ref = doc(db, "MemoryPosts", postId);
         const snap = await getDoc(ref);
@@ -67,10 +70,10 @@ export default function MemoryPostDetail({ navigation, route }: Props) {
           <Ionicons
             name="chevron-back"
             size={20}
-            color={isDarkmode ? colors.white100 : colors.dark}
+            color={isDarkmode ? themeColor.white100 : themeColor.dark}
           />
         }
-        leftAction={() => navigation.goBack()}
+        leftAction={() => router.back()}
       />
       {loading ? (
         <View style={styles.center}>

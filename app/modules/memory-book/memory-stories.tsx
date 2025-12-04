@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, Image, TouchableOpacity, Dimensions } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
+import { useRouter } from "expo-router";
 import { Layout, TopNav, useTheme, themeColor } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -14,9 +13,8 @@ import {
 
 const { width, height } = Dimensions.get("window");
 
-type Props = NativeStackScreenProps<MainStackParamList, "MemoryStories">;
-
-export default function MemoryStories({ navigation }: Props) {
+export default function MemoryStories() {
+  const router = useRouter();
   // 👇 IMPORTANT: take BOTH isDarkmode and setTheme
   const { isDarkmode, setTheme } = useTheme();
   const [memories, setMemories] = useState<any[]>([]);
@@ -60,7 +58,7 @@ export default function MemoryStories({ navigation }: Props) {
             color={isDarkmode ? themeColor.white100 : themeColor.dark}
           />
         }
-        leftAction={() => navigation.goBack()}
+        leftAction={() => router.back()}
         // 👇 THIS MAKES THE SUN / MOON BUTTON SHOW & WORK
         rightContent={
           <Ionicons
