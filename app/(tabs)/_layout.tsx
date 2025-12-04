@@ -1,5 +1,5 @@
-import { Tabs } from 'expo-router';
-import { TabBar } from '@/components/navigation/TabBar';
+import { Tabs } from "expo-router";
+import { TabBar } from "@/components/navigation/TabBar";
 
 export default function TabsLayout() {
   return (
@@ -14,6 +14,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="add" />
       <Tabs.Screen name="insights" />
       <Tabs.Screen name="profile" />
+      <Tabs.Screen name="MemoryTimeline" />
     </Tabs>
   );
 }

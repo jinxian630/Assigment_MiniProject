@@ -6,11 +6,16 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  StyleSheet,
 } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
-import { Layout, TopNav, useTheme, themeColor } from "react-native-rapi-ui";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { IconButton } from "@/components/common/IconButton";
+import { useTheme } from "@/hooks/useTheme";
+
 import {
   getFirestore,
   collection,
@@ -20,15 +25,25 @@ import {
   doc,
   deleteDoc,
 } from "firebase/firestore";
-
 import { getStorage, ref, deleteObject } from "firebase/storage";
 
-export default function ({
-  navigation,
-}: NativeStackScreenProps<MainStackParamList, "MemoryTimeline">) {
-  // ⬇️ now using setTheme as well
-  const { isDarkmode, setTheme } = useTheme();
-  const [memories, setMemories] = useState<any[]>([]);
+type MemoryDoc = {
+  id: string;
+  title: string;
+  description: string;
+  startDate: number;
+  imageURL: string;
+  CreatedUser?: {
+    CreatedUserName?: string;
+    CreatedUserPhoto?: string;
+  };
+};
+
+export default function MemoryTimelineScreen() {
+  const router = useRouter();
+  const { isDarkMode } = useTheme(); // adjust if your hook exposes different keys
+
+  const [memories, setMemories] = useState<MemoryDoc[]>([]);
   const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,9 +52,9 @@ export default function ({
     const q = query(postsRef, orderBy("startDate", "desc"));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: any[] = [];
-      snapshot.forEach((doc) => {
-        list.push({ id: doc.id, ...doc.data() });
+      const list: MemoryDoc[] = [];
+      snapshot.forEach((d) => {
+        list.push({ id: d.id, ...(d.data() as any) });
       });
       setMemories(list);
     });
@@ -48,16 +63,18 @@ export default function ({
   }, []);
 
   const colors = {
-    primary: isDarkmode ? "#6366f1" : "#8b5cf6",
-    background: isDarkmode ? "#0f172a" : "#f8fafc",
-    surface: isDarkmode ? "#1e293b" : "#ffffff",
-    text: isDarkmode ? "#e2e8f0" : "#1e293b",
-    accent: isDarkmode ? "#3b82f6" : "#10b981",
+    primary: "#38bdf8",
+    background: "#020617",
+    surface: "#020617",
+    text: "#e5e7eb",
+    subtitle: "#9ca3af",
+    accent: "#22c55e",
+    line: "#0ea5e9",
   };
 
-  const groupByYear = (memories: any[]) => {
-    const groups: Record<string, any[]> = {};
-    memories.forEach((memory) => {
+  const groupByYear = (items: MemoryDoc[]) => {
+    const groups: Record<string, MemoryDoc[]> = {};
+    items.forEach((memory) => {
       const year = new Date(memory.startDate).getFullYear().toString();
       if (!groups[year]) groups[year] = [];
       groups[year].push(memory);
@@ -71,21 +88,20 @@ export default function ({
     setExpandedMemoryId(expandedMemoryId === memoryId ? null : memoryId);
   };
 
-  const deleteMemory = async (memoryId: string, imageURL: string) => {
+  const deleteMemory = async (memoryId: string, imageURL?: string) => {
     try {
       const db = getFirestore();
-      const storage = getStorage();
-
-      // 1. Delete the Firestore document
       await deleteDoc(doc(db, "MemoryPosts", memoryId));
 
-      // 2. Delete image from Firebase Storage
-      const imageRef = ref(storage, imageURL);
-      await deleteObject(imageRef);
+      if (imageURL) {
+        const storage = getStorage();
+        const imageRef = ref(storage, imageURL);
+        await deleteObject(imageRef);
+      }
 
-      alert("Memory deleted successfully!");
+      Alert.alert("Success", "Memory deleted successfully!");
     } catch (error: any) {
-      alert("Failed to delete memory: " + error.message);
+      Alert.alert("Error", "Failed to delete memory: " + error.message);
     }
   };
 
@@ -101,88 +117,56 @@ export default function ({
   };
 
   return (
-    <Layout>
-      <TopNav
-        middleContent="Memory Timeline"
-        leftContent={
-          <Ionicons
-            name="chevron-back"
-            size={20}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
+    <GradientBackground>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        <View style={styles.header}>
+          <IconButton
+            icon="arrow-back"
+            onPress={() => router.back()}
+            variant="secondary"
+            size="medium"
           />
-        }
-        leftAction={() => navigation.goBack()}
-        // ⬇️ theme toggle here (same style as Home / MemoryMenu)
-        rightContent={
-          <Ionicons
-            name={isDarkmode ? "sunny" : "moon"}
-            size={20}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
-          />
-        }
-        rightAction={() => {
-          setTheme(isDarkmode ? "light" : "dark");
-        }}
-      />
 
-      <ScrollView style={{ backgroundColor: colors.background, flex: 1 }}>
-        <View style={{ padding: 20, paddingBottom: 100 }}>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>MEMORY TIMELINE</Text>
+            <Text style={styles.headerSubtitle}>
+              Browse your memories chronologically
+            </Text>
+          </View>
+
+          <View style={{ width: 40 }} />
+        </View>
+
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           {memories.length === 0 ? (
-            <View style={{ alignItems: "center", padding: 60 }}>
-              <Ionicons
-                name="time"
-                size={48}
-                color={colors.text}
-                opacity={0.3}
-              />
-              <Text
-                style={{
-                  marginTop: 15,
-                  fontSize: 18,
-                  color: colors.text,
-                  opacity: 0.7,
-                }}
-              >
+            <View style={styles.emptyState}>
+              <Ionicons name="time-outline" size={48} color={colors.subtitle} />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
                 No memories yet
               </Text>
-              <Text
-                style={{
-                  marginTop: 8,
-                  fontSize: 14,
-                  color: colors.text,
-                  opacity: 0.5,
-                }}
-              >
-                Start capturing your moments to see your timeline
+              <Text style={[styles.emptyText, { color: colors.subtitle }]}>
+                Start capturing your moments to see them on the timeline.
               </Text>
             </View>
           ) : (
             Object.entries(groupedMemories)
               .sort(([a], [b]) => parseInt(b) - parseInt(a))
               .map(([year, yearMemories]) => (
-                <View key={year} style={{ marginBottom: 30 }}>
-                  <Text
-                    style={{
-                      fontSize: 24,
-                      fontWeight: "bold",
-                      color: colors.accent,
-                      marginBottom: 20,
-                      textAlign: "center",
-                    }}
-                  >
+                <View key={year} style={styles.yearBlock}>
+                  <Text style={[styles.yearLabel, { color: colors.accent }]}>
                     {year}
                   </Text>
 
-                  <View style={{ position: "relative", paddingLeft: 30 }}>
+                  <View style={styles.timeline}>
                     <View
-                      style={{
-                        position: "absolute",
-                        left: 8,
-                        top: 10,
-                        bottom: 10,
-                        width: 2,
-                        backgroundColor: colors.primary,
-                      }}
+                      style={[
+                        styles.timelineLine,
+                        { backgroundColor: colors.line },
+                      ]}
                     />
 
                     {yearMemories
@@ -199,60 +183,39 @@ export default function ({
                         return (
                           <View
                             key={memory.id}
-                            style={{ marginBottom: 25, position: "relative" }}
+                            style={styles.memoryItemWrapper}
                           >
                             <View
-                              style={{
-                                position: "absolute",
-                                left: -22,
-                                top: 20,
-                                width: 16,
-                                height: 16,
-                                borderRadius: 8,
-                                backgroundColor: colors.accent,
-                                borderWidth: 2,
-                                borderColor: colors.background,
-                              }}
+                              style={[
+                                styles.timelineDot,
+                                { backgroundColor: colors.accent },
+                              ]}
                             />
 
-                            <View
-                              style={{
-                                position: "absolute",
-                                right: 12,
-                                top: 12,
-                                backgroundColor: colors.primary,
-                                paddingHorizontal: 8,
-                                paddingVertical: 4,
-                                borderRadius: 12,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: "white",
-                                  fontSize: 12,
-                                  fontWeight: "600",
-                                }}
+                            <View style={styles.datePillWrapper}>
+                              <View
+                                style={[
+                                  styles.datePill,
+                                  { backgroundColor: colors.primary },
+                                ]}
                               >
-                                {monthDay}
-                              </Text>
+                                <Text style={styles.datePillText}>
+                                  {monthDay}
+                                </Text>
+                              </View>
                             </View>
 
                             <TouchableOpacity
                               onPress={() => toggleExpand(memory.id)}
-                              style={{
-                                backgroundColor: colors.surface,
-                                borderRadius: 12,
-                                padding: 16,
-                                shadowColor: "#000",
-                                shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: 0.1,
-                                shadowRadius: 4,
-                                elevation: 3,
-                              }}
+                              activeOpacity={0.9}
+                              style={[
+                                styles.memoryCard,
+                                { backgroundColor: colors.surface },
+                              ]}
                             >
                               {/* Delete button */}
                               <TouchableOpacity
-                                onPress={() => {
+                                onPress={() =>
                                   Alert.alert(
                                     "Delete memory",
                                     "Are you sure you want to delete this memory?",
@@ -268,80 +231,51 @@ export default function ({
                                           ),
                                       },
                                     ]
-                                  );
-                                }}
-                                style={{
-                                  position: "absolute",
-                                  top: 12,
-                                  right: 12,
-                                  width: 30,
-                                  height: 30,
-                                  borderRadius: 15,
-                                  backgroundColor: "rgba(239, 68, 68, 0.8)",
-                                  justifyContent: "center",
-                                  alignItems: "center",
-                                  zIndex: 10,
-                                  shadowColor: "#000",
-                                  shadowOffset: { width: 0, height: 2 },
-                                  shadowOpacity: 0.3,
-                                  shadowRadius: 4,
-                                  elevation: 5,
-                                }}
+                                  )
+                                }
+                                style={styles.deleteButton}
                               >
                                 <Ionicons
                                   name="trash-outline"
                                   size={16}
-                                  color="white"
+                                  color="#fff"
                                 />
                               </TouchableOpacity>
 
-                              <View
-                                style={{
-                                  width: "100%",
-                                  height: isExpanded ? 400 : 120,
-                                  marginBottom: 12,
-                                  overflow: "hidden",
-                                }}
-                              >
-                                <Image
-                                  source={{ uri: memory.imageURL }}
-                                  style={{
-                                    width: "100%",
-                                    height: "100%",
-                                    borderRadius: 8,
-                                    resizeMode: isExpanded
-                                      ? "contain"
-                                      : "cover",
-                                  }}
-                                />
-                              </View>
+                              {memory.imageURL ? (
+                                <View
+                                  style={[
+                                    styles.imageWrapper,
+                                    {
+                                      height: isExpanded ? 260 : 140,
+                                    },
+                                  ]}
+                                >
+                                  <Image
+                                    source={{ uri: memory.imageURL }}
+                                    style={[
+                                      styles.image,
+                                      {
+                                        resizeMode: isExpanded
+                                          ? "contain"
+                                          : "cover",
+                                      },
+                                    ]}
+                                  />
+                                </View>
+                              ) : null}
 
                               <Text
                                 numberOfLines={2}
-                                style={{
-                                  fontSize: 18,
-                                  fontWeight: "600",
-                                  color: colors.text,
-                                  marginBottom: 8,
-                                }}
+                                style={[
+                                  styles.memoryTitle,
+                                  { color: colors.text },
+                                ]}
                               >
                                 {memory.title}
                               </Text>
 
-                              <View
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  marginBottom: 8,
-                                  paddingVertical: 4,
-                                  paddingHorizontal: 8,
-                                  backgroundColor: isDarkmode
-                                    ? "#1a1f2e"
-                                    : "#f1f5f9",
-                                  borderRadius: 8,
-                                  alignSelf: "flex-start",
-                                }}
-                              >
+                              <View style={styles.timeRow}>
                                 <Ionicons
                                   name="time-outline"
                                   size={14}
@@ -349,11 +283,10 @@ export default function ({
                                   style={{ marginRight: 4 }}
                                 />
                                 <Text
-                                  style={{
-                                    fontSize: 12,
-                                    color: colors.accent,
-                                    fontWeight: "600",
-                                  }}
+                                  style={[
+                                    styles.timeText,
+                                    { color: colors.accent },
+                                  ]}
                                 >
                                   {formatDate(memory.startDate)}
                                 </Text>
@@ -361,30 +294,20 @@ export default function ({
 
                               <Text
                                 numberOfLines={isExpanded ? undefined : 3}
-                                style={{
-                                  fontSize: 14,
-                                  color: colors.text,
-                                  opacity: 0.8,
-                                  lineHeight: 20,
-                                }}
+                                style={[
+                                  styles.memoryDescription,
+                                  { color: colors.text },
+                                ]}
                               >
                                 {memory.description}
                               </Text>
 
-                              <View
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  marginTop: 8,
-                                }}
-                              >
+                              <View style={styles.readMoreRow}>
                                 <Text
-                                  style={{
-                                    fontSize: 12,
-                                    color: colors.primary,
-                                    fontWeight: "600",
-                                  }}
+                                  style={[
+                                    styles.readMoreText,
+                                    { color: colors.primary },
+                                  ]}
                                 >
                                   {isExpanded ? "Show less" : "Read more"}
                                 </Text>
@@ -399,55 +322,29 @@ export default function ({
                               </View>
 
                               {memory.CreatedUser?.CreatedUserName && (
-                                <View
-                                  style={{
-                                    flexDirection: "row",
-                                    alignItems: "center",
-                                    marginTop: 12,
-                                  }}
-                                >
+                                <View style={styles.userRow}>
                                   {memory.CreatedUser?.CreatedUserPhoto ? (
                                     <Image
                                       source={{
                                         uri: memory.CreatedUser
                                           .CreatedUserPhoto,
                                       }}
-                                      style={{
-                                        width: 20,
-                                        height: 20,
-                                        borderRadius: 10,
-                                        marginRight: 8,
-                                      }}
+                                      style={styles.userAvatar}
                                     />
                                   ) : (
-                                    <View
-                                      style={{
-                                        width: 20,
-                                        height: 20,
-                                        borderRadius: 10,
-                                        backgroundColor: isDarkmode
-                                          ? "#334155"
-                                          : "#d1d5db",
-                                        marginRight: 8,
-                                        justifyContent: "center",
-                                        alignItems: "center",
-                                      }}
-                                    >
+                                    <View style={styles.userAvatarPlaceholder}>
                                       <Ionicons
                                         name="person-outline"
                                         size={12}
-                                        color={
-                                          isDarkmode ? "#94a3b8" : "#64748b"
-                                        }
+                                        color={colors.subtitle}
                                       />
                                     </View>
                                   )}
                                   <Text
-                                    style={{
-                                      fontSize: 12,
-                                      color: colors.text,
-                                      opacity: 0.7,
-                                    }}
+                                    style={[
+                                      styles.userName,
+                                      { color: colors.subtitle },
+                                    ]}
                                   >
                                     {memory.CreatedUser?.CreatedUserName}
                                   </Text>
@@ -461,8 +358,192 @@ export default function ({
                 </View>
               ))
           )}
-        </View>
-      </ScrollView>
-    </Layout>
+        </ScrollView>
+      </SafeAreaView>
+    </GradientBackground>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  headerCenter: {
+    alignItems: "center",
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: "#e5e7eb",
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    color: "#9ca3af",
+    marginTop: 2,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    paddingTop: 16,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 80,
+  },
+  emptyTitle: {
+    marginTop: 15,
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  emptyText: {
+    marginTop: 8,
+    fontSize: 14,
+    textAlign: "center",
+  },
+  yearBlock: {
+    marginBottom: 32,
+  },
+  yearLabel: {
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  timeline: {
+    position: "relative",
+    paddingLeft: 40,
+  },
+  timelineLine: {
+    position: "absolute",
+    left: 16,
+    top: 0,
+    bottom: 0,
+    width: 2,
+  },
+  memoryItemWrapper: {
+    marginBottom: 24,
+    position: "relative",
+  },
+  timelineDot: {
+    position: "absolute",
+    left: 9,
+    top: 24,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#020617",
+  },
+  datePillWrapper: {
+    position: "absolute",
+    right: 16,
+    top: 14,
+    zIndex: 2,
+  },
+  datePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  datePillText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  memoryCard: {
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  deleteButton: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(239,68,68,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 3,
+  },
+  imageWrapper: {
+    width: "100%",
+    marginBottom: 12,
+    overflow: "hidden",
+    borderRadius: 10,
+  },
+  image: {
+    width: "100%",
+    height: "100%",
+  },
+  memoryTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 6,
+  },
+  timeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  timeText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  memoryDescription: {
+    fontSize: 14,
+    opacity: 0.9,
+    lineHeight: 20,
+  },
+  readMoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  readMoreText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  userRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 12,
+  },
+  userAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  userAvatarPlaceholder: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#1f2937",
+    marginRight: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  userName: {
+    fontSize: 12,
+  },
+});

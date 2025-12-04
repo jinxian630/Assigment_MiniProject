@@ -1,211 +1,727 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { GradientBackground } from '@/components/common/GradientBackground';
-import { IconButton } from '@/components/common/IconButton';
-import { Card } from '@/components/common/Card';
-import { Theme } from '@/constants/theme';
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  ScrollView,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
-const MODULE_COLOR = '#FF6B9D';
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { IconButton } from "@/components/common/IconButton";
+import { useTheme } from "@/hooks/useTheme";
+
+import {
+  getFirestore,
+  collection,
+  query,
+  orderBy,
+  limit,
+  onSnapshot,
+} from "firebase/firestore";
+
+type Memory = {
+  id: string;
+  title: string;
+  description: string;
+  mood?: string;
+  startDate?: number;
+  imageURL?: string;
+};
+
+const MODULE_PURPLE = "#a855f7"; // main violet
+const MODULE_PURPLE_SOFT = "#4c1d95";
 
 export default function MemoryBookScreen() {
   const router = useRouter();
+  const { theme, isDarkMode } = useTheme();
+
+  const [latestMemory, setLatestMemory] = useState<Memory | null>(null);
+  const [totalMemories, setTotalMemories] = useState(0);
+
+  useEffect(() => {
+    const db = getFirestore();
+    const postsRef = collection(db, "MemoryPosts");
+
+    // latest 1 memory
+    const qLatest = query(postsRef, orderBy("startDate", "desc"), limit(1));
+    const unsubLatest = onSnapshot(qLatest, (snapshot) => {
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        setLatestMemory({ id: doc.id, ...(doc.data() as any) });
+      } else {
+        setLatestMemory(null);
+      }
+    });
+
+    // total count
+    const qAll = query(postsRef, orderBy("startDate", "desc"));
+    const unsubAll = onSnapshot(qAll, (snapshot) => {
+      setTotalMemories(snapshot.size);
+    });
+
+    return () => {
+      unsubLatest();
+      unsubAll();
+    };
+  }, []);
+
+  const formatShortDate = (timestamp?: number) => {
+    if (!timestamp) return "";
+    const d = new Date(timestamp);
+    return d.toLocaleDateString("en-US", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const colors = {
+    bg: isDarkMode ? "#020617" : "#0b1020",
+    card: isDarkMode ? "#020617" : "#020617",
+    headerBorder: MODULE_PURPLE,
+    headerBg: "#020617",
+    textMain: "#e5e7eb",
+    textSoft: "#9ca3af",
+    accent: MODULE_PURPLE,
+    accentSoft: MODULE_PURPLE_SOFT,
+    divider: "#1f2937",
+    chipBg: "rgba(168, 85, 247, 0.16)",
+    chipBorder: "rgba(216, 180, 254, 0.8)",
+  };
 
   return (
     <GradientBackground>
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        {/* Top header / module title */}
+        <View style={styles.header}>
+          <IconButton
+            icon="arrow-back"
+            onPress={() => router.back()}
+            variant="secondary"
+            size="medium"
+          />
+
+          <View style={styles.headerCenter}>
+            <Text style={[styles.moduleLabel, { color: colors.textSoft }]}>
+              MEMORY BOOK
+            </Text>
+            <View style={styles.iconBlock}>
+              <View
+                style={[
+                  styles.iconCircle,
+                  {
+                    borderColor: MODULE_PURPLE,
+                    shadowColor: MODULE_PURPLE,
+                  },
+                ]}
+              >
+                <Ionicons name="book-outline" size={26} color={MODULE_PURPLE} />
+              </View>
+            </View>
+            <Text style={[styles.moduleName, { color: colors.textMain }]}>
+              Memory Book
+            </Text>
+            <Text style={[styles.moduleTagline, { color: colors.textSoft }]}>
+              Save your moments, moods & reflections.
+            </Text>
+          </View>
+
+          <View style={{ width: 40 }} />
+        </View>
+
         <ScrollView
-          style={styles.scrollView}
+          style={[styles.scrollView, { backgroundColor: "transparent" }]}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <IconButton
-              icon="arrow-back"
-              onPress={() => router.back()}
-              variant="secondary"
-              size="medium"
-            />
-            <Text style={styles.headerTitle}>Memory Book</Text>
-            <View style={{ width: 48 }} />
-          </View>
-
-          {/* Module Icon */}
-          <View style={styles.iconSection}>
-            <View style={[styles.iconContainer, { backgroundColor: `${MODULE_COLOR}20` }]}>
-              <Ionicons name="book-outline" size={64} color={MODULE_COLOR} />
-            </View>
-            <Text style={styles.moduleTitle}>Memory Book</Text>
-            <Text style={styles.moduleSubtitle}>Capture your precious moments</Text>
-          </View>
-
-          {/* Empty State */}
-          <Card style={styles.emptyCard}>
-            <View style={styles.emptyContent}>
-              <View style={styles.dashedBorder}>
-                <Text style={styles.emptyIcon}>📖</Text>
-                <Text style={styles.emptyTitle}>No content yet</Text>
-                <Text style={styles.emptyMessage}>
-                  Your memories will appear here.{'\n'}
-                  Start adding your precious moments!
+          {/* Overview / stats card */}
+          <View
+            style={[
+              styles.overviewCard,
+              {
+                backgroundColor: colors.headerBg,
+                borderColor: colors.headerBorder,
+              },
+            ]}
+          >
+            {/* Top row: stats + chips */}
+            <View style={styles.overviewTopRow}>
+              <View>
+                <Text
+                  style={[styles.overviewLabel, { color: colors.textSoft }]}
+                >
+                  Memories recorded
+                </Text>
+                <Text
+                  style={[styles.overviewValue, { color: colors.textMain }]}
+                >
+                  {totalMemories}
                 </Text>
               </View>
-            </View>
-          </Card>
 
-          {/* Placeholder Timeline */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Memory Timeline</Text>
-            <View style={styles.timelinePlaceholder}>
-              <Text style={styles.placeholderText}>Timeline view coming soon...</Text>
+              <View style={styles.overviewChipRow}>
+                {latestMemory && (
+                  <View
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: colors.chipBg,
+                        borderColor: colors.chipBorder,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={14}
+                      color={colors.accent}
+                    />
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.chipText, { color: colors.textMain }]}
+                    >
+                      Last: {latestMemory.title}
+                    </Text>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push("/modules/memory-book/MemoryTimeline")
+                  }
+                  style={[
+                    styles.chipButton,
+                    {
+                      backgroundColor: MODULE_PURPLE,
+                      shadowColor: MODULE_PURPLE,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="time-outline"
+                    size={14}
+                    color="#f9fafb"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.chipButtonText}>Open timeline</Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={14}
+                    color="#f9fafb"
+                    style={{ marginLeft: 1 }}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
+
+            {/* Divider */}
+            <View
+              style={[styles.divider, { backgroundColor: colors.divider }]}
+            />
+
+            {/* Latest memory preview / empty state */}
+            {latestMemory ? (
+              <View style={styles.previewRow}>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[styles.sectionLabel, { color: colors.textSoft }]}
+                  >
+                    Today&apos;s reflection
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.previewTitle, { color: colors.textMain }]}
+                  >
+                    {latestMemory.title}
+                  </Text>
+                  <Text
+                    numberOfLines={2}
+                    style={[
+                      styles.previewDescription,
+                      { color: colors.textSoft },
+                    ]}
+                  >
+                    {latestMemory.description}
+                  </Text>
+
+                  <View style={styles.previewMetaRow}>
+                    {latestMemory.mood && (
+                      <View
+                        style={[
+                          styles.moodPill,
+                          { backgroundColor: colors.accentSoft },
+                        ]}
+                      >
+                        <Ionicons
+                          name="happy-outline"
+                          size={14}
+                          color="#f9fafb"
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={styles.moodText}>{latestMemory.mood}</Text>
+                      </View>
+                    )}
+                    {latestMemory.startDate && (
+                      <Text
+                        style={[styles.dateText, { color: colors.textSoft }]}
+                      >
+                        {formatShortDate(latestMemory.startDate)}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons
+                  name="images-outline"
+                  size={28}
+                  color={colors.textSoft}
+                />
+                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
+                  No memories yet
+                </Text>
+                <Text
+                  style={[styles.emptySubtitle, { color: colors.textSoft }]}
+                >
+                  Start by creating your first memory with a photo and story.
+                </Text>
+              </View>
+            )}
           </View>
 
-          {/* Disabled Add Button */}
-          <View style={styles.addButtonContainer}>
-            <IconButton
-              icon="add"
-              onPress={() => {}}
-              variant="primary"
-              size="large"
-              disabled
-              style={[styles.addButton, { backgroundColor: Theme.colors.disabled }]}
-            />
+          {/* Timeline section */}
+          <View style={styles.sectionBlock}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.textMain }]}>
+                Timeline
+              </Text>
+              <Text
+                style={[styles.sectionSubtitle, { color: colors.textSoft }]}
+              >
+                Browse everything you’ve saved, by year and date.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => router.push("/modules/memory-book/MemoryTimeline")}
+              style={[
+                styles.primaryRow,
+                {
+                  borderColor: MODULE_PURPLE,
+                  backgroundColor: "#020617",
+                },
+              ]}
+            >
+              <View style={styles.rowIconCircle}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={18}
+                  color={MODULE_PURPLE}
+                />
+              </View>
+              <View style={styles.rowTextBlock}>
+                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
+                  View full timeline
+                </Text>
+                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
+                  Scroll through memories in chronological order.
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textSoft}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick actions */}
+          <View style={styles.sectionBlock}>
+            <Text style={[styles.sectionTitle, { color: colors.textMain }]}>
+              Quick actions
+            </Text>
+
+            {/* New Memory */}
+            <TouchableOpacity
+              onPress={() =>
+                router.push("/modules/memory-book/MemoryPostCreate")
+              }
+              style={[
+                styles.secondaryRow,
+                { backgroundColor: "#020617", borderColor: "#4b5563" },
+              ]}
+            >
+              <View
+                style={[
+                  styles.rowIconCircle,
+                  { backgroundColor: "rgba(168,85,247,0.15)" },
+                ]}
+              >
+                <Ionicons name="add" size={18} color={MODULE_PURPLE} />
+              </View>
+              <View style={styles.rowTextBlock}>
+                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
+                  New Memory
+                </Text>
+                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
+                  Capture a new moment with photo, title, story and mood.
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textSoft}
+              />
+            </TouchableOpacity>
+
+            {/* Timeline View (shortcut) */}
+            <TouchableOpacity
+              onPress={() => router.push("/modules/memory-book/MemoryTimeline")}
+              style={[
+                styles.secondaryRow,
+                { backgroundColor: "#020617", borderColor: "#4b5563" },
+              ]}
+            >
+              <View
+                style={[
+                  styles.rowIconCircle,
+                  { backgroundColor: "rgba(129,140,248,0.15)" },
+                ]}
+              >
+                <Ionicons name="time-outline" size={18} color="#818cf8" />
+              </View>
+              <View style={styles.rowTextBlock}>
+                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
+                  Timeline View
+                </Text>
+                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
+                  See how your memories evolve over time.
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textSoft}
+              />
+            </TouchableOpacity>
+
+            {/* Stories View */}
+            <TouchableOpacity
+              onPress={() => router.push("/modules/memory-book/memory-stories")}
+              style={[
+                styles.secondaryRow,
+                { backgroundColor: "#020617", borderColor: "#4b5563" },
+              ]}
+            >
+              <View
+                style={[
+                  styles.rowIconCircle,
+                  { backgroundColor: "rgba(249,115,22,0.14)" },
+                ]}
+              >
+                <Ionicons
+                  name="play-circle-outline"
+                  size={18}
+                  color="#fb923c"
+                />
+              </View>
+              <View style={styles.rowTextBlock}>
+                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
+                  Stories View
+                </Text>
+                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
+                  Relive memories in a full-screen, story-style experience.
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textSoft}
+              />
+            </TouchableOpacity>
+
+            {/* Explore Users */}
+            <TouchableOpacity
+              onPress={() => router.push("/modules/memory-book/UserSearch")}
+              style={[
+                styles.secondaryRow,
+                { backgroundColor: "#020617", borderColor: "#4b5563" },
+              ]}
+            >
+              <View
+                style={[
+                  styles.rowIconCircle,
+                  { backgroundColor: "rgba(56,189,248,0.16)" },
+                ]}
+              >
+                <Ionicons name="people-outline" size={18} color="#38bdf8" />
+              </View>
+              <View style={styles.rowTextBlock}>
+                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
+                  Explore Users
+                </Text>
+                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
+                  Browse other users’ profiles and shared memories.
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textSoft}
+              />
+            </TouchableOpacity>
           </View>
         </ScrollView>
+
+        {/* Floating Add button (FAB) */}
+        <TouchableOpacity
+          onPress={() => router.push("/modules/memory-book/MemoryPostCreate")}
+          style={[
+            styles.fab,
+            {
+              backgroundColor: MODULE_PURPLE,
+              shadowColor: MODULE_PURPLE,
+            },
+          ]}
+        >
+          <Ionicons name="add" size={26} color="#ffffff" />
+        </TouchableOpacity>
       </SafeAreaView>
     </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
   },
-
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  headerCenter: {
+    alignItems: "center",
+    flex: 1,
+  },
+  moduleLabel: {
+    fontSize: 11,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    opacity: 0.9,
+  },
+  iconBlock: {
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  moduleName: {
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  moduleTagline: {
+    fontSize: 12,
+    marginTop: 2,
+  },
   scrollView: {
     flex: 1,
   },
-
   scrollContent: {
-    paddingHorizontal: Theme.spacing.screenPadding,
-    paddingTop: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xxl,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 96,
   },
-
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Theme.spacing.xl,
+  overviewCard: {
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderWidth: 1,
+    marginBottom: 22,
   },
-
-  headerTitle: {
-    fontSize: Theme.typography.fontSizes.xl,
-    fontWeight: Theme.typography.fontWeights.bold,
-    color: Theme.colors.textPrimary,
+  overviewTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
   },
-
-  // Icon Section
-  iconSection: {
-    alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
+  overviewLabel: {
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
-
-  iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Theme.spacing.md,
-    ...Theme.shadows.medium,
+  overviewValue: {
+    fontSize: 30,
+    fontWeight: "800",
+    marginTop: 6,
   },
-
-  moduleTitle: {
-    fontSize: Theme.typography.fontSizes.xxl,
-    fontWeight: Theme.typography.fontWeights.bold,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.xs,
+  overviewChipRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-
-  moduleSubtitle: {
-    fontSize: Theme.typography.fontSizes.md,
-    color: Theme.colors.textSecondary,
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginRight: 8,
+    maxWidth: 170,
   },
-
-  // Empty State
-  emptyCard: {
-    marginBottom: Theme.spacing.xl,
+  chipText: {
+    fontSize: 11,
+    marginLeft: 4,
   },
-
-  emptyContent: {
-    paddingVertical: Theme.spacing.lg,
+  chipButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    shadowOpacity: 0.7,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
   },
-
-  dashedBorder: {
-    borderWidth: 2,
-    borderColor: Theme.colors.border,
-    borderStyle: 'dashed',
-    borderRadius: Theme.borderRadius.lg,
-    padding: Theme.spacing.xl,
-    alignItems: 'center',
+  chipButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#f9fafb",
   },
-
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: Theme.spacing.md,
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginTop: 14,
+    marginBottom: 14,
+    opacity: 0.7,
   },
-
+  previewRow: {
+    flexDirection: "row",
+  },
+  sectionLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.9,
+    marginBottom: 4,
+  },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  previewDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  previewMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  moodPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginRight: 8,
+  },
+  moodText: {
+    fontSize: 11,
+    color: "#f9fafb",
+  },
+  dateText: {
+    fontSize: 11,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 20,
+  },
   emptyTitle: {
-    fontSize: Theme.typography.fontSizes.lg,
-    fontWeight: Theme.typography.fontWeights.bold,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.sm,
+    marginTop: 8,
+    fontSize: 15,
+    fontWeight: "600",
   },
-
-  emptyMessage: {
-    fontSize: Theme.typography.fontSizes.sm,
-    color: Theme.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: Theme.typography.fontSizes.sm * Theme.typography.lineHeights.normal,
+  emptySubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    textAlign: "center",
+    maxWidth: 260,
   },
-
-  // Section
-  section: {
-    marginBottom: Theme.spacing.xl,
+  sectionBlock: {
+    marginBottom: 22,
   },
-
+  sectionHeaderRow: {
+    marginBottom: 10,
+  },
   sectionTitle: {
-    fontSize: Theme.typography.fontSizes.lg,
-    fontWeight: Theme.typography.fontWeights.bold,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.md,
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 2,
   },
-
-  timelinePlaceholder: {
-    backgroundColor: `${Theme.colors.gray[100]}80`,
-    borderRadius: Theme.borderRadius.lg,
-    padding: Theme.spacing.xl,
-    alignItems: 'center',
+  sectionSubtitle: {
+    fontSize: 12,
   },
-
-  placeholderText: {
-    fontSize: Theme.typography.fontSizes.sm,
-    color: Theme.colors.textSecondary,
+  primaryRow: {
+    borderWidth: 1,
+    borderRadius: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-
-  // Add Button
-  addButtonContainer: {
-    alignItems: 'flex-end',
-    marginTop: Theme.spacing.lg,
+  secondaryRow: {
+    borderWidth: 1,
+    borderRadius: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    marginTop: 10,
   },
-
-  addButton: {
-    opacity: 0.5,
+  rowIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  rowTextBlock: {
+    flex: 1,
+  },
+  rowTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  rowSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  fab: {
+    position: "absolute",
+    right: 20,
+    bottom: 26,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOpacity: 0.7,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
   },
 });

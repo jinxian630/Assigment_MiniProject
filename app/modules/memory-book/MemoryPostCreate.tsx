@@ -7,29 +7,29 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
 } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
-import {
-  Layout,
-  TopNav,
-  TextInput,
-  Button,
-  useTheme,
-  themeColor,
-} from "react-native-rapi-ui";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { TextInput, Button } from "react-native-rapi-ui";
+import { useRouter } from "expo-router";
+
 import { getFirestore, addDoc, collection } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import * as ImagePicker from "expo-image-picker";
 
 import EmotionSelector, { MoodData } from "./EmotionSelector";
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { IconButton } from "@/components/common/IconButton";
+import { useTheme } from "@/hooks/useTheme";
 
-type Props = NativeStackScreenProps<MainStackParamList, "MemoryPostCreate">;
+const MODULE_COLOR = "#FF6B9D";
 
-export default function MemoryPostCreate({ navigation }: Props) {
-  const { isDarkmode, setTheme } = useTheme();
+export default function MemoryPostCreateScreen() {
+  const router = useRouter();
+  const { isDarkMode } = useTheme();
+
   const [image, setImage] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
   const [description, setDescription] = useState<string>("");
@@ -44,14 +44,16 @@ export default function MemoryPostCreate({ navigation }: Props) {
   });
 
   const colors = {
-    background: isDarkmode ? "#020617" : "#f1f5f9",
-    surface: isDarkmode ? "#0f172a" : "#ffffff",
-    text: isDarkmode ? "#e2e8f0" : "#0f172a",
-    textSecondary: isDarkmode ? "#94a3b8" : "#64748b",
-    primary: "#ec4899",
-    border: isDarkmode ? "#1f2937" : "#e2e8f0",
+    background: "#020617",
+    surface: "rgba(15,23,42,0.96)",
+    text: "#e2e8f0",
+    textSecondary: "#94a3b8",
+    primary: MODULE_COLOR,
+    border: "#1f2937",
+    dashedBg: "#020617",
   };
 
+  // ---------- image handling ----------
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -69,6 +71,7 @@ export default function MemoryPostCreate({ navigation }: Props) {
     setImage(null);
   };
 
+  // ---------- submit ----------
   const handlePress = async () => {
     if (!title.trim()) {
       alert("Please enter a title");
@@ -139,7 +142,7 @@ export default function MemoryPostCreate({ navigation }: Props) {
         commentsCount: 0,
         savesCount: 0,
 
-        // keep your existing creator info
+        // creator info
         CreatedUser: {
           CreatedUserId: currentUser.uid,
           CreatedUserName: currentUser.displayName,
@@ -159,7 +162,7 @@ export default function MemoryPostCreate({ navigation }: Props) {
       });
       setLoading(false);
       alert("Memory post created successfully!");
-      navigation.goBack();
+      router.back();
     } catch (err: any) {
       console.log(err);
       setLoading(false);
@@ -168,277 +171,318 @@ export default function MemoryPostCreate({ navigation }: Props) {
   };
 
   return (
-    <Layout>
-      <TopNav
-        middleContent="New Memory"
-        leftContent={
-          <Ionicons
-            name="chevron-back"
-            size={20}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
+    <GradientBackground>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <IconButton
+            icon="arrow-back"
+            onPress={() => router.back()}
+            variant="secondary"
+            size="medium"
           />
-        }
-        leftAction={() => navigation.goBack()}
-        rightContent={
-          <Ionicons
-            name={isDarkmode ? "sunny" : "moon"}
-            size={20}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
-          />
-        }
-        rightAction={() => setTheme(isDarkmode ? "light" : "dark")}
-      />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>NEW MEMORY</Text>
+            <Text style={styles.headerSubtitle}>
+              Capture a moment you care about
+            </Text>
+          </View>
+
+          <View style={{ width: 40 }} />
+        </View>
+
+        <KeyboardAvoidingView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          {/* Intro */}
-          <View style={{ marginBottom: 16 }}>
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: "700",
-                color: colors.text,
-                marginBottom: 4,
-              }}
-            >
-              Capture a moment
-            </Text>
-            <Text
-              style={{
-                fontSize: 13,
-                color: colors.textSecondary,
-              }}
-            >
-              Add a photo, give it a title, describe what happened, and how you
-              felt.
-            </Text>
-          </View>
-
-          {/* Image picker card */}
-          <View
-            style={{
-              marginBottom: 20,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
-            }}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
           >
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: "600",
-                color: colors.text,
-                marginBottom: 8,
-              }}
-            >
-              Cover Image
-            </Text>
-            <Text
-              style={{
-                fontSize: 12,
-                color: colors.textSecondary,
-                marginBottom: 10,
-              }}
-            >
-              A picture that represents this memory. It will appear in your
-              timeline and stories.
-            </Text>
-
-            {image ? (
-              <View style={{ position: "relative" }}>
-                <Image
-                  source={{ uri: image }}
-                  style={{
-                    width: "100%",
-                    height: 220,
-                    borderRadius: 12,
-                    resizeMode: "cover",
-                  }}
-                />
-                <TouchableOpacity
-                  onPress={removeImage}
-                  style={{
-                    position: "absolute",
-                    top: 8,
-                    right: 8,
-                    backgroundColor: "rgba(15, 23, 42, 0.85)",
-                    borderRadius: 999,
-                    padding: 6,
-                  }}
-                >
-                  <Ionicons name="close" size={18} color="white" />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={pickImage}
-                style={{
-                  borderStyle: "dashed",
-                  borderColor: colors.textSecondary,
-                  borderWidth: 1.5,
-                  borderRadius: 12,
-                  paddingVertical: 32,
-                  paddingHorizontal: 12,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: isDarkmode ? "#020617" : "#f8fafc",
-                }}
+            {/* Intro */}
+            <View style={styles.introBlock}>
+              <Text style={[styles.introTitle, { color: colors.text }]}>
+                Capture a moment
+              </Text>
+              <Text
+                style={[styles.introSubtitle, { color: colors.textSecondary }]}
               >
-                <Ionicons
-                  name="image-outline"
-                  size={40}
-                  color={colors.textSecondary}
-                />
-                <Text
-                  style={{
-                    marginTop: 8,
-                    fontSize: 14,
+                Add a photo, give it a title, describe what happened, and how
+                you felt.
+              </Text>
+            </View>
+
+            {/* Image picker card */}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.cardLabel, { color: colors.text }]}>
+                Cover Image
+              </Text>
+              <Text style={[styles.cardHelp, { color: colors.textSecondary }]}>
+                A picture that represents this memory. It will appear in your
+                timeline and stories.
+              </Text>
+
+              {image ? (
+                <View style={{ position: "relative" }}>
+                  <Image source={{ uri: image }} style={styles.image} />
+                  <TouchableOpacity
+                    onPress={removeImage}
+                    style={styles.removeImageBtn}
+                  >
+                    <Ionicons name="close" size={18} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={pickImage}
+                  style={[
+                    styles.imagePlaceholder,
+                    {
+                      borderColor: colors.textSecondary,
+                      backgroundColor: colors.dashedBg,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="image-outline"
+                    size={40}
+                    color={colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.imagePlaceholderTitle,
+                      { color: colors.text },
+                    ]}
+                  >
+                    Tap to add cover image
+                  </Text>
+                  <Text
+                    style={[
+                      styles.imagePlaceholderHelp,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    JPG or PNG, up to 10MB
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Title card */}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.cardLabel, { color: colors.text }]}>
+                Title
+              </Text>
+              <TextInput
+                containerStyle={{ marginBottom: 0 }}
+                placeholder="Give this memory a name..."
+                value={title}
+                autoCapitalize="sentences"
+                autoCompleteType="off"
+                autoCorrect={true}
+                onChangeText={setTitle}
+                style={[
+                  styles.textInput,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface,
                     color: colors.text,
-                    fontWeight: "500",
-                  }}
-                >
-                  Tap to add cover image
-                </Text>
-                <Text
-                  style={{
-                    marginTop: 4,
-                    fontSize: 11,
-                    color: colors.textSecondary,
-                  }}
-                >
-                  JPG or PNG, up to 10MB
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+                  },
+                ]}
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
 
-          {/* Title card */}
-          <View
-            style={{
-              marginBottom: 16,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: "600",
-                color: colors.text,
-                marginBottom: 8,
-              }}
+            {/* Story card */}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
             >
-              Title
-            </Text>
-            <TextInput
-              containerStyle={{ marginBottom: 0 }}
-              placeholder="Give this memory a name..."
-              value={title}
-              autoCapitalize="sentences"
-              autoCompleteType="off"
-              autoCorrect={true}
-              onChangeText={setTitle}
-              style={{
-                fontSize: 16,
-                paddingVertical: 10,
-                paddingHorizontal: 12,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-                color: colors.text,
-              }}
-              placeholderTextColor={colors.textSecondary}
+              <Text style={[styles.cardLabel, { color: colors.text }]}>
+                Story
+              </Text>
+              <Text style={[styles.cardHelp, { color: colors.textSecondary }]}>
+                What happened? What made this moment special or important to
+                you?
+              </Text>
+              <TextInput
+                containerStyle={{ marginBottom: 0 }}
+                placeholder="Write your memory here..."
+                value={description}
+                autoCapitalize="sentences"
+                autoCompleteType="off"
+                autoCorrect={true}
+                multiline
+                numberOfLines={6}
+                onChangeText={setDescription}
+                style={[
+                  styles.textArea,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface,
+                    color: colors.text,
+                  },
+                ]}
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+
+            {/* Emotion selector */}
+            <EmotionSelector moodData={moodData} setMoodData={setMoodData} />
+
+            {/* Publish button */}
+            <Button
+              text={loading ? "Publishing..." : "Publish Memory"}
+              onPress={handlePress}
+              disabled={loading}
+              style={styles.publishButton}
+              rightContent={
+                !loading ? (
+                  <Ionicons name="paper-plane" size={18} color="#ffffff" />
+                ) : undefined
+              }
             />
-          </View>
-
-          {/* Story card */}
-          <View
-            style={{
-              marginBottom: 16,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: "600",
-                color: colors.text,
-                marginBottom: 8,
-              }}
-            >
-              Story
-            </Text>
-            <Text
-              style={{
-                fontSize: 12,
-                color: colors.textSecondary,
-                marginBottom: 8,
-              }}
-            >
-              What happened? What made this moment special or important to you?
-            </Text>
-            <TextInput
-              containerStyle={{ marginBottom: 0 }}
-              placeholder="Write your memory here..."
-              value={description}
-              autoCapitalize="sentences"
-              autoCompleteType="off"
-              autoCorrect={true}
-              multiline
-              numberOfLines={6}
-              onChangeText={setDescription}
-              style={{
-                fontSize: 14,
-                paddingVertical: 10,
-                paddingHorizontal: 12,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-                color: colors.text,
-                textAlignVertical: "top",
-              }}
-              placeholderTextColor={colors.textSecondary}
-            />
-          </View>
-
-          {/* Emotion selector (spectrum + color) */}
-          <EmotionSelector moodData={moodData} setMoodData={setMoodData} />
-
-          {/* Publish button */}
-          <Button
-            text={loading ? "Publishing..." : "Publish Memory"}
-            onPress={handlePress}
-            disabled={loading}
-            style={{
-              marginTop: 4,
-              borderRadius: 999,
-              paddingVertical: 14,
-            }}
-            rightContent={
-              !loading ? (
-                <Ionicons name="paper-plane" size={18} color="white" />
-              ) : undefined
-            }
-          />
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Layout>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </GradientBackground>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#e5e7eb",
+    letterSpacing: 1.4,
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    color: "#9ca3af",
+    marginTop: 2,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    paddingTop: 12,
+  },
+  introBlock: {
+    marginBottom: 16,
+  },
+  introTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  introSubtitle: {
+    fontSize: 13,
+  },
+  card: {
+    marginBottom: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+  },
+  cardLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  cardHelp: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  image: {
+    width: "100%",
+    height: 220,
+    borderRadius: 12,
+    resizeMode: "cover",
+  },
+  removeImageBtn: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(15,23,42,0.9)",
+    borderRadius: 999,
+    padding: 6,
+  },
+  imagePlaceholder: {
+    borderStyle: "dashed",
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 32,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  imagePlaceholderTitle: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  imagePlaceholderHelp: {
+    marginTop: 4,
+    fontSize: 11,
+  },
+  textInput: {
+    fontSize: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  textArea: {
+    fontSize: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    textAlignVertical: "top",
+    minHeight: 120,
+  },
+  publishButton: {
+    marginTop: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+  },
+});

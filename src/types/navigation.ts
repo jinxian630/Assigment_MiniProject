@@ -13,6 +13,14 @@ export type RootStackParamList = {
   TaskChart: undefined;
   TaskDashboard: undefined;
   Gamification: undefined;
+
+  EmotionSelector: undefined;
+  MemoryMenu: undefined;
+  MemoryPostCreate: undefined;
+  MemoryPostDetail: undefined;
+  MemoryTimeline: undefined;
+  UserProfile: undefined;
+  UserSearch: undefined;
 };
 
 export type AuthStackParamList = {
