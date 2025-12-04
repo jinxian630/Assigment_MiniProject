@@ -1,9 +1,27 @@
-export type RootStackParamList = {
+export type MainStackParamList = {
   "(auth)": undefined;
   "(tabs)": undefined;
   "modules/memory-book": undefined;
   "modules/health-fitness": undefined;
+
   "modules/money-management": undefined;
+  MyMoneyMenu: undefined;
+  TransactionAdd:
+    | undefined
+    | {
+        editId: string;
+        amount: number;
+        category: string;
+        account: string;
+        note?: string;
+        dateTime: number;
+        imageURL?: string | null;
+        type?: "Income" | "Expense";
+      };
+  TransactionList: undefined;
+  PrintTransactionList: undefined;
+  ChartDisplay: undefined;
+
   "modules/task-management": undefined;
   TaskMenu: undefined;
   TaskAdd: undefined;
@@ -31,6 +49,6 @@ export type TabsParamList = {
 
 declare global {
   namespace ReactNavigation {
-    interface RootParamList extends RootStackParamList {}
+    interface RootParamList extends MainStackParamList {}
   }
 }
