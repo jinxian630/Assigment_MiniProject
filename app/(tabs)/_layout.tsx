@@ -14,7 +14,6 @@ export default function TabsLayout() {
       <Tabs.Screen name="add" />
       <Tabs.Screen name="insights" />
       <Tabs.Screen name="profile" />
-      <Tabs.Screen name="MemoryTimeline" />
     </Tabs>
   );
 }

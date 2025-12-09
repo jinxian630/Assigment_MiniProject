@@ -47,11 +47,13 @@ export default function MemoryPostCreate() {
   });
 
   const colors = {
-    background: isDarkmode ? "#020617" : "#f1f5f9",
-    surface: isDarkmode ? "#020617" : "#020617",
+    background: "#020617", // keep dark, same as home
+    surface: "#020617",
     text: "#e5e7eb",
-    textSecondary: "#9ca3af",
-    border: "#1f2937",
+    textSoft: "#9ca3af",
+    borderSoft: "#1f2937",
+    borderStrong: PRIMARY_PURPLE,
+    chipBg: "rgba(168,85,247,0.12)",
   };
 
   const pickImage = async () => {
@@ -193,69 +195,124 @@ export default function MemoryPostCreate() {
           contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Intro */}
-          <View style={{ marginBottom: 18 }}>
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: "700",
-                color: colors.text,
-                marginBottom: 4,
-              }}
-            >
-              Capture a moment
-            </Text>
-            <Text
-              style={{
-                fontSize: 13,
-                color: colors.textSecondary,
-              }}
-            >
-              Add a photo, give it a title, describe what happened, and how you
-              felt.
-            </Text>
-          </View>
-
-          {/* Image picker card */}
+          {/* Header / step chip */}
           <View
             style={{
-              marginBottom: 20,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
+              marginBottom: 18,
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
             }}
           >
-            <Text
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text
+                style={{
+                  fontSize: 20,
+                  fontWeight: "700",
+                  color: colors.text,
+                  marginBottom: 4,
+                }}
+              >
+                Capture a moment
+              </Text>
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: colors.textSoft,
+                }}
+              >
+                Add a photo, give it a title, describe what happened, and how
+                you felt.
+              </Text>
+            </View>
+
+            <View
               style={{
-                fontSize: 14,
-                fontWeight: "600",
-                color: colors.text,
-                marginBottom: 8,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: colors.borderSoft,
+                backgroundColor: "rgba(15,23,42,0.9)",
               }}
             >
-              Cover image
-            </Text>
-            <Text
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: colors.textSoft,
+                  letterSpacing: 0.6,
+                }}
+              >
+                STEP 1 OF 2
+              </Text>
+            </View>
+          </View>
+
+          {/* IMAGE CARD */}
+          <View
+            style={{
+              marginBottom: 18,
+              borderRadius: 18,
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.borderSoft,
+              padding: 16,
+            }}
+          >
+            <View
               style={{
-                fontSize: 12,
-                color: colors.textSecondary,
+                flexDirection: "row",
+                alignItems: "center",
                 marginBottom: 10,
               }}
             >
-              A picture that represents this memory. It will appear in your
-              timeline and stories.
-            </Text>
+              <View
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 13,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 8,
+                  backgroundColor: colors.chipBg,
+                }}
+              >
+                <Ionicons
+                  name="image-outline"
+                  size={16}
+                  color={PRIMARY_PURPLE}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "600",
+                    color: colors.text,
+                  }}
+                >
+                  Cover image
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: colors.textSoft,
+                    marginTop: 2,
+                  }}
+                >
+                  This photo will appear in your timeline and stories.
+                </Text>
+              </View>
+            </View>
 
             {image ? (
-              <View style={{ position: "relative" }}>
+              <View style={{ position: "relative", marginTop: 6 }}>
                 <Image
                   source={{ uri: image }}
                   style={{
                     width: "100%",
                     height: 220,
-                    borderRadius: 12,
+                    borderRadius: 14,
                     resizeMode: "cover",
                   }}
                 />
@@ -263,9 +320,9 @@ export default function MemoryPostCreate() {
                   onPress={removeImage}
                   style={{
                     position: "absolute",
-                    top: 8,
-                    right: 8,
-                    backgroundColor: "rgba(15, 23, 42, 0.9)",
+                    top: 10,
+                    right: 10,
+                    backgroundColor: "rgba(15,23,42,0.95)",
                     borderRadius: 999,
                     padding: 6,
                   }}
@@ -278,20 +335,21 @@ export default function MemoryPostCreate() {
                 onPress={pickImage}
                 style={{
                   borderStyle: "dashed",
-                  borderColor: colors.textSecondary,
-                  borderWidth: 1.5,
-                  borderRadius: 12,
-                  paddingVertical: 32,
+                  borderColor: colors.textSoft,
+                  borderWidth: 1.4,
+                  borderRadius: 14,
+                  paddingVertical: 30,
                   paddingHorizontal: 12,
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: "#020617",
+                  marginTop: 6,
                 }}
               >
                 <Ionicons
-                  name="image-outline"
-                  size={40}
-                  color={colors.textSecondary}
+                  name="cloud-upload-outline"
+                  size={32}
+                  color={colors.textSoft}
                 />
                 <Text
                   style={{
@@ -307,7 +365,7 @@ export default function MemoryPostCreate() {
                   style={{
                     marginTop: 4,
                     fontSize: 11,
-                    color: colors.textSecondary,
+                    color: colors.textSoft,
                   }}
                 >
                   JPG or PNG, up to 10MB
@@ -316,74 +374,102 @@ export default function MemoryPostCreate() {
             )}
           </View>
 
-          {/* Title card */}
+          {/* TEXT DETAILS CARD */}
           <View
             style={{
-              marginBottom: 16,
-              borderRadius: 16,
+              marginBottom: 18,
+              borderRadius: 18,
               backgroundColor: colors.surface,
               borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
+              borderColor: colors.borderSoft,
+              padding: 16,
             }}
           >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+            >
+              <View
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: 999,
+                  backgroundColor: colors.chipBg,
+                  marginRight: 8,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: colors.textSoft,
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  DETAILS
+                </Text>
+              </View>
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: colors.textSoft,
+                  flex: 1,
+                }}
+              >
+                Give this memory a name and tell the story behind it.
+              </Text>
+            </View>
+
+            {/* Title */}
             <Text
               style={{
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: "600",
                 color: colors.text,
-                marginBottom: 8,
+                marginBottom: 6,
               }}
             >
               Title
             </Text>
             <TextInput
-              containerStyle={{ marginBottom: 0 }}
-              placeholder="Give this memory a name..."
+              containerStyle={{ marginBottom: 10 }}
+              placeholder="eg. Picnic at KLCC park"
               value={title}
               autoCapitalize="sentences"
               autoCompleteType="off"
               autoCorrect
               onChangeText={setTitle}
               style={{
-                fontSize: 16,
+                fontSize: 15,
                 paddingVertical: 10,
                 paddingHorizontal: 12,
                 borderRadius: 10,
                 borderWidth: 1,
-                borderColor: colors.border,
+                borderColor: colors.borderSoft,
                 backgroundColor: colors.surface,
                 color: colors.text,
               }}
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={colors.textSoft}
             />
-          </View>
 
-          {/* Story card */}
-          <View
-            style={{
-              marginBottom: 16,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
-            }}
-          >
+            {/* Story */}
             <Text
               style={{
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: "600",
                 color: colors.text,
-                marginBottom: 8,
+                marginBottom: 6,
+                marginTop: 4,
               }}
             >
               Story
             </Text>
             <Text
               style={{
-                fontSize: 12,
-                color: colors.textSecondary,
+                fontSize: 11,
+                color: colors.textSoft,
                 marginBottom: 8,
               }}
             >
@@ -405,12 +491,12 @@ export default function MemoryPostCreate() {
                 paddingHorizontal: 12,
                 borderRadius: 10,
                 borderWidth: 1,
-                borderColor: colors.border,
+                borderColor: colors.borderSoft,
                 backgroundColor: colors.surface,
                 color: colors.text,
                 textAlignVertical: "top",
               }}
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={colors.textSoft}
             />
           </View>
 
@@ -423,7 +509,7 @@ export default function MemoryPostCreate() {
             onPress={handlePublish}
             disabled={loading}
             style={{
-              marginTop: 10,
+              marginTop: 8,
               borderRadius: 999,
               paddingVertical: 14,
               backgroundColor: PRIMARY_PURPLE,
