@@ -6,18 +6,19 @@ import {
   Dimensions,
   ScrollView,
   TouchableOpacity,
+  Text as RNText,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "src/types/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart, PieChart } from "react-native-chart-kit";
-import { Text, Picker } from "react-native-rapi-ui";
+import { Picker } from "react-native-rapi-ui";
+import { useRouter } from "expo-router";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
 import { Theme } from "@/constants/theme";
+import { useTheme } from "@/hooks/useTheme";
 
 import { getAuth } from "firebase/auth";
 import {
@@ -43,8 +44,6 @@ const MONTH_LABELS = [
   "December",
 ];
 
-type Props = NativeStackScreenProps<MainStackParamList, "ChartDisplay">;
-
 type ExpenseDetail = {
   account: string;
   note: string;
@@ -63,7 +62,13 @@ type LineMode = "both" | "income" | "expense";
 
 const screenWidth = Dimensions.get("window").width;
 
-export default function ChartDisplayScreen({ navigation }: Props) {
+export default function ChartDisplayScreen({ navigation }: any) {
+  const router = useRouter();
+  const nav = navigation ?? { goBack: () => router.back() };
+
+  const theme = useTheme() as any;
+  const isDarkmode: boolean = !!theme?.isDarkmode;
+
   const auth = getAuth();
   const db = getFirestore();
 
@@ -86,10 +91,8 @@ export default function ChartDisplayScreen({ navigation }: Props) {
     index: null,
   });
 
-  // Mode: both / income / expense
   const [lineMode, setLineMode] = useState<LineMode>("both");
 
-  // Category breakdown per month
   const [incomeCatByMonth, setIncomeCatByMonth] = useState<
     Record<string, number>[]
   >(Array.from({ length: 12 }, () => ({})));
@@ -97,10 +100,25 @@ export default function ChartDisplayScreen({ navigation }: Props) {
     Record<string, number>[]
   >(Array.from({ length: 12 }, () => ({})));
 
-  // Month selection for pie charts
   const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(
     new Date().getMonth()
   );
+
+  // Dynamic text colors
+  const textPrimary = isDarkmode ? "#F9FAFB" : Theme.colors.textPrimary;
+  const textSecondary = isDarkmode ? "#CBD5E1" : "#4B5563";
+  const mutedText = isDarkmode ? "#9CA3AF" : "#6B7280";
+  const cardBorder = isDarkmode ? "#1F2937" : Theme.colors.border;
+
+  const handleToggleTheme = () => {
+    if (typeof theme?.toggleTheme === "function") {
+      theme.toggleTheme();
+    } else if (typeof theme?.setTheme === "function") {
+      theme.setTheme(isDarkmode ? "light" : "dark");
+    } else {
+      console.warn("No theme toggle function found in useTheme()");
+    }
+  };
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -164,7 +182,6 @@ export default function ChartDisplayScreen({ navigation }: Props) {
             monthlyIncomeTotals[monthIndex] += amount;
           }
 
-          // Category breakdown for current year
           if (year === currentYear) {
             if (txType === "Income") {
               const incomeCat = localIncomeCatByMonth[monthIndex];
@@ -201,21 +218,21 @@ export default function ChartDisplayScreen({ navigation }: Props) {
     if (!entries.length) return [];
 
     const palette = [
-      "#ff7f50",
-      "#4b7bec",
-      "#20bf6b",
-      "#a55eea",
-      "#f7b731",
-      "#eb3b5a",
-      "#778ca3",
-      "#fd9644",
+      "#38BDF8",
+      "#22C55E",
+      "#F97316",
+      "#A855F7",
+      "#FACC15",
+      "#EC4899",
+      "#06B6D4",
+      "#F97373",
     ];
 
     return entries.map(([name, value], index) => ({
       name,
       population: value,
       color: palette[index % palette.length],
-      legendFontColor: "#333",
+      legendFontColor: isDarkmode ? "#F9FAFB" : "#111827",
       legendFontSize: 12,
     }));
   };
@@ -228,18 +245,26 @@ export default function ChartDisplayScreen({ navigation }: Props) {
   );
 
   const chartConfig = {
-    backgroundColor: "#ffffff",
-    backgroundGradientFrom: "#eff3ff",
-    backgroundGradientTo: "#efefef",
+    backgroundColor: isDarkmode ? "#020617" : "#ffffff",
+    backgroundGradientFrom: isDarkmode ? "#020617" : "#eff3ff",
+    backgroundGradientTo: isDarkmode ? "#111827" : "#efefef",
     decimalPlaces: 2,
-    color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-    labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+    color: (opacity = 1) =>
+      isDarkmode
+        ? `rgba(248, 250, 252, ${opacity})`
+        : `rgba(15, 23, 42, ${opacity})`,
+    labelColor: (opacity = 1) =>
+      isDarkmode
+        ? `rgba(248, 250, 252, ${opacity})`
+        : `rgba(15, 23, 42, ${opacity})`,
     style: {
       borderRadius: 16,
     },
+    propsForLabels: {
+      fontSize: 10,
+    },
   };
 
-  // Build datasets & legend based on lineMode
   let lineDatasets: any[] = [];
   let lineLegend: string[] = [];
 
@@ -248,7 +273,7 @@ export default function ChartDisplayScreen({ navigation }: Props) {
       {
         data: expenseData,
         strokeWidth: 2,
-        color: (opacity = 1) => `rgba(231, 76, 60, ${opacity})`,
+        color: (opacity = 1) => `rgba(248, 113, 113, ${opacity})`,
       },
     ];
     lineLegend = ["Expense"];
@@ -257,7 +282,7 @@ export default function ChartDisplayScreen({ navigation }: Props) {
       {
         data: incomeData,
         strokeWidth: 2,
-        color: (opacity = 1) => `rgba(46, 139, 87, ${opacity})`,
+        color: (opacity = 1) => `rgba(52, 211, 153, ${opacity})`,
       },
     ];
     lineLegend = ["Income"];
@@ -266,28 +291,43 @@ export default function ChartDisplayScreen({ navigation }: Props) {
       {
         data: expenseData,
         strokeWidth: 2,
-        color: (opacity = 1) => `rgba(231, 76, 60, ${opacity})`,
+        color: (opacity = 1) => `rgba(248, 113, 113, ${opacity})`,
       },
       {
         data: incomeData,
         strokeWidth: 2,
-        color: (opacity = 1) => `rgba(46, 139, 87, ${opacity})`,
+        color: (opacity = 1) => `rgba(52, 211, 153, ${opacity})`,
       },
     ];
     lineLegend = ["Expense", "Income"];
   }
 
-  // Header
+  const renderThemeToggle = () => (
+    <TouchableOpacity
+      onPress={handleToggleTheme}
+      style={styles.themeToggle}
+      activeOpacity={0.8}
+    >
+      <Ionicons
+        name={isDarkmode ? "sunny-outline" : "moon-outline"}
+        size={20}
+        color={isDarkmode ? "#FDE68A" : "#0F172A"}
+      />
+    </TouchableOpacity>
+  );
+
   const renderHeader = () => (
     <View style={styles.header}>
       <IconButton
         icon="arrow-back"
         variant="secondary"
         size="medium"
-        onPress={() => navigation.goBack()}
+        onPress={() => nav.goBack()}
       />
-      <Text style={styles.headerTitle}>Spending Insights</Text>
-      <View style={{ width: 48 }} />
+      <RNText style={[styles.headerTitle, { color: textPrimary }]}>
+        Spending Insights
+      </RNText>
+      {renderThemeToggle()}
     </View>
   );
 
@@ -313,11 +353,19 @@ export default function ChartDisplayScreen({ navigation }: Props) {
           {renderHeader()}
 
           {/* Line Chart Card */}
-          <Card style={styles.chartCard}>
+          <Card
+            style={[
+              styles.chartCard,
+              {
+                borderWidth: 1,
+                borderColor: cardBorder,
+              },
+            ]}
+          >
             <View style={{ alignItems: "center" }}>
-              <Text style={styles.sectionTitle}>
+              <RNText style={[styles.sectionTitle, { color: textPrimary }]}>
                 Monthly Income vs Expense
-              </Text>
+              </RNText>
             </View>
 
             {/* Mode toggle */}
@@ -326,22 +374,27 @@ export default function ChartDisplayScreen({ navigation }: Props) {
                 label="Both"
                 active={lineMode === "both"}
                 onPress={() => setLineMode("both")}
+                isDarkmode={isDarkmode}
               />
               <ModeButton
                 label="Income"
                 active={lineMode === "income"}
                 onPress={() => setLineMode("income")}
+                isDarkmode={isDarkmode}
               />
               <ModeButton
                 label="Expense"
                 active={lineMode === "expense"}
                 onPress={() => setLineMode("expense")}
+                isDarkmode={isDarkmode}
               />
             </View>
 
             {!hasAnyData ? (
               <View style={styles.center}>
-                <Text>No transaction data found</Text>
+                <RNText style={{ color: textSecondary }}>
+                  No transaction data found
+                </RNText>
               </View>
             ) : (
               <LineChart
@@ -394,27 +447,55 @@ export default function ChartDisplayScreen({ navigation }: Props) {
                         {
                           left: tooltip.x - 90,
                           top: tooltip.y - 90,
-                          backgroundColor: "#fff",
+                          backgroundColor: isDarkmode ? "#020617" : "#ffffff",
+                          borderColor: isDarkmode ? "#38BDF8" : "#CBD5E1",
                         },
                       ]}
                     >
-                      <Text style={styles.tooltipTitle}>{monthLabel}</Text>
-                      <Text style={styles.tooltipText}>
+                      <RNText
+                        style={[
+                          styles.tooltipTitle,
+                          { color: textPrimary },
+                        ]}
+                      >
+                        {monthLabel}
+                      </RNText>
+                      <RNText
+                        style={[
+                          styles.tooltipText,
+                          { color: textSecondary },
+                        ]}
+                      >
                         Income: {totalIncome.toFixed(2)}
-                      </Text>
-                      <Text style={styles.tooltipText}>
+                      </RNText>
+                      <RNText
+                        style={[
+                          styles.tooltipText,
+                          { color: textSecondary },
+                        ]}
+                      >
                         Expense: {totalExpense.toFixed(2)}
-                      </Text>
+                      </RNText>
                       {first ? (
                         <>
-                          <Text style={styles.tooltipText}>
+                          <RNText
+                            style={[
+                              styles.tooltipText,
+                              { color: textSecondary },
+                            ]}
+                          >
                             1st expense: {first.amount.toFixed(2)} (
                             {first.account || "-"})
-                          </Text>
+                          </RNText>
                           {items.length > 1 && (
-                            <Text style={styles.tooltipMore}>
+                            <RNText
+                              style={[
+                                styles.tooltipMore,
+                                { color: mutedText },
+                              ]}
+                            >
                               + {items.length - 1} more expense(s)
-                            </Text>
+                            </RNText>
                           )}
                         </>
                       ) : null}
@@ -426,24 +507,44 @@ export default function ChartDisplayScreen({ navigation }: Props) {
 
             {/* Detail list (expense-focused) */}
             {tooltip.visible && tooltip.index != null && (
-              <View style={styles.detailCard}>
-                <Text style={styles.detailTitle}>
+              <View
+                style={[
+                  styles.detailCard,
+                  {
+                    borderColor: cardBorder,
+                  },
+                ]}
+              >
+                <RNText
+                  style={[styles.detailTitle, { color: textPrimary }]}
+                >
                   {labels[tooltip.index]} expenses
-                </Text>
+                </RNText>
                 {monthlyDetails[tooltip.index].length === 0 ? (
-                  <Text style={styles.detailLine}>No expense records.</Text>
+                  <RNText style={[styles.detailLine, { color: textSecondary }]}>
+                    No expense records.
+                  </RNText>
                 ) : (
                   monthlyDetails[tooltip.index].map((item, i) => (
                     <View key={i} style={styles.detailRow}>
-                      <Text style={styles.detailLine}>
+                      <RNText
+                        style={[styles.detailLine, { color: textSecondary }]}
+                      >
                         {item.date} · {item.account || "Unknown account"}
-                      </Text>
-                      <Text style={styles.detailLine}>
+                      </RNText>
+                      <RNText
+                        style={[styles.detailLine, { color: mutedText }]}
+                      >
                         Note: {item.note || "-"}
-                      </Text>
-                      <Text style={styles.detailAmount}>
+                      </RNText>
+                      <RNText
+                        style={[
+                          styles.detailAmount,
+                          { color: "#F97316" },
+                        ]}
+                      >
                         Amount: {item.amount.toFixed(2)}
-                      </Text>
+                      </RNText>
                     </View>
                   ))
                 )}
@@ -452,11 +553,19 @@ export default function ChartDisplayScreen({ navigation }: Props) {
           </Card>
 
           {/* Pie charts with month filter */}
-          <Card style={{ marginTop: Theme.spacing.md }}>
-            <Text style={styles.sectionTitle}>Category Breakdown by Month</Text>
-            <Text style={styles.sectionSubtitle}>
+          <Card
+            style={{
+              marginTop: Theme.spacing.md,
+              borderWidth: 1,
+              borderColor: cardBorder,
+            }}
+          >
+            <RNText style={[styles.sectionTitle, { color: textPrimary }]}>
+              Category Breakdown by Month
+            </RNText>
+            <RNText style={[styles.sectionSubtitle, { color: mutedText }]}>
               Select month for income/expense category charts
-            </Text>
+            </RNText>
 
             <View style={styles.monthPickerContainer}>
               <Picker
@@ -474,13 +583,15 @@ export default function ChartDisplayScreen({ navigation }: Props) {
 
             {/* Income pie */}
             <View style={styles.pieCard}>
-              <Text style={[styles.pieTitle, { color: "#2e8b57" }]}>
+              <RNText
+                style={[styles.pieTitle, { color: "#22C55E" }]}
+              >
                 Income by Category
-              </Text>
+              </RNText>
               {incomePieData.length === 0 ? (
-                <Text style={styles.noDataText}>
+                <RNText style={[styles.noDataText, { color: mutedText }]}>
                   No income data for this month
-                </Text>
+                </RNText>
               ) : (
                 <PieChart
                   data={incomePieData}
@@ -492,6 +603,7 @@ export default function ChartDisplayScreen({ navigation }: Props) {
                   accessor={"population"}
                   backgroundColor={"transparent"}
                   paddingLeft={"10"}
+                  transparent={true}
                   absolute={false}
                 />
               )}
@@ -499,13 +611,15 @@ export default function ChartDisplayScreen({ navigation }: Props) {
 
             {/* Expense pie */}
             <View style={styles.pieCard}>
-              <Text style={[styles.pieTitle, { color: "#e74c3c" }]}>
+              <RNText
+                style={[styles.pieTitle, { color: "#F97316" }]}
+              >
                 Expense by Category
-              </Text>
+              </RNText>
               {expensePieData.length === 0 ? (
-                <Text style={styles.noDataText}>
+                <RNText style={[styles.noDataText, { color: mutedText }]}>
                   No expense data for this month
-                </Text>
+                </RNText>
               ) : (
                 <PieChart
                   data={expensePieData}
@@ -517,6 +631,7 @@ export default function ChartDisplayScreen({ navigation }: Props) {
                   accessor={"population"}
                   backgroundColor={"transparent"}
                   paddingLeft={"10"}
+                  transparent={true}
                   absolute={false}
                 />
               )}
@@ -528,33 +643,48 @@ export default function ChartDisplayScreen({ navigation }: Props) {
   );
 }
 
-// Toggle button
 function ModeButton({
   label,
   active,
   onPress,
+  isDarkmode,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
+  isDarkmode: boolean;
 }) {
   return (
     <TouchableOpacity
       onPress={onPress}
       style={[
         styles.modeButton,
-        active ? styles.modeButtonActive : null,
+        active
+          ? {
+              backgroundColor: "#38BDF8",
+              borderColor: "#38BDF8",
+            }
+          : {
+              borderColor: isDarkmode ? "#4B5563" : "#D1D5DB",
+              backgroundColor: isDarkmode ? "#020617" : "#F3F4F6",
+            },
       ]}
       activeOpacity={0.9}
     >
-      <Text
+      <RNText
         style={[
           styles.modeButtonText,
-          { color: active ? "#fff" : "#555" },
+          {
+            color: active
+              ? "#0F172A"
+              : isDarkmode
+              ? "#E5E7EB"
+              : "#4B5563",
+          },
         ]}
       >
         {label}
-      </Text>
+      </RNText>
     </TouchableOpacity>
   );
 }
@@ -579,7 +709,16 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: Theme.typography.fontSizes.xl,
     fontWeight: Theme.typography.fontWeights.bold,
-    color: Theme.colors.textPrimary,
+  },
+  themeToggle: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#38BDF8",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15,23,42,0.7)",
   },
   chartCard: {
     paddingBottom: Theme.spacing.md,
@@ -593,7 +732,6 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 12,
     marginTop: 4,
-    opacity: 0.8,
   },
   modeToggleRow: {
     flexDirection: "row",
@@ -606,12 +744,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#ccc",
     alignItems: "center",
-  },
-  modeButtonActive: {
-    backgroundColor: "#4b7bec",
-    borderColor: "#4b7bec",
   },
   modeButtonText: {
     fontSize: 12,
@@ -623,7 +756,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ccc",
     maxWidth: 200,
   },
   tooltipTitle: {
@@ -644,7 +776,6 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#ddd",
   },
   detailTitle: {
     fontWeight: "bold",
@@ -676,7 +807,6 @@ const styles = StyleSheet.create({
   noDataText: {
     textAlign: "center",
     fontSize: 12,
-    opacity: 0.7,
     marginTop: 12,
   },
 });
