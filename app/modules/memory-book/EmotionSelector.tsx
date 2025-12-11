@@ -22,8 +22,9 @@ export default function EmotionSelector({ moodData, setMoodData }: Props) {
   const colors = {
     text: isDarkmode ? "#e2e8f0" : "#0f172a",
     sub: isDarkmode ? "#94a3b8" : "#64748b",
-    card: isDarkmode ? "#0f172a" : "#ffffff",
+    card: isDarkmode ? "#020617" : "#020617",
     border: isDarkmode ? "#1f2937" : "#e2e8f0",
+    accent: "#a855f7", // main purple
   };
 
   const emotionColors = [
@@ -51,8 +52,9 @@ export default function EmotionSelector({ moodData, setMoodData }: Props) {
         onValueChange={(v) => update(key, Math.round(v))}
         minimumValue={0}
         maximumValue={100}
-        minimumTrackTintColor="#ec4899"
+        minimumTrackTintColor={colors.accent}
         maximumTrackTintColor={colors.border}
+        thumbTintColor={colors.accent}
       />
       <Text style={{ fontSize: 12, color: colors.sub }}>{value}%</Text>
     </View>
@@ -77,10 +79,10 @@ export default function EmotionSelector({ moodData, setMoodData }: Props) {
           marginBottom: 6,
         }}
       >
-        Emotional Spectrum
+        Emotional spectrum
       </Text>
       <Text style={{ color: colors.sub, fontSize: 12, marginBottom: 16 }}>
-        Move the sliders to describe your emotional state.
+        Use the sliders to describe how you felt for this memory.
       </Text>
 
       {SliderItem("Energy", moodData.energy, "energy")}
@@ -97,7 +99,7 @@ export default function EmotionSelector({ moodData, setMoodData }: Props) {
             marginBottom: 10,
           }}
         >
-          Emotion Color
+          Emotion color
         </Text>
         <Text style={{ color: colors.sub, fontSize: 12, marginBottom: 10 }}>
           Pick the color that best represents this memory.
@@ -123,7 +125,7 @@ export default function EmotionSelector({ moodData, setMoodData }: Props) {
                   borderRadius: 20,
                   backgroundColor: c,
                   borderWidth: selected ? 3 : 1,
-                  borderColor: selected ? "#ec4899" : colors.border,
+                  borderColor: selected ? colors.accent : colors.border,
                 }}
               />
             );

@@ -8,19 +8,13 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  TextInput as RNTextInput,
+  Text as RNText,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useRouter } from "expo-router";
 
-import {
-  Text,
-  useTheme,
-  themeColor,
-  TextInput,
-  Button,
-  Picker,
-} from "react-native-rapi-ui";
-import { Ionicons } from "@expo/vector-icons";
+import { Button, Picker } from "react-native-rapi-ui";
 
 import {
   getFirestore,
@@ -37,9 +31,9 @@ import * as ImagePicker from "expo-image-picker";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
+import { useTheme } from "@/hooks/useTheme";
 import { Theme } from "@/constants/theme";
 
-// Route params used when editing
 type ExpenseAddRouteParams = {
   editId?: string;
   amount?: number;
@@ -51,26 +45,26 @@ type ExpenseAddRouteParams = {
   type?: "Income" | "Expense";
 };
 
-export default function TransactionAddScreen({ navigation, route }: Props) {
+export default function TransactionAddScreen({ navigation, route }: any) {
+  const router = useRouter();
+  const nav = navigation ?? { goBack: () => router.back() };
+
   const { isDarkmode } = useTheme();
   const auth = getAuth();
   const db = getFirestore();
   const storage = getStorage();
 
-  const params = (route.params ?? {}) as ExpenseAddRouteParams;
+  const params = ((route as any)?.params ?? {}) as ExpenseAddRouteParams;
   const isEditMode = !!params.editId;
 
-  // Type
   const [type, setType] = useState<"Income" | "Expense">(
     params.type || "Expense"
   );
 
-  // Date & Time
   const initialDate = params.dateTime ? new Date(params.dateTime) : new Date();
   const [date, setDate] = useState<Date>(initialDate);
   const [time, setTime] = useState<Date>(initialDate);
 
-  // Form inputs
   const [amount, setAmount] = useState(
     params.amount ? String(params.amount) : ""
   );
@@ -114,9 +108,20 @@ export default function TransactionAddScreen({ navigation, route }: Props) {
   ];
 
   const isIncome = type === "Income";
-  const accentColor = isIncome ? "#2e8b57" : "#ff7f50";
+  const accentColor = isIncome ? "#22C55E" : "#F97316";
 
-  // Load latest data if editing (in case route only has editId)
+  const labelColor = isDarkmode ? "#E5E7EB" : "#0F172A";
+  const subtleTextColor = isDarkmode ? "#9CA3AF" : "#6B7280";
+  const inputBg = isDarkmode ? "rgba(15,23,42,0.95)" : "#F9FAFB";
+  const inputBorder = isDarkmode ? "#38BDF8" : "#CBD5E1";
+  const cardBg = isDarkmode ? "rgba(15,23,42,0.92)" : "rgba(255,255,255,0.97)";
+  const cardBorder = isDarkmode
+    ? "rgba(148,163,184,0.4)"
+    : "rgba(15,23,42,0.06)";
+  const headerTitleColor = isDarkmode
+    ? "#F9FAFB"
+    : Theme.colors.textPrimary ?? "#0F172A";
+
   useEffect(() => {
     const fetchExisting = async () => {
       if (!params.editId) return;
@@ -146,12 +151,10 @@ export default function TransactionAddScreen({ navigation, route }: Props) {
     fetchExisting();
   }, [params.editId, db]);
 
-  // Reset category when switching type
   useEffect(() => {
     setCategory("");
   }, [type]);
 
-  // Ask media & camera permission
   useEffect(() => {
     (async () => {
       if (Platform.OS !== "web") {
@@ -232,7 +235,6 @@ export default function TransactionAddScreen({ navigation, route }: Props) {
 
       let imageURL: string | null = params.imageURL || null;
       if (image && image !== params.imageURL) {
-        // Upload new image to Firebase Storage
         const response = await fetch(image);
         const blob = await response.blob();
 
@@ -254,16 +256,14 @@ export default function TransactionAddScreen({ navigation, route }: Props) {
       if (imageURL) payload.imageURL = imageURL;
 
       if (isEditMode && params.editId) {
-        // Update
         await updateDoc(doc(db, "Expenses", params.editId), payload);
         Alert.alert("Success", "Record updated.");
       } else {
-        // Add
         await addDoc(collection(db, "Expenses"), payload);
         Alert.alert("Success", "Record added.");
       }
 
-      navigation.goBack();
+      nav.goBack();
     } catch (err: any) {
       Alert.alert("Error", err.message || String(err));
     } finally {
@@ -273,31 +273,44 @@ export default function TransactionAddScreen({ navigation, route }: Props) {
 
   const renderTypeButton = (label: "Income" | "Expense") => {
     const active = type === label;
-    const buttonAccent = label === "Income" ? "#2e8b57" : "#ff7f50";
+    const buttonAccent = label === "Income" ? "#22C55E" : "#F97316";
     return (
       <TouchableOpacity
         style={[
           styles.typeButton,
           {
             borderColor: buttonAccent,
-            backgroundColor: active ? buttonAccent : "transparent",
+            backgroundColor: active
+              ? buttonAccent
+              : isDarkmode
+              ? "rgba(15,23,42,0.9)"
+              : "transparent",
           },
         ]}
         onPress={() => setType(label)}
       >
-        <Text
+        <RNText
           style={{
-            color: active ? "#fff" : buttonAccent,
-            fontWeight: active ? "bold" : "normal",
+            color: active ? "#0B1120" : buttonAccent,
+            fontWeight: active ? "700" : "500",
           }}
         >
           {label}
-        </Text>
+        </RNText>
       </TouchableOpacity>
     );
   };
 
   const headerTitle = isEditMode ? "Edit Record" : "Add Record";
+
+  const inputBaseStyle = [
+    styles.inputField,
+    {
+      backgroundColor: inputBg,
+      borderColor: inputBorder,
+      color: labelColor,
+    },
+  ] as const;
 
   return (
     <GradientBackground>
@@ -317,69 +330,108 @@ export default function TransactionAddScreen({ navigation, route }: Props) {
                 icon="arrow-back"
                 variant="secondary"
                 size="medium"
-                onPress={() => navigation.goBack()}
+                onPress={() => nav.goBack()}
               />
-              <Text style={styles.headerTitle}>{headerTitle}</Text>
+
+              <RNText
+                style={[
+                  styles.headerTitle,
+                  { color: headerTitleColor },
+                ]}
+              >
+                {headerTitle}
+              </RNText>
               <View style={{ width: 48 }} />
             </View>
 
             {/* Form Card */}
-            <Card style={styles.formCard}>
+            <Card
+              style={[
+                styles.formCard,
+                {
+                  backgroundColor: cardBg,
+                  borderColor: cardBorder,
+                  borderWidth: 1,
+                },
+              ]}
+            >
               {/* Type selector */}
-              <Text style={styles.label}>Transaction Type</Text>
+              <RNText
+                style={[
+                  styles.label,
+                  { color: subtleTextColor },
+                ]}
+              >
+                Transaction Type
+              </RNText>
               <View style={styles.typeRow}>
                 {renderTypeButton("Income")}
                 {renderTypeButton("Expense")}
               </View>
 
               {/* Date */}
-              <Text style={styles.label}>Date</Text>
-              <TextInput
+              <RNText
+                style={[
+                  styles.label,
+                  { color: labelColor },
+                ]}
+              >
+                Date
+              </RNText>
+              <RNTextInput
                 value={date.toLocaleDateString()}
                 editable={false}
-                containerStyle={styles.input}
+                style={inputBaseStyle}
               />
 
               {/* Time */}
-              <Text style={styles.label}>Time</Text>
-              {Platform.OS === "web" ? (
-                <input
-                  type="time"
-                  value={`${String(time.getHours()).padStart(2, "0")}:${String(
-                    time.getMinutes()
-                  ).padStart(2, "0")}`}
-                  onChange={(e) => {
-                    const [h, m] = e.target.value.split(":");
-                    const newTime = new Date(date);
-                    newTime.setHours(Number(h), Number(m), 0, 0);
-                    setTime(newTime);
-                  }}
-                  style={styles.inputWeb}
-                />
-              ) : (
-                <TextInput
-                  value={`${String(time.getHours()).padStart(2, "0")}:${String(
-                    time.getMinutes()
-                  ).padStart(2, "0")}`}
-                  editable={false}
-                  containerStyle={styles.input}
-                />
-              )}
+              <RNText
+                style={[
+                  styles.label,
+                  { color: labelColor },
+                ]}
+              >
+                Time
+              </RNText>
+              <RNTextInput
+                value={`${String(time.getHours()).padStart(2, "0")}:${String(
+                  time.getMinutes()
+                ).padStart(2, "0")}`}
+                editable={false}
+                style={inputBaseStyle}
+              />
 
               {/* Amount */}
-              <Text style={[styles.label, { marginTop: 15 }]}>
+              <RNText
+                style={[
+                  styles.label,
+                  {
+                    marginTop: 15,
+                    color: accentColor,
+                    fontWeight: "600",
+                  },
+                ]}
+              >
                 Amount (RM) – {isIncome ? "Income" : "Expense"}
-              </Text>
-              <TextInput
+              </RNText>
+              <RNTextInput
                 placeholder="0.00"
+                placeholderTextColor={isDarkmode ? "#6B7280" : "#9CA3AF"}
                 value={amount}
                 keyboardType="numeric"
                 onChangeText={setAmount}
-                containerStyle={styles.input}
+                style={inputBaseStyle}
               />
 
               {/* Category */}
-              <Text style={styles.label}>Category</Text>
+              <RNText
+                style={[
+                  styles.label,
+                  { color: labelColor },
+                ]}
+              >
+                Category
+              </RNText>
               <Picker
                 items={currentCategoryList.map((c) => ({
                   label: c,
@@ -388,33 +440,55 @@ export default function TransactionAddScreen({ navigation, route }: Props) {
                 value={category}
                 onValueChange={(val) => setCategory(String(val))}
                 placeholder="Select category"
-                style={styles.input}
+                style={styles.pickerStyle}
               />
 
               {/* Account */}
-              <Text style={styles.label}>Account</Text>
+              <RNText
+                style={[
+                  styles.label,
+                  { color: labelColor },
+                ]}
+              >
+                Account
+              </RNText>
               <Picker
                 items={accountList}
                 value={account}
                 onValueChange={(val) => setAccount(String(val))}
                 placeholder="Select account"
-                style={styles.input}
+                style={styles.pickerStyle}
               />
 
               {/* Note */}
-              <Text style={styles.label}>Note</Text>
-              <TextInput
+              <RNText
+                style={[
+                  styles.label,
+                  { color: labelColor },
+                ]}
+              >
+                Note
+              </RNText>
+              <RNTextInput
                 placeholder="Optional note"
+                placeholderTextColor={isDarkmode ? "#6B7280" : "#9CA3AF"}
                 value={note}
                 onChangeText={setNote}
                 multiline
                 numberOfLines={3}
-                containerStyle={styles.input}
+                style={[...inputBaseStyle, styles.inputMultiline]}
               />
 
               {/* Receipt section */}
               <View style={{ marginTop: 15 }}>
-                <Text style={styles.label}>Receipt (optional)</Text>
+                <RNText
+                  style={[
+                    styles.label,
+                    { color: labelColor },
+                  ]}
+                >
+                  Receipt (optional)
+                </RNText>
                 <View style={styles.receiptRow}>
                   <Button
                     text="Gallery"
@@ -465,7 +539,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: Theme.typography.fontSizes.xl,
     fontWeight: Theme.typography.fontWeights.bold,
-    color: Theme.colors.textPrimary,
   },
   formCard: {
     paddingBottom: Theme.spacing.md,
@@ -474,17 +547,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 4,
   },
-  input: {
+  inputField: {
+    width: "100%",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
     marginBottom: 10,
   },
-  inputWeb: {
+  inputMultiline: {
+    height: 90,
+    textAlignVertical: "top",
+  },
+  pickerStyle: {
     width: "100%",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ccc",
     marginBottom: 10,
+    borderRadius: 12,
   },
   typeRow: {
     flexDirection: "row",
@@ -493,9 +571,9 @@ const styles = StyleSheet.create({
   },
   typeButton: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     marginHorizontal: 4,
-    borderRadius: 20,
+    borderRadius: 999,
     borderWidth: 1,
     alignItems: "center",
   },

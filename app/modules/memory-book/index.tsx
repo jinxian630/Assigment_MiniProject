@@ -409,41 +409,6 @@ export default function MemoryBookScreen() {
               />
             </TouchableOpacity>
 
-            {/* Stories View */}
-            <TouchableOpacity
-              onPress={() => router.push("/modules/memory-book/memory-stories")}
-              style={[
-                styles.secondaryRow,
-                { backgroundColor: "#020617", borderColor: "#4b5563" },
-              ]}
-            >
-              <View
-                style={[
-                  styles.rowIconCircle,
-                  { backgroundColor: "rgba(249,115,22,0.14)" },
-                ]}
-              >
-                <Ionicons
-                  name="play-circle-outline"
-                  size={18}
-                  color="#fb923c"
-                />
-              </View>
-              <View style={styles.rowTextBlock}>
-                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
-                  Stories View
-                </Text>
-                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
-                  Relive memories in a full-screen, story-style experience.
-                </Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={colors.textSoft}
-              />
-            </TouchableOpacity>
-
             {/* Explore Users */}
             <TouchableOpacity
               onPress={() => router.push("/modules/memory-book/UserSearch")}

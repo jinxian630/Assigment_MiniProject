@@ -1,3 +1,5 @@
+// app/modules/memory-book/MemoryPostCreate.tsx
+
 import React, { useState } from "react";
 import {
   View,
@@ -8,15 +10,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  StyleSheet,
+  TextInput as RNTextInput,
 } from "react-native";
-import {
-  Layout,
-  TopNav,
-  TextInput,
-  Button,
-  useTheme,
-  themeColor,
-} from "react-native-rapi-ui";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -26,12 +23,16 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import * as ImagePicker from "expo-image-picker";
 
 import EmotionSelector, { MoodData } from "./EmotionSelector";
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { IconButton } from "@/components/common/IconButton";
+import { useTheme } from "@/hooks/useTheme";
 
 const PRIMARY_PURPLE = "#a855f7";
 
 export default function MemoryPostCreate() {
   const router = useRouter();
-  const { isDarkmode, setTheme } = useTheme();
+  const { theme, toggleTheme }: any = useTheme();
+  const isDarkMode = theme === "dark";
 
   const [image, setImage] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -46,12 +47,14 @@ export default function MemoryPostCreate() {
     color: "#a78bfa",
   });
 
+  // 🎨 FIXED THEME COLORS — CARDS STAY DARK ALWAYS
   const colors = {
-    background: isDarkmode ? "#020617" : "#f1f5f9",
-    surface: isDarkmode ? "#020617" : "#020617",
-    text: "#e5e7eb",
-    textSecondary: "#9ca3af",
-    border: "#1f2937",
+    background: isDarkMode ? "#020617" : "#0b1020",
+    surface: "#020617",
+    text: isDarkMode ? "#e5e7eb" : "#f3f4f6",
+    textSoft: isDarkMode ? "#9ca3af" : "#c7d2fe",
+    borderSoft: "#1f2937",
+    chipBg: "rgba(168,85,247,0.12)",
   };
 
   const pickImage = async () => {
@@ -101,6 +104,7 @@ export default function MemoryPostCreate() {
       const resp = await fetch(image);
       const blob = await resp.blob();
 
+      // create unique id for Firestore image name
       const uniqueId =
         Date.now().toString(16) + Math.random().toString(16) + "0".repeat(16);
       const guid = [
@@ -163,279 +167,416 @@ export default function MemoryPostCreate() {
   };
 
   return (
-    <Layout>
-      <TopNav
-        middleContent="New Memory"
-        leftContent={
-          <Ionicons
-            name="chevron-back"
-            size={20}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
+    <GradientBackground>
+      <SafeAreaView style={styles.safeArea}>
+        {/* HEADER */}
+        <View style={styles.headerRow}>
+          <IconButton
+            icon="arrow-back"
+            onPress={() => router.back()}
+            variant="ghost"
           />
-        }
-        leftAction={() => router.back()}
-        rightContent={
-          <Ionicons
-            name={isDarkmode ? "sunny" : "moon"}
-            size={20}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
-          />
-        }
-        rightAction={() => setTheme(isDarkmode ? "light" : "dark")}
-      />
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>
+              New Memory
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
+            <Ionicons
+              name={isDarkMode ? "sunny-outline" : "moon-outline"}
+              size={20}
+              color={colors.text}
+            />
+          </TouchableOpacity>
+        </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
-          showsVerticalScrollIndicator={false}
+        <KeyboardAvoidingView
+          style={[styles.flex]}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          {/* Intro */}
-          <View style={{ marginBottom: 18 }}>
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: "700",
-                color: colors.text,
-                marginBottom: 4,
-              }}
-            >
-              Capture a moment
-            </Text>
-            <Text
-              style={{
-                fontSize: 13,
-                color: colors.textSecondary,
-              }}
-            >
-              Add a photo, give it a title, describe what happened, and how you
-              felt.
-            </Text>
-          </View>
-
-          {/* Image picker card */}
-          <View
-            style={{
-              marginBottom: 20,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
-            }}
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
           >
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: "600",
-                color: colors.text,
-                marginBottom: 8,
-              }}
-            >
-              Cover image
-            </Text>
-            <Text
-              style={{
-                fontSize: 12,
-                color: colors.textSecondary,
-                marginBottom: 10,
-              }}
-            >
-              A picture that represents this memory. It will appear in your
-              timeline and stories.
-            </Text>
-
-            {image ? (
-              <View style={{ position: "relative" }}>
-                <Image
-                  source={{ uri: image }}
-                  style={{
-                    width: "100%",
-                    height: 220,
-                    borderRadius: 12,
-                    resizeMode: "cover",
-                  }}
-                />
-                <TouchableOpacity
-                  onPress={removeImage}
-                  style={{
-                    position: "absolute",
-                    top: 8,
-                    right: 8,
-                    backgroundColor: "rgba(15, 23, 42, 0.9)",
-                    borderRadius: 999,
-                    padding: 6,
-                  }}
+            {/* INTRO */}
+            <View style={styles.introRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.introTitle, { color: colors.text }]}>
+                  Capture a moment
+                </Text>
+                <Text
+                  style={[styles.introSubtitle, { color: colors.textSoft }]}
                 >
-                  <Ionicons name="close" size={18} color="#fff" />
-                </TouchableOpacity>
+                  Add a photo, give it a title, describe what happened, and how
+                  you felt.
+                </Text>
               </View>
-            ) : (
-              <TouchableOpacity
-                onPress={pickImage}
-                style={{
-                  borderStyle: "dashed",
-                  borderColor: colors.textSecondary,
-                  borderWidth: 1.5,
-                  borderRadius: 12,
-                  paddingVertical: 32,
-                  paddingHorizontal: 12,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: "#020617",
-                }}
+
+              <View
+                style={[styles.stepChip, { borderColor: colors.borderSoft }]}
               >
-                <Ionicons
-                  name="image-outline"
-                  size={40}
-                  color={colors.textSecondary}
-                />
-                <Text
-                  style={{
-                    marginTop: 8,
-                    fontSize: 14,
+                <Text style={[styles.stepChipText, { color: colors.textSoft }]}>
+                  STEP 1 OF 2
+                </Text>
+              </View>
+            </View>
+
+            {/* IMAGE CARD */}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.borderSoft,
+                },
+              ]}
+            >
+              <View style={styles.cardHeaderRow}>
+                <View
+                  style={[styles.iconPill, { backgroundColor: colors.chipBg }]}
+                >
+                  <Ionicons
+                    name="image-outline"
+                    size={16}
+                    color={PRIMARY_PURPLE}
+                  />
+                </View>
+
+                <View>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>
+                    Cover image
+                  </Text>
+                  <Text
+                    style={[styles.cardSubtitle, { color: colors.textSoft }]}
+                  >
+                    This photo will appear in your timeline.
+                  </Text>
+                </View>
+              </View>
+
+              {image ? (
+                <View style={{ position: "relative" }}>
+                  <Image source={{ uri: image }} style={styles.coverImage} />
+                  <TouchableOpacity
+                    onPress={removeImage}
+                    style={styles.removeImageBtn}
+                  >
+                    <Ionicons name="close" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={pickImage}
+                  style={[
+                    styles.imagePlaceholder,
+                    { borderColor: colors.textSoft },
+                  ]}
+                >
+                  <Ionicons
+                    name="cloud-upload-outline"
+                    size={32}
+                    color={colors.textSoft}
+                  />
+                  <Text
+                    style={[
+                      styles.imagePlaceholderTitle,
+                      { color: colors.text },
+                    ]}
+                  >
+                    Tap to add cover image
+                  </Text>
+                  <Text
+                    style={[
+                      styles.imagePlaceholderSub,
+                      { color: colors.textSoft },
+                    ]}
+                  >
+                    JPG or PNG, up to 10MB
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* DETAILS CARD */}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.borderSoft,
+                },
+              ]}
+            >
+              <View style={styles.detailsHeaderRow}>
+                <View
+                  style={[
+                    styles.detailsChip,
+                    { backgroundColor: colors.chipBg },
+                  ]}
+                >
+                  <Text
+                    style={[styles.detailsChipText, { color: colors.textSoft }]}
+                  >
+                    DETAILS
+                  </Text>
+                </View>
+
+                <Text style={[styles.detailsHint, { color: colors.textSoft }]}>
+                  Give this memory a name and tell the story behind it.
+                </Text>
+              </View>
+
+              {/* Title */}
+              <Text style={[styles.fieldLabel, { color: colors.text }]}>
+                Title
+              </Text>
+              <RNTextInput
+                placeholder="eg. Picnic at KLCC park"
+                value={title}
+                onChangeText={setTitle}
+                style={[
+                  styles.textInput,
+                  {
+                    borderColor: colors.borderSoft,
+                    backgroundColor: colors.surface,
                     color: colors.text,
-                    fontWeight: "500",
-                  }}
-                >
-                  Tap to add cover image
-                </Text>
-                <Text
-                  style={{
-                    marginTop: 4,
-                    fontSize: 11,
-                    color: colors.textSecondary,
-                  }}
-                >
-                  JPG or PNG, up to 10MB
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+                  },
+                ]}
+                placeholderTextColor={colors.textSoft}
+              />
 
-          {/* Title card */}
-          <View
-            style={{
-              marginBottom: 16,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: "600",
-                color: colors.text,
-                marginBottom: 8,
-              }}
+              {/* Story */}
+              <Text
+                style={[
+                  styles.fieldLabel,
+                  { color: colors.text, marginTop: 14 },
+                ]}
+              >
+                Story
+              </Text>
+              <Text style={[styles.fieldHelper, { color: colors.textSoft }]}>
+                What happened? What made this moment special or important to
+                you?
+              </Text>
+              <RNTextInput
+                placeholder="Write your memory here..."
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={6}
+                style={[
+                  styles.textArea,
+                  {
+                    borderColor: colors.borderSoft,
+                    backgroundColor: colors.surface,
+                    color: colors.text,
+                  },
+                ]}
+                placeholderTextColor={colors.textSoft}
+              />
+            </View>
+
+            {/* EMOTIONS */}
+            <EmotionSelector moodData={moodData} setMoodData={setMoodData} />
+
+            {/* PUBLISH BUTTON */}
+            <TouchableOpacity
+              onPress={handlePublish}
+              disabled={loading}
+              style={[
+                styles.publishBtn,
+                {
+                  backgroundColor: PRIMARY_PURPLE,
+                  opacity: loading ? 0.7 : 1,
+                },
+              ]}
             >
-              Title
-            </Text>
-            <TextInput
-              containerStyle={{ marginBottom: 0 }}
-              placeholder="Give this memory a name..."
-              value={title}
-              autoCapitalize="sentences"
-              autoCompleteType="off"
-              autoCorrect
-              onChangeText={setTitle}
-              style={{
-                fontSize: 16,
-                paddingVertical: 10,
-                paddingHorizontal: 12,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-                color: colors.text,
-              }}
-              placeholderTextColor={colors.textSecondary}
-            />
-          </View>
-
-          {/* Story card */}
-          <View
-            style={{
-              marginBottom: 16,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              padding: 14,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: "600",
-                color: colors.text,
-                marginBottom: 8,
-              }}
-            >
-              Story
-            </Text>
-            <Text
-              style={{
-                fontSize: 12,
-                color: colors.textSecondary,
-                marginBottom: 8,
-              }}
-            >
-              What happened? What made this moment special or important to you?
-            </Text>
-            <TextInput
-              containerStyle={{ marginBottom: 0 }}
-              placeholder="Write your memory here..."
-              value={description}
-              autoCapitalize="sentences"
-              autoCompleteType="off"
-              autoCorrect
-              multiline
-              numberOfLines={6}
-              onChangeText={setDescription}
-              style={{
-                fontSize: 14,
-                paddingVertical: 10,
-                paddingHorizontal: 12,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-                color: colors.text,
-                textAlignVertical: "top",
-              }}
-              placeholderTextColor={colors.textSecondary}
-            />
-          </View>
-
-          {/* Emotion selector (spectrum + color) */}
-          <EmotionSelector moodData={moodData} setMoodData={setMoodData} />
-
-          {/* Publish button */}
-          <Button
-            text={loading ? "Publishing..." : "Publish memory"}
-            onPress={handlePublish}
-            disabled={loading}
-            style={{
-              marginTop: 10,
-              borderRadius: 999,
-              paddingVertical: 14,
-              backgroundColor: PRIMARY_PURPLE,
-            }}
-            rightContent={
-              !loading ? (
-                <Ionicons name="paper-plane" size={18} color="#fff" />
-              ) : undefined
-            }
-          />
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Layout>
+              <Text style={styles.publishText}>
+                {loading ? "Publishing..." : "Publish memory"}
+              </Text>
+              {!loading && (
+                <Ionicons
+                  name="paper-plane"
+                  size={18}
+                  color="#ffffff"
+                  style={{ marginLeft: 6 }}
+                />
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </GradientBackground>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
+  flex: { flex: 1 },
+
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 6,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  themeToggle: {
+    width: 40,
+    alignItems: "flex-end",
+  },
+
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 40,
+  },
+
+  introRow: {
+    marginBottom: 18,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  introTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  introSubtitle: {
+    fontSize: 13,
+  },
+  stepChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: "rgba(15,23,42,0.85)",
+  },
+  stepChipText: {
+    fontSize: 11,
+  },
+
+  card: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 18,
+  },
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  iconPill: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  cardSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  coverImage: {
+    width: "100%",
+    height: 220,
+    borderRadius: 14,
+  },
+  removeImageBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "rgba(15,23,42,0.95)",
+    padding: 6,
+    borderRadius: 999,
+  },
+  imagePlaceholder: {
+    borderStyle: "dashed",
+    borderWidth: 1.4,
+    borderRadius: 14,
+    paddingVertical: 30,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  imagePlaceholderTitle: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  imagePlaceholderSub: {
+    marginTop: 4,
+    fontSize: 11,
+  },
+
+  detailsHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  detailsChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginRight: 8,
+  },
+  detailsChipText: {
+    fontSize: 11,
+  },
+  detailsHint: {
+    fontSize: 12,
+    flex: 1,
+  },
+
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 6,
+  },
+  fieldHelper: {
+    fontSize: 11,
+    marginBottom: 6,
+  },
+
+  textInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+  },
+  textArea: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    textAlignVertical: "top",
+    minHeight: 120,
+  },
+
+  publishBtn: {
+    marginTop: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+  },
+  publishText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+});

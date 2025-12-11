@@ -1,21 +1,19 @@
-import React, { useEffect, useState } from "react";
+// app/modules/memory-book/UserProfile.tsx
+
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
+  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Image,
   ActivityIndicator,
 } from "react-native";
-import {
-  Layout,
-  TopNav,
-  Text,
-  useTheme,
-  themeColor,
-} from "react-native-rapi-ui";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
+
 import {
   getFirestore,
   doc,
@@ -27,66 +25,71 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
-type UserProfileData = {
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { IconButton } from "@/components/common/IconButton";
+import { useTheme } from "@/hooks/useTheme";
+
+const MODULE_PURPLE = "#a855f7";
+
+type User = {
+  id: string;
   displayName?: string;
   email?: string;
-  gender?: string;
-  birthDate?: string;
-  phoneNumber?: string;
+  photoURL?: string;
+  bio?: string;
 };
 
-type MemoryPost = {
+type Memory = {
   id: string;
   title: string;
-  description: string;
-  mood?: string;
-  startDate?: number;
+  description?: string;
   imageURL?: string;
-  likesCount?: number;
-  commentsCount?: number;
-  savesCount?: number;
+  startDate?: number;
+  emotionColor?: string;
 };
 
 export default function UserProfile() {
   const router = useRouter();
   const params = useLocalSearchParams<{ userId?: string }>();
-  const userId = typeof params.userId === 'string' ? params.userId : '';
-  const { isDarkmode } = useTheme();
+  const { theme } = useTheme();
+  const isDarkMode = theme === "dark";
 
-  const [user, setUser] = useState<UserProfileData | null>(null);
-  const [posts, setPosts] = useState<MemoryPost[]>([]);
-  const [loadingProfile, setLoadingProfile] = useState(true);
-  const [loadingPosts, setLoadingPosts] = useState(true);
+  const userId = params.userId as string | undefined;
 
-  const db = getFirestore();
+  const [user, setUser] = useState<User | null>(null);
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [loadingMemories, setLoadingMemories] = useState(true);
+
+  const colors = {
+    bg: isDarkMode ? "#020617" : "#f9fafb",
+    card: isDarkMode ? "#020617" : "#ffffff",
+    textMain: isDarkMode ? "#F9FAFB" : "#020617",
+    textSoft: isDarkMode ? "#9CA3AF" : "#6B7280",
+    borderSoft: isDarkMode ? "#1F2937" : "#E5E7EB",
+  };
 
   useEffect(() => {
-    if (!userId) {
-      setLoadingProfile(false);
-      setLoadingPosts(false);
-      return;
-    }
+    if (!userId) return;
 
-    // Load user profile once
-    const loadUser = async () => {
+    const db = getFirestore();
+
+    // Fetch user document
+    (async () => {
       try {
-        const userRef = doc(db, "users", userId);
-        const snap = await getDoc(userRef);
+        const ref = doc(db, "Users", userId); // change "Users" if your collection name differs
+        const snap = await getDoc(ref);
         if (snap.exists()) {
-          setUser(snap.data() as UserProfileData);
-        } else {
-          setUser(null);
+          setUser({ id: snap.id, ...(snap.data() as any) });
         }
       } catch (err) {
-        console.log("Error loading user profile:", err);
+        console.log("UserProfile user error:", err);
       } finally {
-        setLoadingProfile(false);
+        setLoadingUser(false);
       }
-    };
+    })();
 
-    loadUser();
-
-    // Subscribe to this user's posts
+    // Subscribe to this user's memories
     const postsRef = collection(db, "MemoryPosts");
     const q = query(
       postsRef,
@@ -96,35 +99,35 @@ export default function UserProfile() {
 
     const unsub = onSnapshot(
       q,
-      (snapshot) => {
-        const list: MemoryPost[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data() as any;
-          list.push({
-            id: docSnap.id,
-            title: data.title,
-            description: data.description,
-            mood: data.mood,
-            startDate: data.startDate,
-            imageURL: data.imageURL,
-            likesCount: data.likesCount || 0,
-            commentsCount: data.commentsCount || 0,
-            savesCount: data.savesCount || 0,
-          });
-        });
-        setPosts(list);
-        setLoadingPosts(false);
+      (snap) => {
+        const list: Memory[] = [];
+        snap.forEach((doc) =>
+          list.push({ id: doc.id, ...(doc.data() as any) })
+        );
+        setMemories(list);
+        setLoadingMemories(false);
       },
-      (error) => {
-        console.log("Error loading posts:", error);
-        setLoadingPosts(false);
+      (err) => {
+        console.log("UserProfile memories error:", err);
+        setLoadingMemories(false);
       }
     );
 
     return () => unsub();
-  }, [db, userId]);
+  }, [userId]);
 
-  const formatShortDate = (timestamp?: number) => {
+  const memoriesCount = memories.length;
+  const totalLikes = useMemo(
+    () =>
+      memories.reduce(
+        (acc, m: any) =>
+          acc + (typeof m.likesCount === "number" ? m.likesCount : 0),
+        0
+      ),
+    [memories]
+  );
+
+  const formatDate = (timestamp?: number) => {
     if (!timestamp) return "";
     const d = new Date(timestamp);
     return d.toLocaleDateString("en-US", {
@@ -134,328 +137,346 @@ export default function UserProfile() {
     });
   };
 
-  const totalPosts = posts.length;
-  const totalLikes = posts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
-  const totalComments = posts.reduce(
-    (sum, p) => sum + (p.commentsCount || 0),
-    0
-  );
-  const totalSaves = posts.reduce((sum, p) => sum + (p.savesCount || 0), 0);
-
-  const headerName = user?.displayName || "Profile";
+  const openMemoryDetail = (id: string) => {
+    router.push(`/modules/memory-book/MemoryPostDetail?id=${id}`);
+  };
 
   return (
-    <Layout>
-      <TopNav
-        middleContent={headerName}
-        leftContent={
-          <Ionicons
-            name="arrow-back"
-            size={22}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
+    <GradientBackground>
+      <SafeAreaView style={styles.safeArea}>
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <IconButton
+            icon="arrow-back"
+            variant="ghost"
+            onPress={() => router.back()}
           />
-        }
-        leftAction={() => router.back()}
-      />
-
-      {loadingProfile ? (
-        <View style={styles.centered}>
-          <ActivityIndicator />
-        </View>
-      ) : !user ? (
-        <View style={styles.centered}>
-          <Text>User not found.</Text>
-        </View>
-      ) : (
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-        >
-          {/* Profile header */}
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: isDarkmode ? "#020617" : "#f1f5f9",
-              },
-            ]}
-          >
-            <View style={styles.profileRow}>
-              <View style={styles.avatar}>
-                <Text style={{ color: "white", fontWeight: "700" }}>
-                  {user.displayName?.charAt(0).toUpperCase() || "U"}
-                </Text>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    fontSize: 18,
-                    fontWeight: "700",
-                    marginBottom: 2,
-                    color: isDarkmode ? themeColor.white100 : themeColor.dark,
-                  }}
-                >
-                  {user.displayName}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: isDarkmode ? "#94a3b8" : "#6b7280",
-                    marginBottom: 2,
-                  }}
-                >
-                  {user.email}
-                </Text>
-                {user.gender ? (
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: isDarkmode ? "#94a3b8" : "#6b7280",
-                    }}
-                  >
-                    {user.gender}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-
-            {/* Stats row */}
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{totalPosts}</Text>
-                <Text style={styles.statLabel}>Posts</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{totalLikes}</Text>
-                <Text style={styles.statLabel}>Likes</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{totalComments}</Text>
-                <Text style={styles.statLabel}>Comments</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{totalSaves}</Text>
-                <Text style={styles.statLabel}>Saves</Text>
-              </View>
-            </View>
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text style={[styles.headerTitle, { color: colors.textMain }]}>
+              Profile
+            </Text>
           </View>
+          <View style={{ width: 40 }} />
+        </View>
 
-          {/* Posts list */}
-          <View style={{ marginTop: 16 }}>
-            <Text
-              style={{
-                fontSize: 16,
-                fontWeight: "700",
-                marginBottom: 8,
-                color: isDarkmode ? themeColor.white100 : themeColor.dark,
-              }}
+        {loadingUser ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator size="small" color={MODULE_PURPLE} />
+          </View>
+        ) : !user ? (
+          <View style={styles.centerBox}>
+            <Ionicons
+              name="person-circle-outline"
+              size={34}
+              color={colors.textSoft}
+            />
+            <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
+              User not found
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textSoft }]}>
+              This profile may have been removed or is unavailable.
+            </Text>
+          </View>
+        ) : (
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Profile header card */}
+            <View
+              style={[
+                styles.profileCard,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.borderSoft,
+                },
+              ]}
             >
-              Memories
+              <View style={styles.profileTopRow}>
+                {user.photoURL ? (
+                  <Image
+                    source={{ uri: user.photoURL }}
+                    style={styles.avatarLg}
+                  />
+                ) : (
+                  <View style={styles.avatarLgPlaceholder}>
+                    <Ionicons
+                      name="person-outline"
+                      size={32}
+                      color={MODULE_PURPLE}
+                    />
+                  </View>
+                )}
+
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.profileName, { color: colors.textMain }]}
+                  >
+                    {user.displayName || "Unnamed user"}
+                  </Text>
+                  {user.email && (
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.profileEmail, { color: colors.textSoft }]}
+                    >
+                      {user.email}
+                    </Text>
+                  )}
+                  {user.bio && (
+                    <Text
+                      numberOfLines={2}
+                      style={[styles.profileBio, { color: colors.textSoft }]}
+                    >
+                      {user.bio}
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              {/* Stats */}
+              <View style={styles.statsRow}>
+                <View style={styles.statItem}>
+                  <Text style={[styles.statValue, { color: colors.textMain }]}>
+                    {memoriesCount}
+                  </Text>
+                  <Text style={[styles.statLabel, { color: colors.textSoft }]}>
+                    Memories
+                  </Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={[styles.statValue, { color: colors.textMain }]}>
+                    {totalLikes}
+                  </Text>
+                  <Text style={[styles.statLabel, { color: colors.textSoft }]}>
+                    Likes
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Memories list */}
+            <Text style={[styles.sectionTitle, { color: colors.textMain }]}>
+              Shared memories
+            </Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textSoft }]}>
+              Scroll through {user.displayName || "this user"}&apos;s public
+              memories.
             </Text>
 
-            {loadingPosts ? (
-              <ActivityIndicator />
-            ) : posts.length === 0 ? (
-              <Text style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
-                No memories yet.
-              </Text>
-            ) : (
-              posts.map((post) => (
-                <TouchableOpacity
-                  key={post.id}
-                  style={[
-                    styles.card,
-                    { marginBottom: 12, backgroundColor: isDarkmode ? "#1e293b" : "#ffffff" },
-                  ]}
-                  activeOpacity={0.9}
-                  onPress={() =>
-                    router.push(`/modules/memory-book/memory-post-detail?postId=${post.id}`)
-                  }
+            {loadingMemories ? (
+              <View style={styles.centerBox}>
+                <ActivityIndicator size="small" color={MODULE_PURPLE} />
+              </View>
+            ) : memories.length === 0 ? (
+              <View style={styles.emptyMemoriesBox}>
+                <Ionicons
+                  name="images-outline"
+                  size={26}
+                  color={colors.textSoft}
+                />
+                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
+                  No memories yet
+                </Text>
+                <Text
+                  style={[styles.emptySubtitle, { color: colors.textSoft }]}
                 >
-                  {/* Thumbnail */}
-                  {post.imageURL ? (
-                    <Image
-                      source={{ uri: post.imageURL }}
-                      style={styles.postImage}
-                    />
-                  ) : null}
+                  When this user posts a memory, it will appear here.
+                </Text>
+              </View>
+            ) : (
+              memories.map((memory) => (
+                <TouchableOpacity
+                  key={memory.id}
+                  onPress={() => openMemoryDetail(memory.id)}
+                  style={[
+                    styles.memoryCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.borderSoft,
+                    },
+                  ]}
+                >
+                  {/* Left strip with emotion color */}
+                  <View
+                    style={[
+                      styles.colorStrip,
+                      { backgroundColor: memory.emotionColor || MODULE_PURPLE },
+                    ]}
+                  />
 
-                  <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontWeight: "600",
-                        marginBottom: 4,
-                        color: isDarkmode ? "#e2e8f0" : "#111827",
-                      }}
-                      numberOfLines={1}
-                    >
-                      {post.title}
-                    </Text>
-
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        color: "#6b7280",
-                        marginBottom: 4,
-                      }}
-                      numberOfLines={2}
-                    >
-                      {post.description}
-                    </Text>
-
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginTop: 6,
-                      }}
-                    >
-                      <View
-                        style={{ flexDirection: "row", alignItems: "center" }}
+                  <View style={styles.memoryContentRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.memoryTitle, { color: colors.textMain }]}
                       >
-                        {post.mood ? (
-                          <View style={styles.moodPill}>
-                            <Text style={styles.moodText}>
-                              Mood: {post.mood}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {post.startDate ? (
-                          <Text style={styles.dateText}>
-                            {formatShortDate(post.startDate)}
-                          </Text>
-                        ) : null}
-                      </View>
-
-                      {/* like / comment / save counts (display only for now) */}
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 10,
-                        }}
+                        {memory.title}
+                      </Text>
+                      {memory.description && (
+                        <Text
+                          numberOfLines={2}
+                          style={[
+                            styles.memoryDescription,
+                            { color: colors.textSoft },
+                          ]}
+                        >
+                          {memory.description}
+                        </Text>
+                      )}
+                      <Text
+                        style={[styles.memoryMeta, { color: colors.textSoft }]}
                       >
-                        <View style={styles.iconStat}>
-                          <Ionicons
-                            name="heart-outline"
-                            size={14}
-                            color="#f97316"
-                          />
-                          <Text style={styles.iconStatText}>
-                            {post.likesCount || 0}
-                          </Text>
-                        </View>
-                        <View style={styles.iconStat}>
-                          <Ionicons
-                            name="chatbubble-outline"
-                            size={14}
-                            color="#0ea5e9"
-                          />
-                          <Text style={styles.iconStatText}>
-                            {post.commentsCount || 0}
-                          </Text>
-                        </View>
-                        <View style={styles.iconStat}>
-                          <Ionicons
-                            name="bookmark-outline"
-                            size={14}
-                            color="#6366f1"
-                          />
-                          <Text style={styles.iconStatText}>
-                            {post.savesCount || 0}
-                          </Text>
-                        </View>
-                      </View>
+                        {formatDate(memory.startDate)}
+                      </Text>
                     </View>
+
+                    {memory.imageURL && (
+                      <Image
+                        source={{ uri: memory.imageURL }}
+                        style={styles.thumbnail}
+                      />
+                    )}
                   </View>
                 </TouchableOpacity>
               ))
             )}
-          </View>
-        </ScrollView>
-      )}
-    </Layout>
+          </ScrollView>
+        )}
+      </SafeAreaView>
+    </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  centered: {
+  safeArea: { flex: 1 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 6,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  centerBox: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  card: {
-    borderRadius: 16,
-    padding: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    paddingTop: 8,
   },
-  profileRow: {
+  profileCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 18,
+  },
+  profileTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
   },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#0ea5e9",
+  avatarLg: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  avatarLgPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    backgroundColor: "rgba(15,23,42,0.9)",
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  profileEmail: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  profileBio: {
+    fontSize: 12,
+    marginTop: 4,
   },
   statsRow: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    marginTop: 8,
+    marginTop: 16,
   },
   statItem: {
-    alignItems: "center",
+    marginRight: 24,
   },
-  statNumber: {
-    fontSize: 14,
+  statValue: {
+    fontSize: 16,
     fontWeight: "700",
   },
   statLabel: {
     fontSize: 11,
-    color: "#6b7280",
+    marginTop: 2,
   },
-  postImage: {
-    width: "100%",
-    height: 170,
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    marginBottom: 6,
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 2,
   },
-  moodPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: "#e0f2fe",
-    marginRight: 6,
+  sectionSubtitle: {
+    fontSize: 12,
+    marginBottom: 10,
   },
-  moodText: {
-    fontSize: 10,
-    color: "#0ea5e9",
+  emptyMemoriesBox: {
+    alignItems: "center",
+    marginTop: 20,
+  },
+  emptyTitle: {
+    marginTop: 8,
+    fontSize: 15,
     fontWeight: "600",
   },
-  dateText: {
-    fontSize: 11,
-    color: "#9ca3af",
+  emptySubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    textAlign: "center",
+    maxWidth: 260,
   },
-  iconStat: {
+  memoryCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 10,
+    overflow: "hidden",
+  },
+  colorStrip: {
+    width: 4,
+  },
+  memoryContentRow: {
     flexDirection: "row",
-    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  iconStatText: {
+  memoryTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  memoryDescription: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  memoryMeta: {
     fontSize: 11,
-    marginLeft: 3,
-    color: "#6b7280",
+    marginTop: 6,
+  },
+  thumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    marginLeft: 10,
   },
 });

@@ -5,13 +5,14 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Text as RNText,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
-import { Text, Button } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
+import { useRouter } from "expo-router";
+
+import { Button } from "react-native-rapi-ui";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
@@ -28,8 +29,6 @@ import {
   getDocs,
 } from "firebase/firestore";
 
-type Props = NativeStackScreenProps<MainStackParamList, "PrintTransactionList">;
-
 type Tx = {
   id: string;
   type: "Income" | "Expense";
@@ -40,7 +39,10 @@ type Tx = {
   dateTime?: number;
 };
 
-export default function PrintTransactionListScreen({ navigation }: Props) {
+export default function PrintTransactionListScreen({ navigation }: any) {
+  const router = useRouter();
+  const nav = navigation ?? { goBack: () => router.back() };
+
   const auth = getAuth();
   const db = getFirestore();
 
@@ -151,9 +153,9 @@ export default function PrintTransactionListScreen({ navigation }: Props) {
         icon="arrow-back"
         variant="secondary"
         size="medium"
-        onPress={() => navigation.goBack()}
+        onPress={() => nav.goBack()}
       />
-      <Text style={styles.headerTitle}>Print Transactions</Text>
+      <RNText style={styles.headerTitle}>Print Transactions</RNText>
       <View style={{ width: 48 }} />
     </View>
   );
@@ -169,19 +171,23 @@ export default function PrintTransactionListScreen({ navigation }: Props) {
             {header}
 
             <Card>
-              <Text style={styles.cardTitle}>Export to PDF</Text>
-              <Text style={styles.infoText}>
+              <RNText style={styles.cardTitle}>Export to PDF</RNText>
+              <RNText style={styles.infoText}>
                 This will generate a PDF containing all your income and expense
                 records, including type, category, account, note and amount.
-              </Text>
+              </RNText>
 
               {loading ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator />
-                  <Text style={{ marginLeft: 8 }}>Loading transactions...</Text>
+                  <RNText style={{ marginLeft: 8 }}>
+                    Loading transactions...
+                  </RNText>
                 </View>
               ) : (
-                <Text style={styles.infoText}>Total records: {txs.length}</Text>
+                <RNText style={styles.infoText}>
+                  Total records: {txs.length}
+                </RNText>
               )}
 
               <Button
