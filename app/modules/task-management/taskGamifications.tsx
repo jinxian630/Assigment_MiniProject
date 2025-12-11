@@ -11,11 +11,20 @@ import {
   getDocs,
 } from "firebase/firestore";
 
-/**
- * Structure we store for each user in `UserStats/{uid}`
- */
+/* ------------------------------------------------------------------ */
+/*  CONFIG                                                            */
+/* ------------------------------------------------------------------ */
+
+const XP_PER_LEVEL = 100;
+const MAIN_TASK_XP = 10;
+const SUBTASK_XP = 5;
+
+/* ------------------------------------------------------------------ */
+/*  TYPES                                                             */
+/* ------------------------------------------------------------------ */
+
 export type UserStats = {
-  xp: number; // XP inside current level (0–99)
+  xp: number; // XP inside current level (0–XP_PER_LEVEL-1)
   level: number;
   streak: number;
   completedTasks: number;
@@ -38,22 +47,32 @@ const getTodayString = () => {
   return `${year}-${month}-${day}`;
 };
 
-/** What the Productivity screen will use */
 export type GamificationStats = {
-  totalPoints: number; // level-based points, e.g. level*100 + xp
+  totalPoints: number;
   level: number;
   streak: number;
   lastTaskDate?: number;
   lastStreakIncrementDate?: number;
   completedTasks: number;
+
+  // For progress bar / ring
+  xpInLevel: number;
+  xpNeededForLevel: number;
+  progressToNextLevel: number; // 0–1
+
+  // For showing badge text
+  rankTitle: string;
 };
 
-/** Simple helper if you ever want to derive level purely from points */
+/** Optional helper if you need to convert points to level elsewhere */
 export function computeLevelFromPoints(points: number): number {
-  return Math.floor(points / 100) + 1;
+  return Math.floor(points / XP_PER_LEVEL) + 1;
 }
 
-/** Fetch or create user stats doc */
+/* ------------------------------------------------------------------ */
+/*  LOW-LEVEL HELPERS                                                 */
+/* ------------------------------------------------------------------ */
+
 export async function getUserStats(userId: string): Promise<UserStats> {
   const db = getFirestore();
   const ref = doc(db, "UserStats", userId);
@@ -74,14 +93,42 @@ export async function getUserStats(userId: string): Promise<UserStats> {
   };
 }
 
+/** Derive rank title from level – for your UI badge */
+function getRankTitle(level: number): string {
+  if (level >= 20) return "Legendary Planner";
+  if (level >= 15) return "Elite Strategist";
+  if (level >= 10) return "Productivity Pro";
+  if (level >= 5) return "Focused Achiever";
+  return "Rookie Planner";
+}
+
+/** Internal: convert stats into progress values */
+function getLevelProgress(stats: UserStats) {
+  const xpInLevel = stats.xp || 0;
+  const xpNeededForLevel = XP_PER_LEVEL;
+  const progressToNextLevel = Math.max(
+    0,
+    Math.min(1, xpInLevel / xpNeededForLevel)
+  );
+
+  const totalPoints = (stats.level - 1) * XP_PER_LEVEL + xpInLevel;
+
+  return {
+    xpInLevel,
+    xpNeededForLevel,
+    progressToNextLevel,
+    totalPoints,
+  };
+}
+
 /** Convert UserStats → GamificationStats for the UI */
 export async function getGamificationStats(
   uid: string
 ): Promise<GamificationStats> {
   const stats = await getUserStats(uid);
 
-  // each level = 100 pts, so totalPoints = finished levels + current XP
-  const totalPoints = (stats.level - 1) * 100 + (stats.xp || 0);
+  const { totalPoints, xpInLevel, xpNeededForLevel, progressToNextLevel } =
+    getLevelProgress(stats);
 
   const lastDateTs = stats.lastStreakDate
     ? new Date(stats.lastStreakDate + "T00:00:00").getTime()
@@ -94,12 +141,18 @@ export async function getGamificationStats(
     lastTaskDate: lastDateTs,
     lastStreakIncrementDate: lastDateTs,
     completedTasks: stats.completedTasks,
+    xpInLevel,
+    xpNeededForLevel,
+    progressToNextLevel,
+    rankTitle: getRankTitle(stats.level),
   };
 }
 
-/**
- * Check if user has ANY overdue tasks (not completed and due date < today)
- */
+/* ------------------------------------------------------------------ */
+/*  OVERDUE CHECK                                                     */
+/* ------------------------------------------------------------------ */
+
+/** Check if user has ANY overdue tasks (not completed and due date < today) */
 export async function checkUserHasOverdueTasks(
   userId: string
 ): Promise<boolean> {
@@ -121,6 +174,10 @@ export async function checkUserHasOverdueTasks(
     return typeof data.dueDate === "number" && data.dueDate < todayMs;
   });
 }
+
+/* ------------------------------------------------------------------ */
+/*  MAIN XP / STREAK LOGIC                                            */
+/* ------------------------------------------------------------------ */
 
 /**
  * Core: award XP + update streak when a task is completed.
@@ -144,22 +201,20 @@ export async function awardTaskCompletion(userId: string) {
     // already counted today → do not change streak
   } else {
     if (hasOverdue) {
-      // Break streak ONLY when there is overdue
-      newStreak = 0;
+      newStreak = 0; // reset only if overdue exists
     } else {
-      // No overdue → daily streak +1
       newStreak = newStreak + 1;
     }
   }
 
-  // 2️⃣ Simple XP: +10 per completed task (you can tweak later)
-  const gainedXp = 10;
+  // 2️⃣ XP: +MAIN_TASK_XP per completed task
+  const gainedXp = MAIN_TASK_XP;
   let newXp = (stats.xp || 0) + gainedXp;
   let newLevel = stats.level || 1;
 
-  // Example leveling: every 100 XP = +1 level
-  while (newXp >= 100) {
-    newXp -= 100;
+  // Leveling: every XP_PER_LEVEL XP = +1 level
+  while (newXp >= XP_PER_LEVEL) {
+    newXp -= XP_PER_LEVEL;
     newLevel += 1;
   }
 
@@ -175,21 +230,18 @@ export async function awardTaskCompletion(userId: string) {
   });
 }
 
-/**
- * Optional: XP for subtasks (smaller than main task).
- * Your TaskMenu already calls these, so we define them here.
- */
+/** XP for subtasks */
 export async function awardSubtaskCompletion(userId: string) {
   const db = getFirestore();
   const ref = doc(db, "UserStats", userId);
   const stats = await getUserStats(userId);
 
-  const gainedXp = 5;
+  const gainedXp = SUBTASK_XP;
   let newXp = (stats.xp || 0) + gainedXp;
   let newLevel = stats.level || 1;
 
-  while (newXp >= 100) {
-    newXp -= 100;
+  while (newXp >= XP_PER_LEVEL) {
+    newXp -= XP_PER_LEVEL;
     newLevel += 1;
   }
 
@@ -199,18 +251,19 @@ export async function awardSubtaskCompletion(userId: string) {
   });
 }
 
+/** Remove XP when a subtask is un-completed. */
 export async function removeSubtaskCompletion(userId: string) {
   const db = getFirestore();
   const ref = doc(db, "UserStats", userId);
   const stats = await getUserStats(userId);
 
-  let newXp = (stats.xp || 0) - 5;
+  let newXp = (stats.xp || 0) - SUBTASK_XP;
   let newLevel = stats.level || 1;
 
   if (newXp < 0) {
     if (newLevel > 1) {
       newLevel -= 1;
-      newXp = 100 + newXp; // borrow from previous level
+      newXp = XP_PER_LEVEL + newXp; // borrow from previous level
     } else {
       newXp = 0;
     }

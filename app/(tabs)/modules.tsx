@@ -1,11 +1,11 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { GradientBackground } from '@/components/common/GradientBackground';
-import { ModuleCard } from '@/components/dashboard/ModuleCard';
-import { MODULES } from '@/constants/modules';
-import { Theme } from '@/constants/theme';
+import React from "react";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { ModuleCard } from "@/components/dashboard/ModuleCard";
+import { MODULES } from "@/constants/modules";
+import { Theme } from "@/constants/theme";
 
 export default function ModulesScreen() {
   const router = useRouter();
@@ -16,7 +16,7 @@ export default function ModulesScreen() {
 
   return (
     <GradientBackground>
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -25,9 +25,7 @@ export default function ModulesScreen() {
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>All Modules</Text>
-            <Text style={styles.subtitle}>
-              Explore and manage your modules
-            </Text>
+            <Text style={styles.subtitle}>Explore and manage your modules</Text>
           </View>
 
           {/* Modules Grid */}
@@ -78,8 +76,8 @@ const styles = StyleSheet.create({
   },
 
   modulesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
 });

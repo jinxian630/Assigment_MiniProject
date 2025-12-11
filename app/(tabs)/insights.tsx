@@ -1,14 +1,14 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { GradientBackground } from '@/components/common/GradientBackground';
-import { Card } from '@/components/common/Card';
-import { Theme } from '@/constants/theme';
+import React from "react";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { Card } from "@/components/common/Card";
+import { Theme } from "@/constants/theme";
 
 export default function InsightsScreen() {
   return (
     <GradientBackground>
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   },
 
   chartPlaceholder: {
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   chartIcon: {
@@ -119,6 +119,6 @@ const styles = StyleSheet.create({
   chartSubtitle: {
     fontSize: Theme.typography.fontSizes.sm,
     color: Theme.colors.textSecondary,
-    textAlign: 'center',
+    textAlign: "center",
   },
 });

@@ -34,14 +34,13 @@ import { getAuth } from "firebase/auth";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
-import { Badge } from "@/components/common/Badge";
 import { useTheme } from "@/hooks/useTheme";
 import {
   awardSubtaskCompletion,
   removeSubtaskCompletion,
 } from "./taskGamifications";
 
-const MODULE_COLOR = "#6C4DFF";
+const MODULE_COLOR = "#38BDF8";
 
 // ------------ TYPES ------------
 
@@ -49,14 +48,15 @@ type TaskType = {
   id: string;
   taskName: string;
   details?: string;
-  startDate?: number;
-  dueDate?: number;
+  startDate?: number | null;
+  dueDate?: number | null;
   assignedTo?: string | string[];
   completed?: boolean;
   createdAt: number;
   updatedAt: number;
   CreatedUser: { id: string; name: string; email?: string };
   priorityScore?: number;
+  guests?: string[];
 };
 
 type CommentType = {
@@ -68,6 +68,39 @@ type CommentType = {
 };
 
 type FilterType = "all" | "active" | "completed" | "overdue";
+
+/** Only creator, assigned user (by email) and invited guest (by email) can see */
+const canUserSeeTask = (task: TaskType, user: any | null): boolean => {
+  if (!user) return false;
+
+  const uid = user.uid;
+  const email = (user.email || "").toLowerCase();
+
+  if (task?.CreatedUser?.id === uid) return true;
+
+  const assignedList: string[] = Array.isArray(task.assignedTo)
+    ? task.assignedTo
+    : task.assignedTo
+    ? [task.assignedTo]
+    : [];
+
+  if (
+    assignedList.some(
+      (addr) => typeof addr === "string" && addr.toLowerCase() === email
+    )
+  ) {
+    return true;
+  }
+
+  if (Array.isArray(task.guests)) {
+    const guestEmails = task.guests
+      .filter((g) => typeof g === "string")
+      .map((g) => g.toLowerCase());
+    if (guestEmails.includes(email)) return true;
+  }
+
+  return false;
+};
 
 // ------------ PRIORITY HELPER ------------
 
@@ -117,11 +150,60 @@ const computePriorityScore = (params: {
   return Math.round(score);
 };
 
+/** 🔧 Neon card shell – same idea as EventListScreen */
+const createNeonCardShell = (
+  accentColor: string,
+  theme: any,
+  extra: any = {}
+) => {
+  return {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: accentColor + "66",
+    shadowColor: accentColor,
+    shadowOpacity: theme.isDark ? 0.9 : 0.5,
+    shadowRadius: theme.isDark ? 30 : 20,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: theme.isDark ? 18 : 8,
+    ...extra,
+  };
+};
+
+/** 🎨 Summary card style for Overdue / Active / Completed */
+const summaryCardStyle = (
+  theme: any,
+  type: "overdue" | "active" | "completed"
+) => {
+  const colors = {
+    overdue: {
+      lightBorder: "#EF4444",
+      darkBorder: "#EF4444",
+    },
+    active: {
+      lightBorder: "#22C55E",
+      darkBorder: "#22C55E",
+    },
+    completed: {
+      lightBorder: MODULE_COLOR,
+      darkBorder: MODULE_COLOR,
+    },
+  } as const;
+
+  const c = colors[type];
+  const accent = theme.isDark ? c.darkBorder : c.lightBorder;
+
+  return createNeonCardShell(accent, theme, {
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
+    backgroundColor: theme.isDark ? "#020617" : "#F9FAFB",
+  });
+};
+
 // ------------ MAIN COMPONENT ------------
 
 export default function TaskMenuScreen() {
   const router = useRouter();
-  const { theme } = useTheme();
+  const { theme, toggleTheme }: any = useTheme();
   const db = getFirestore();
   const auth = getAuth();
 
@@ -164,18 +246,14 @@ export default function TaskMenuScreen() {
 
   const todayStr = new Date().toISOString().split("T")[0];
 
-  const styles = React.useMemo(
+  const styles = useMemo(
     () =>
       StyleSheet.create({
-        container: {
-          flex: 1,
-        },
-        list: {
-          flex: 1,
-        },
+        container: { flex: 1 },
+        list: { flex: 1 },
         listContent: {
           paddingHorizontal: theme.spacing.screenPadding,
-          paddingBottom: theme.spacing.xxl + 80,
+          paddingBottom: theme.spacing.xxl + 140,
         },
         headerRow: {
           flexDirection: "row",
@@ -190,7 +268,11 @@ export default function TaskMenuScreen() {
           fontWeight: theme.typography.fontWeights.bold,
           color: theme.colors.textPrimary,
         },
-        headerSpacer: { width: 48 },
+        headerRight: {
+          flexDirection: "row",
+          alignItems: "center",
+          columnGap: theme.spacing.xs,
+        },
         iconSection: {
           alignItems: "center",
           marginBottom: theme.spacing.xl,
@@ -202,10 +284,15 @@ export default function TaskMenuScreen() {
           alignItems: "center",
           justifyContent: "center",
           marginBottom: theme.spacing.md,
-          ...theme.shadows.medium,
+          backgroundColor: `${MODULE_COLOR}10`,
+          shadowColor: MODULE_COLOR,
+          shadowOpacity: theme.isDark ? 0.7 : 0.3,
+          shadowRadius: 20,
+          shadowOffset: { width: 0, height: 10 },
+          elevation: 12,
         },
         moduleTitle: {
-          fontSize: theme.typography.fontSizes.xxl,
+          fontSize: theme.typography.fontSizes.xl,
           fontWeight: theme.typography.fontWeights.bold,
           color: theme.colors.textPrimary,
           marginBottom: theme.spacing.xs,
@@ -214,33 +301,38 @@ export default function TaskMenuScreen() {
           fontSize: theme.typography.fontSizes.md,
           color: theme.colors.textSecondary,
         },
-        section: {
-          marginBottom: theme.spacing.lg,
+        section: { marginBottom: theme.spacing.lg },
+
+        /** Neon shell reused (same as EventListScreen) */
+        neonShellCard: createNeonCardShell(MODULE_COLOR, theme, {
+          padding: theme.spacing.md,
+          backgroundColor: theme.isDark ? "#020617" : "#F9FAFB",
+        }),
+        neonBottomLine: {
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 3,
+          borderBottomLeftRadius: 24,
+          borderBottomRightRadius: 24,
         },
+
         calendarRibbon: {
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
           paddingVertical: theme.spacing.md,
         },
-        calendarEmoji: {
-          fontSize: 24,
-          marginRight: theme.spacing.sm,
-        },
+        calendarEmoji: { fontSize: 24, marginRight: theme.spacing.sm },
         calendarText: {
           fontSize: theme.typography.fontSizes.md,
           fontWeight: theme.typography.fontWeights.semibold,
           color: theme.colors.textPrimary,
         },
-        summaryRow: {
-          flexDirection: "row",
-          columnGap: theme.spacing.sm,
-        },
+        summaryRow: { flexDirection: "row", columnGap: theme.spacing.sm },
         summaryCard: {
           flex: 1,
-          borderRadius: 14,
-          paddingVertical: theme.spacing.md,
-          paddingHorizontal: theme.spacing.sm,
         },
         summaryLabel: {
           fontSize: theme.typography.fontSizes.xs,
@@ -250,6 +342,7 @@ export default function TaskMenuScreen() {
           fontSize: theme.typography.fontSizes.xl,
           fontWeight: theme.typography.fontWeights.bold,
           marginTop: 4,
+          color: theme.colors.textPrimary,
         },
         actionsRow: {
           flexDirection: "row",
@@ -287,99 +380,108 @@ export default function TaskMenuScreen() {
           color: theme.colors.textSecondary,
           marginBottom: theme.spacing.sm,
         },
+
+        // task card layout, border/glow comes from createNeonCardShell
         taskCard: {
           flexDirection: "row",
-          alignItems: "center",
-          padding: theme.spacing.md,
-          borderRadius: 16,
+          alignItems: "stretch",
+          padding: theme.spacing.sm,
+          borderRadius: 24,
           marginBottom: theme.spacing.sm,
-          borderWidth: 1,
+          overflow: "hidden",
         },
         taskTitle: {
           fontSize: theme.typography.fontSizes.md,
           fontWeight: theme.typography.fontWeights.semibold,
         },
         taskDetails: {
-          fontSize: theme.typography.fontSizes.sm,
+          fontSize: theme.typography.fontSizes.xs,
           color: theme.colors.textSecondary,
           marginTop: 2,
         },
-        taskDatesRow: {
-          flexDirection: "row",
-          marginTop: 4,
+        taskAccent: {
+          width: 4,
+          borderRadius: 999,
+          marginRight: theme.spacing.sm,
         },
-        taskDateText: {
+        taskContent: { flex: 1 },
+        taskHeaderRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+        },
+        taskTitleRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          flexShrink: 1,
+        },
+        taskMetaRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          marginTop: 4,
+          flexWrap: "wrap",
+        },
+        taskMetaText: {
           fontSize: theme.typography.fontSizes.xs,
           color: theme.colors.textSecondary,
+          marginRight: 8,
+        },
+        statusPill: {
+          paddingHorizontal: 8,
+          paddingVertical: 2,
+          borderRadius: 999,
+          alignSelf: "flex-end",
+          marginBottom: 4,
         },
 
-        // MODAL STYLES (updated to match index.ts look)
-        modalBackdrop: {
-          flex: 1,
-          justifyContent: "center",
-          padding: theme.spacing.md,
-          backgroundColor: theme.isDark
-            ? "rgba(15, 23, 42, 0.55)"
-            : "rgba(241, 245, 249, 0.55)",
-        },
+        // MODAL
         modalCard: {
           borderRadius: 20,
           padding: theme.spacing.lg,
           maxHeight: "90%",
-          backgroundColor: theme.isDark ? "#0F172A" : "#FFFFFF",
+          backgroundColor: "#020617",
           shadowColor: "#000",
-          shadowOpacity: 0.15,
+          shadowOpacity: 0.4,
           shadowRadius: 20,
           shadowOffset: { width: 0, height: 10 },
           elevation: 10,
           borderWidth: 1,
-          borderColor: theme.isDark ? "#1E293B" : "#E2E8F0",
+          borderColor: "#1E293B",
+        },
+        modalBackdrop: {
+          flex: 1,
+          justifyContent: "center",
+          padding: theme.spacing.md,
+          backgroundColor: "rgba(15,23,42,0.55)",
         },
         modalHeaderRow: {
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
           marginBottom: theme.spacing.sm,
         },
-        modalHero: {
-          padding: theme.spacing.md,
-          borderRadius: 16,
-          marginBottom: theme.spacing.md,
-          alignItems: "center",
-          backgroundColor: theme.isDark
-            ? "rgba(108,77,255,0.25)"
-            : "rgba(108,77,255,0.08)",
-        },
-        modalHeroTitle: {
+        modalTitle: {
           fontSize: theme.typography.fontSizes.lg,
           fontWeight: theme.typography.fontWeights.bold,
-          color: theme.colors.textPrimary,
+          color: "#F9FAFB",
         },
-        modalHeroSubtitle: {
-          fontSize: theme.typography.fontSizes.xs,
-          color: theme.colors.textSecondary,
-          marginTop: 2,
-          textAlign: "center",
-        },
-
         label: {
           fontSize: theme.typography.fontSizes.xs,
-          color: theme.colors.textSecondary,
+          color: "#9CA3AF",
           marginBottom: 4,
         },
         input: {
           borderWidth: 1,
-          borderColor: theme.colors.border,
-          borderRadius: 12,
+          borderColor: "#4B5563",
+          borderRadius: 10,
           paddingHorizontal: theme.spacing.sm,
           paddingVertical:
             Platform.OS === "ios" ? theme.spacing.sm : theme.spacing.xs,
-          color: theme.colors.textPrimary,
-          backgroundColor: theme.isDark ? "#020617" : theme.colors.card,
+          color: "#F9FAFB",
+          backgroundColor: "#020617",
           fontSize: theme.typography.fontSizes.sm,
           marginBottom: theme.spacing.sm,
         },
-
         chipRow: {
           flexDirection: "row",
           flexWrap: "wrap",
@@ -396,7 +498,7 @@ export default function TaskMenuScreen() {
         },
         emailChipText: {
           fontSize: theme.typography.fontSizes.xs,
-          color: theme.colors.textPrimary,
+          color: "#ebe6e5ff",
           marginRight: 4,
         },
         subtaskRow: {
@@ -406,12 +508,15 @@ export default function TaskMenuScreen() {
         },
         subtaskText: {
           fontSize: theme.typography.fontSizes.sm,
+          color: "#E5E7EB",
         },
         commentCard: {
           marginTop: 6,
           padding: 8,
           borderRadius: 8,
-          backgroundColor: theme.colors.cardMuted || theme.colors.card,
+          backgroundColor: "#020617",
+          borderWidth: 1,
+          borderColor: "#1F2937",
         },
         commentHeaderRow: {
           flexDirection: "row",
@@ -420,10 +525,12 @@ export default function TaskMenuScreen() {
         commentAuthor: {
           fontSize: theme.typography.fontSizes.xs,
           fontWeight: theme.typography.fontWeights.semibold,
+          color: "#E5E7EB",
         },
         commentText: {
           fontSize: theme.typography.fontSizes.sm,
           marginTop: 2,
+          color: "#E5E7EB",
         },
         commentRow: {
           flexDirection: "row",
@@ -433,13 +540,13 @@ export default function TaskMenuScreen() {
         commentInput: {
           flex: 1,
           borderWidth: 1,
-          borderColor: theme.colors.border,
+          borderColor: "#4B5563",
           borderRadius: 999,
           paddingHorizontal: theme.spacing.sm,
           paddingVertical:
             Platform.OS === "ios" ? theme.spacing.sm : theme.spacing.xs,
-          color: theme.colors.textPrimary,
-          backgroundColor: theme.colors.card,
+          color: "#F9FAFB",
+          backgroundColor: "#020617",
           fontSize: theme.typography.fontSizes.sm,
         },
         chipButton: {
@@ -453,10 +560,68 @@ export default function TaskMenuScreen() {
           fontSize: theme.typography.fontSizes.sm,
           fontWeight: theme.typography.fontWeights.semibold,
         },
+
+        // 🔵 Center floating + button (attached to bottom bar)
         floatingAdd: {
           position: "absolute",
-          right: theme.spacing.screenPadding,
-          bottom: theme.spacing.screenPadding,
+          top: -34,
+          alignSelf: "center",
+          zIndex: 10,
+          elevation: 10,
+        },
+        floatingAddButton: {
+          width: 52,
+          height: 52,
+          borderRadius: 26,
+          backgroundColor: MODULE_COLOR,
+          justifyContent: "center",
+          alignItems: "center",
+          borderWidth: 3,
+          borderColor: MODULE_COLOR + "AA",
+          shadowColor: MODULE_COLOR,
+          shadowOpacity: 0.9,
+          shadowRadius: 5,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: 25,
+          zIndex: 400,
+        },
+
+        // 🔻 Bottom nav pill
+        bottomBar: {
+          position: "absolute",
+          left: theme.spacing.md,
+          right: theme.spacing.md,
+          bottom: Platform.OS === "ios" ? 16 : 12,
+          flexDirection: "row",
+          justifyContent: "space-around",
+          alignItems: "center",
+          paddingHorizontal: theme.spacing.lg,
+          paddingVertical: 10,
+          backgroundColor: theme.isDark
+            ? "rgba(10,10,15,0.98)"
+            : "rgba(15,23,42,0.95)",
+          borderRadius: 26,
+          borderWidth: 1,
+          borderColor: theme.isDark ? "#1f2937" : "#111827",
+          shadowColor: "#000",
+          shadowOpacity: 0.5,
+          shadowRadius: 20,
+          shadowOffset: { width: 0, height: -2 },
+          zIndex: 1,
+          elevation: 1,
+        },
+        bottomBarItem: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        bottomBarIconWrapper: {
+          padding: 6,
+          borderRadius: 999,
+        },
+        bottomBarLabel: {
+          fontSize: 11,
+          marginTop: 2,
         },
       }),
     [theme]
@@ -479,8 +644,17 @@ export default function TaskMenuScreen() {
       const allTasks: TaskType[] = snapshot.docs.map(
         (docSnap) => ({ id: docSnap.id, ...docSnap.data() } as TaskType)
       );
-      setTasks(allTasks);
+
+      allTasks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+      const user = auth.currentUser;
+      const visibleTasks = user
+        ? allTasks.filter((task) => canUserSeeTask(task, user))
+        : [];
+
+      setTasks(visibleTasks);
     });
+
     return () => unsubscribe();
   }, []);
 
@@ -556,7 +730,7 @@ export default function TaskMenuScreen() {
   today.setHours(0, 0, 0, 0);
   const todayStart = today.getTime();
 
-  const isTimestampOverdue = (due?: number) => {
+  const isTimestampOverdue = (due?: number | null) => {
     if (typeof due !== "number") return false;
     const d = new Date(due);
     d.setHours(0, 0, 0, 0);
@@ -567,7 +741,7 @@ export default function TaskMenuScreen() {
     let list = tasks;
 
     list = list.filter((t) => {
-      const overdue = isTimestampOverdue(t.dueDate);
+      const overdue = isTimestampOverdue(t.dueDate ?? undefined);
       switch (filter) {
         case "active":
           return !t.completed;
@@ -585,8 +759,10 @@ export default function TaskMenuScreen() {
       const bCompleted = !!b.completed;
 
       if (!aCompleted && !bCompleted) {
-        const ad = typeof a.dueDate === "number" ? a.dueDate : Infinity;
-        const bd = typeof b.dueDate === "number" ? b.dueDate : Infinity;
+        const ad =
+          typeof a.dueDate === "number" ? (a.dueDate as number) : Infinity;
+        const bd =
+          typeof b.dueDate === "number" ? (b.dueDate as number) : Infinity;
         if (ad !== bd) return ad - bd;
       }
 
@@ -595,7 +771,7 @@ export default function TaskMenuScreen() {
   }, [tasks, filter]);
 
   const overdueCount = filteredTasks.filter(
-    (t) => !t.completed && isTimestampOverdue(t.dueDate)
+    (t) => !t.completed && isTimestampOverdue(t.dueDate ?? undefined)
   ).length;
   const activeCount = filteredTasks.filter((t) => !t.completed).length;
   const completedCount = filteredTasks.filter((t) => t.completed).length;
@@ -639,8 +815,8 @@ export default function TaskMenuScreen() {
       const assigneeCount = mainAssignedList.length;
 
       const priorityScore = computePriorityScore({
-        dueDate: dueTimestamp,
-        startDate: startTimestamp,
+        dueDate: dueTimestamp ?? undefined,
+        startDate: startTimestamp ?? undefined,
         completed: selectedTask.completed,
         assigneeCount,
       });
@@ -719,29 +895,6 @@ export default function TaskMenuScreen() {
       Alert.alert("Not logged in", "Please log in to delete tasks.");
       return;
     }
-
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) return;
-
-    // inner function kept as in your original
-    const handleCompleteTaskToggleInner = async (task: TaskType) => {
-      if (!task) return;
-      const user = auth.currentUser;
-      if (!user) {
-        Alert.alert("Not logged in", "Please log in to update tasks.");
-        return;
-      }
-      try {
-        const ref = doc(db, "Tasks", task.id);
-        await updateDoc(ref, {
-          completed: !task.completed,
-          updatedAt: Date.now(),
-        });
-      } catch (error) {
-        console.error("Failed to update task:", error);
-        Alert.alert("Error", "Failed to update task");
-      }
-    };
 
     try {
       await deleteDoc(doc(db, "Tasks", taskId));
@@ -906,7 +1059,7 @@ export default function TaskMenuScreen() {
       today.setHours(0, 0, 0, 0);
       const todayMs = today.getTime();
 
-      const isOverdue = (due?: number) => {
+      const isOverdue = (due?: number | null) => {
         if (typeof due !== "number") return false;
         const d = new Date(due);
         d.setHours(0, 0, 0, 0);
@@ -916,7 +1069,7 @@ export default function TaskMenuScreen() {
       const totalTasks = tasks.length;
       const completedTasks = tasks.filter((t) => t.completed).length;
       const overdueTasks = tasks.filter(
-        (t) => !t.completed && isOverdue(t.dueDate as any)
+        (t) => !t.completed && isOverdue(t.dueDate ?? undefined)
       ).length;
       const activeTasks = totalTasks - completedTasks;
 
@@ -979,10 +1132,10 @@ export default function TaskMenuScreen() {
             body {
               margin: 0;
               padding: 0;
-              background: #f3f4f6;
+              background: #0f172a;
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
                 Roboto, Helvetica, Arial, sans-serif;
-              color: #111827;
+              color: #e5e7eb;
             }
             .page {
               max-width: 800px;
@@ -990,12 +1143,12 @@ export default function TaskMenuScreen() {
               padding: 16px;
             }
             .header-card {
-              background: linear-gradient(135deg, #2563eb, #1d4ed8);
+              background: radial-gradient(circle at top left, #38bdf8, #0f172a);
               border-radius: 16px;
               padding: 16px 18px;
               color: #ffffff;
               margin-bottom: 16px;
-              box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
+              box-shadow: 0 10px 25px rgba(15, 23, 42, 0.6);
             }
             .app-name {
               font-size: 12px;
@@ -1025,12 +1178,12 @@ export default function TaskMenuScreen() {
               opacity: 0.8;
             }
             .section-card {
-              background: #ffffff;
+              background: #020617;
               border-radius: 14px;
               padding: 14px;
-              box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+              box-shadow: 0 4px 12px rgba(15, 23, 42, 0.6);
               margin-bottom: 16px;
-              border: 1px solid #e5e7eb;
+              border: 1px solid #1f2937;
             }
             .section-title {
               font-size: 14px;
@@ -1039,7 +1192,7 @@ export default function TaskMenuScreen() {
             }
             .section-subtitle {
               font-size: 11px;
-              color: #6b7280;
+              color: #9ca3af;
               margin-bottom: 10px;
             }
             .summary-row {
@@ -1053,22 +1206,22 @@ export default function TaskMenuScreen() {
               min-width: 120px;
               border-radius: 10px;
               padding: 8px 10px;
-              background: #eff6ff;
-              border: 1px solid #dbeafe;
+              background: #020617;
+              border: 1px solid #38bdf8;
             }
             .summary-title {
               font-size: 11px;
-              color: #6b7280;
+              color: #9ca3af;
               margin-bottom: 2px;
             }
             .summary-value {
               font-size: 16px;
               font-weight: 700;
-              color: #111827;
+              color: #e5e7eb;
             }
             .summary-chip {
               font-size: 10px;
-              color: #1d4ed8;
+              color: #38bdf8;
               margin-top: 2px;
             }
             table {
@@ -1076,9 +1229,9 @@ export default function TaskMenuScreen() {
               border-collapse: collapse;
               font-size: 11px;
             }
-            thead { background-color: #f3f4f6; }
+            thead { background-color: #020617; }
             th, td {
-              border: 1px solid #e5e7eb;
+              border: 1px solid #1f2937;
               padding: 6px 7px;
               text-align: left;
               vertical-align: top;
@@ -1086,10 +1239,10 @@ export default function TaskMenuScreen() {
             th {
               font-size: 11px;
               font-weight: 600;
-              color: #374151;
+              color: #e5e7eb;
             }
             tbody tr:nth-child(even) {
-              background-color: #f9fafb;
+              background-color: #030712;
             }
             .empty-cell {
               text-align: center;
@@ -1099,11 +1252,11 @@ export default function TaskMenuScreen() {
             .task-title {
               font-weight: 600;
               margin-bottom: 2px;
-              color: #111827;
+              color: #e5e7eb;
             }
             .task-details {
               font-size: 10px;
-              color: #6b7280;
+              color: #9ca3af;
             }
             .date-cell {
               white-space: nowrap;
@@ -1123,17 +1276,17 @@ export default function TaskMenuScreen() {
               font-weight: 600;
             }
             .status-done {
-              background-color: #dcfce7;
-              color: #166534;
+              background-color: #14532d;
+              color: #bbf7d0;
             }
             .status-pending {
-              background-color: #fee2e2;
-              color: #b91c1c;
+              background-color: #7f1d1d;
+              color: #fecaca;
             }
             .footer-text {
               margin-top: 4px;
               font-size: 9px;
-              color: #9ca3af;
+              color: #6b7280;
               text-align: right;
             }
           </style>
@@ -1287,7 +1440,7 @@ export default function TaskMenuScreen() {
             color: textColor,
           }}
         >
-          {label} · {score}
+          {label}
         </Text>
       </View>
     );
@@ -1302,15 +1455,22 @@ export default function TaskMenuScreen() {
         <View style={styles.headerRow}>
           <IconButton
             icon="arrow-back"
-            onPress={() => router.back()}
+            onPress={() => router.push("/")}
             variant="secondary"
             size="medium"
           />
           <Text style={styles.headerTitle}>My Task</Text>
-          <View style={styles.headerSpacer} />
+          <View style={styles.headerRight}>
+            <IconButton
+              icon={theme.isDark ? "moon" : "sunny"}
+              onPress={() => toggleTheme && toggleTheme()}
+              variant="secondary"
+              size="small"
+            />
+          </View>
         </View>
 
-        {/* MAIN LIST with HEADER COMPONENT */}
+        {/* MAIN LIST */}
         <FlatList
           style={styles.list}
           contentContainerStyle={styles.listContent}
@@ -1320,27 +1480,27 @@ export default function TaskMenuScreen() {
             <>
               {/* Module icon + title */}
               <View style={styles.iconSection}>
-                <View
-                  style={[
-                    styles.iconContainer,
-                    { backgroundColor: `${MODULE_COLOR}20` },
-                  ]}
-                >
+                <View style={styles.iconContainer}>
                   <Ionicons
                     name="checkmark-done-outline"
                     size={64}
                     color={MODULE_COLOR}
                   />
                 </View>
-                <Text style={styles.moduleTitle}>Task Management</Text>
+                <Text style={styles.moduleTitle}>Task</Text>
                 <Text style={styles.moduleSubtitle}>
                   Stay organized and productive
                 </Text>
               </View>
 
-              {/* Date ribbon */}
+              {/* Date ribbon with neon card */}
               <View style={styles.section}>
-                <Card>
+                <Card
+                  style={[
+                    styles.neonShellCard,
+                    { backgroundColor: theme.colors.cardBackground },
+                  ]}
+                >
                   <View style={styles.calendarRibbon}>
                     <Text style={styles.calendarEmoji}>📅</Text>
                     <Text style={styles.calendarText}>
@@ -1351,35 +1511,115 @@ export default function TaskMenuScreen() {
                       })}
                     </Text>
                   </View>
+                  <View
+                    style={[
+                      styles.neonBottomLine,
+                      {
+                        backgroundColor: MODULE_COLOR,
+                        shadowColor: MODULE_COLOR,
+                        shadowOpacity: 0.9,
+                        shadowRadius: 12,
+                        shadowOffset: { width: 0, height: 0 },
+                      },
+                    ]}
+                  />
                 </Card>
               </View>
 
-              {/* Summary cards */}
-              <View style={[styles.section]}>
+              {/* Summary cards with neon shell */}
+              <View style={styles.section}>
                 <View style={styles.summaryRow}>
+                  {/* Overdue */}
                   <Card
-                    style={[styles.summaryCard, { backgroundColor: "#fee2e2" }]}
+                    style={[
+                      styles.summaryCard,
+                      summaryCardStyle(theme, "overdue"),
+                      { backgroundColor: theme.colors.cardBackground },
+                    ]}
                   >
                     <Text style={styles.summaryLabel}>Overdue</Text>
-                    <Text style={[styles.summaryValue, { color: "#b91c1c" }]}>
+                    <Text
+                      style={[
+                        styles.summaryValue,
+                        { color: theme.colors.textPrimary },
+                      ]}
+                    >
                       {overdueCount}
                     </Text>
+                    <View
+                      style={[
+                        styles.neonBottomLine,
+                        {
+                          backgroundColor: "#EF4444",
+                          shadowColor: "#EF4444",
+                          shadowOpacity: 0.9,
+                          shadowRadius: 12,
+                          shadowOffset: { width: 0, height: 0 },
+                        },
+                      ]}
+                    />
                   </Card>
+
+                  {/* Active */}
                   <Card
-                    style={[styles.summaryCard, { backgroundColor: "#dcfce7" }]}
+                    style={[
+                      styles.summaryCard,
+                      summaryCardStyle(theme, "active"),
+                      { backgroundColor: theme.colors.cardBackground },
+                    ]}
                   >
                     <Text style={styles.summaryLabel}>Active</Text>
-                    <Text style={[styles.summaryValue, { color: "#166534" }]}>
+                    <Text
+                      style={[
+                        styles.summaryValue,
+                        { color: theme.colors.textPrimary },
+                      ]}
+                    >
                       {activeCount}
                     </Text>
+                    <View
+                      style={[
+                        styles.neonBottomLine,
+                        {
+                          backgroundColor: "#22C55E",
+                          shadowColor: "#22C55E",
+                          shadowOpacity: 0.9,
+                          shadowRadius: 12,
+                          shadowOffset: { width: 0, height: 0 },
+                        },
+                      ]}
+                    />
                   </Card>
+
+                  {/* Completed */}
                   <Card
-                    style={[styles.summaryCard, { backgroundColor: "#e5e7eb" }]}
+                    style={[
+                      styles.summaryCard,
+                      summaryCardStyle(theme, "completed"),
+                      { backgroundColor: theme.colors.cardBackground },
+                    ]}
                   >
                     <Text style={styles.summaryLabel}>Completed</Text>
-                    <Text style={[styles.summaryValue, { color: "#374151" }]}>
+                    <Text
+                      style={[
+                        styles.summaryValue,
+                        { color: theme.colors.textPrimary },
+                      ]}
+                    >
                       {completedCount}
                     </Text>
+                    <View
+                      style={[
+                        styles.neonBottomLine,
+                        {
+                          backgroundColor: MODULE_COLOR,
+                          shadowColor: MODULE_COLOR,
+                          shadowOpacity: 0.9,
+                          shadowRadius: 12,
+                          shadowOffset: { width: 0, height: 0 },
+                        },
+                      ]}
+                    />
                   </Card>
                 </View>
 
@@ -1391,7 +1631,11 @@ export default function TaskMenuScreen() {
                     }
                     style={[
                       styles.smallButton,
-                      { backgroundColor: `${MODULE_COLOR}20` },
+                      {
+                        backgroundColor: `${MODULE_COLOR}22`,
+                        borderWidth: 1,
+                        borderColor: MODULE_COLOR,
+                      },
                     ]}
                   >
                     <Text
@@ -1404,13 +1648,17 @@ export default function TaskMenuScreen() {
                     onPress={handlePrintTasks}
                     style={[
                       styles.smallButton,
-                      { backgroundColor: "#16a34a20" },
+                      {
+                        backgroundColor: "#16a34a20",
+                        borderWidth: 1,
+                        borderColor: "#16A34A",
+                      },
                     ]}
                   >
                     <Text
-                      style={[styles.smallButtonText, { color: "#166534" }]}
+                      style={[styles.smallButtonText, { color: "#16A34A" }]}
                     >
-                      Print Tasks (PDF)
+                      Print Tasks
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1430,18 +1678,20 @@ export default function TaskMenuScreen() {
           }
           renderItem={({ item }) => {
             const isCompleted = !!item.completed;
-            const isOverdue = isTimestampOverdue(item.dueDate);
+            const isOverdue = isTimestampOverdue(item.dueDate ?? undefined);
 
-            const bg = isOverdue
-              ? "#fee2e2"
-              : isCompleted
-              ? "#e5e7eb"
-              : "#e0f2fe";
-            const border = isOverdue
-              ? "#f97373"
-              : isCompleted
-              ? "#cbd5e1"
-              : "#38bdf8";
+            let accentColor;
+            if (isCompleted) {
+              accentColor = "#9CA3AF";
+            } else if (isOverdue) {
+              accentColor = "#EF4444";
+            } else {
+              accentColor = MODULE_COLOR;
+            }
+
+            const neonColor = isCompleted
+              ? "rgba(148,163,184,0.45)"
+              : accentColor;
 
             return (
               <TouchableOpacity
@@ -1451,97 +1701,148 @@ export default function TaskMenuScreen() {
                   setModalVisible(true);
                 }}
               >
-                <View
+                <Card
                   style={[
                     styles.taskCard,
+                    createNeonCardShell(accentColor, theme, {
+                      padding: theme.spacing.sm,
+                    }),
                     {
-                      backgroundColor: bg,
-                      borderColor: border,
-                      opacity: isCompleted ? 0.6 : 1,
+                      backgroundColor: theme.colors.cardBackground,
+                      opacity: isCompleted ? 0.8 : 1,
                     },
                   ]}
                 >
-                  <TouchableOpacity
-                    onPress={() => handleCompleteTaskToggle(item)}
-                    style={{ marginRight: 10 }}
-                  >
-                    <Ionicons
-                      name={
-                        isCompleted
-                          ? "checkmark-circle"
-                          : "checkmark-circle-outline"
-                      }
-                      size={24}
-                      color={isCompleted ? "#9ca3af" : "#16a34a"}
-                    />
-                  </TouchableOpacity>
+                  {/* content */}
+                  <View style={styles.taskContent}>
+                    <View style={styles.taskHeaderRow}>
+                      <View style={styles.taskTitleRow}>
+                        <TouchableOpacity
+                          onPress={() => handleCompleteTaskToggle(item)}
+                          style={{ marginRight: 10, marginTop: 2 }}
+                        >
+                          <Ionicons
+                            name={
+                              isCompleted
+                                ? "checkmark-circle"
+                                : "checkmark-circle-outline"
+                            }
+                            size={22}
+                            color={isCompleted ? "#9ca3af" : "#22C55E"}
+                          />
+                        </TouchableOpacity>
 
-                  <View style={{ flex: 1 }}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        marginBottom: 2,
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.taskTitle,
-                          {
-                            textDecorationLine: isCompleted
-                              ? "line-through"
-                              : "none",
-                            color: isCompleted
-                              ? "#6b7280"
-                              : theme.colors.textPrimary,
-                          },
-                        ]}
-                      >
-                        {item.taskName}
-                      </Text>
-                      {isOverdue && (
-                        <Badge variant="danger" style={{ marginLeft: 6 }}>
-                          OVERDUE
-                        </Badge>
-                      )}
-                      {getPriorityChip(item.priorityScore)}
+                        <View style={{ flexShrink: 1 }}>
+                          <Text
+                            style={[
+                              styles.taskTitle,
+                              {
+                                textDecorationLine: isCompleted
+                                  ? "line-through"
+                                  : "none",
+                                color: theme.colors.textPrimary,
+                              },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {item.taskName}
+                          </Text>
+
+                          {!!item.details && (
+                            <Text
+                              style={[
+                                styles.taskDetails,
+                                {
+                                  textDecorationLine: isCompleted
+                                    ? "line-through"
+                                    : "none",
+                                },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {item.details}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* badges */}
+                      <View style={{ alignItems: "flex-end", marginLeft: 8 }}>
+                        {isOverdue && !isCompleted && (
+                          <View
+                            style={[
+                              styles.statusPill,
+                              { backgroundColor: "#FEE2E2" },
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                fontSize: theme.typography.fontSizes.xs,
+                                fontWeight:
+                                  theme.typography.fontWeights.semibold,
+                                color: "#B91C1C",
+                              }}
+                            >
+                              OVERDUE
+                            </Text>
+                          </View>
+                        )}
+                        {getPriorityChip(item.priorityScore)}
+                      </View>
                     </View>
 
-                    {!!item.details && (
-                      <Text
-                        style={[
-                          styles.taskDetails,
-                          {
-                            textDecorationLine: isCompleted
-                              ? "line-through"
-                              : "none",
-                          },
-                        ]}
-                        numberOfLines={2}
-                      >
-                        {item.details}
-                      </Text>
-                    )}
-
-                    <View style={styles.taskDatesRow}>
+                    <View style={styles.taskMetaRow}>
                       {item.startDate && (
-                        <Text style={styles.taskDateText}>
+                        <Text style={styles.taskMetaText}>
                           Start: {formatDate(new Date(item.startDate))}
-                          {"  "}
                         </Text>
                       )}
                       {item.dueDate && (
-                        <Text style={styles.taskDateText}>
-                          Due: {formatDate(new Date(item.dueDate))}
+                        <Text style={styles.taskMetaText}>
+                          • Due: {formatDate(new Date(item.dueDate))}
                         </Text>
                       )}
                     </View>
                   </View>
 
-                  <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
-                    <Ionicons name="trash-outline" size={22} color="#f97373" />
+                  {/* delete icon */}
+                  <TouchableOpacity
+                    onPress={() => handleDeleteTask(item.id)}
+                    style={{
+                      paddingHorizontal: 6,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#F97373" />
                   </TouchableOpacity>
-                </View>
+
+                  {/* neon bottom glow */}
+                  <View
+                    style={[
+                      styles.neonBottomLine,
+                      {
+                        backgroundColor: accentColor,
+                        shadowColor: accentColor,
+                        shadowOpacity: 1,
+                        shadowRadius: 12,
+                        shadowOffset: { width: 0, height: 0 },
+                      },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.neonBottomLine,
+                      {
+                        backgroundColor: neonColor,
+                        shadowColor: neonColor,
+                        shadowOpacity: 1,
+                        shadowRadius: 12,
+                        shadowOffset: { width: 0, height: 0 },
+                      },
+                    ]}
+                  />
+                </Card>
               </TouchableOpacity>
             );
           }}
@@ -1554,16 +1855,6 @@ export default function TaskMenuScreen() {
             </View>
           }
         />
-
-        {/* FLOATING + BUTTON */}
-        <View style={styles.floatingAdd}>
-          <IconButton
-            icon="add"
-            onPress={() => setShowAddMenu(true)}
-            variant="primary"
-            size="large"
-          />
-        </View>
 
         {/* TASK DETAIL MODAL */}
         {selectedTask && (
@@ -1578,8 +1869,8 @@ export default function TaskMenuScreen() {
               style={styles.modalBackdrop}
             >
               <View style={styles.modalCard}>
-                {/* top-right close */}
                 <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>Task Details</Text>
                   <TouchableOpacity
                     onPress={() => setModalVisible(false)}
                     style={{ padding: 4 }}
@@ -1590,20 +1881,6 @@ export default function TaskMenuScreen() {
                       color={theme.colors.textSecondary}
                     />
                   </TouchableOpacity>
-                </View>
-
-                {/* hero header inside modal (gradient-feel block) */}
-                <View style={styles.modalHero}>
-                  <Ionicons
-                    name="checkmark-done-outline"
-                    size={40}
-                    color={MODULE_COLOR}
-                    style={{ marginBottom: 6 }}
-                  />
-                  <Text style={styles.modalHeroTitle}>Task Details</Text>
-                  <Text style={styles.modalHeroSubtitle}>
-                    Edit task info, assignees, subtasks and comments.
-                  </Text>
                 </View>
 
                 <ScrollView
@@ -1648,13 +1925,15 @@ export default function TaskMenuScreen() {
                         style={[
                           styles.chipButton,
                           {
-                            backgroundColor: theme.colors.card,
+                            backgroundColor: MODULE_COLOR,
                             borderWidth: 1,
-                            borderColor: theme.colors.border,
+                            borderColor: "#4B5563",
                           },
                         ]}
                       >
-                        <Text style={styles.chipButtonText}>
+                        <Text
+                          style={[styles.chipButtonText, { color: "#E5E7EB" }]}
+                        >
                           {taskStartDate
                             ? formatDate(taskStartDate)
                             : "Set date"}
@@ -1668,13 +1947,15 @@ export default function TaskMenuScreen() {
                         style={[
                           styles.chipButton,
                           {
-                            backgroundColor: theme.colors.card,
+                            backgroundColor: "#020617",
                             borderWidth: 1,
-                            borderColor: theme.colors.border,
+                            borderColor: "#4B5563",
                           },
                         ]}
                       >
-                        <Text style={styles.chipButtonText}>
+                        <Text
+                          style={[styles.chipButtonText, { color: "#E5E7EB" }]}
+                        >
                           {taskDueDate ? formatDate(taskDueDate) : "Set date"}
                         </Text>
                       </TouchableOpacity>
@@ -1729,12 +2010,12 @@ export default function TaskMenuScreen() {
 
                   {/* Subtasks */}
                   <View style={{ marginTop: theme.spacing.md }}>
-                    <Text style={styles.modalHeroTitle}>Subtasks</Text>
+                    <Text style={styles.modalTitle}>Subtasks</Text>
                     {subtasks.length === 0 && (
                       <Text
                         style={{
                           fontSize: theme.typography.fontSizes.xs,
-                          color: theme.colors.textSecondary,
+                          color: "#9CA3AF",
                           marginTop: 4,
                         }}
                       >
@@ -1770,7 +2051,7 @@ export default function TaskMenuScreen() {
                             <Text
                               style={{
                                 fontSize: theme.typography.fontSizes.xs,
-                                color: theme.colors.textSecondary,
+                                color: "#9CA3AF",
                               }}
                             >
                               Due: {formatDate(new Date(st.dueDate))}
@@ -1791,7 +2072,15 @@ export default function TaskMenuScreen() {
                     ))}
 
                     {/* Add subtask */}
-                    <Card style={{ marginTop: theme.spacing.sm }}>
+                    <Card
+                      style={{
+                        marginTop: theme.spacing.sm,
+                        backgroundColor: "#020617",
+                        borderRadius: 16,
+                        borderWidth: 1,
+                        borderColor: "#1F2937",
+                      }}
+                    >
                       <Text style={styles.label}>New Subtask</Text>
                       <RNTextInput
                         placeholder="Subtask name"
@@ -1820,13 +2109,18 @@ export default function TaskMenuScreen() {
                             styles.chipButton,
                             {
                               flex: 1,
-                              backgroundColor: theme.colors.card,
+                              backgroundColor: "#020617",
                               borderWidth: 1,
-                              borderColor: theme.colors.border,
+                              borderColor: "#4B5563",
                             },
                           ]}
                         >
-                          <Text style={styles.chipButtonText}>
+                          <Text
+                            style={[
+                              styles.chipButtonText,
+                              { color: "#E5E7EB" },
+                            ]}
+                          >
                             {subtaskStartDate
                               ? formatDate(subtaskStartDate)
                               : "Start date"}
@@ -1838,13 +2132,18 @@ export default function TaskMenuScreen() {
                             styles.chipButton,
                             {
                               flex: 1,
-                              backgroundColor: theme.colors.card,
+                              backgroundColor: "#020617",
                               borderWidth: 1,
-                              borderColor: theme.colors.border,
+                              borderColor: "#4B5563",
                             },
                           ]}
                         >
-                          <Text style={styles.chipButtonText}>
+                          <Text
+                            style={[
+                              styles.chipButtonText,
+                              { color: "#E5E7EB" },
+                            ]}
+                          >
                             {subtaskDueDate
                               ? formatDate(subtaskDueDate)
                               : "Due date"}
@@ -1869,12 +2168,12 @@ export default function TaskMenuScreen() {
 
                   {/* Comments */}
                   <View style={{ marginTop: theme.spacing.md }}>
-                    <Text style={styles.modalHeroTitle}>Comments</Text>
+                    <Text style={styles.modalTitle}>Comments</Text>
                     {comments.length === 0 && (
                       <Text
                         style={{
                           fontSize: theme.typography.fontSizes.xs,
-                          color: theme.colors.textSecondary,
+                          color: "#9CA3AF",
                           marginTop: 4,
                         }}
                       >
@@ -1939,7 +2238,9 @@ export default function TaskMenuScreen() {
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => handleDeleteTask(selectedTask.id)}
+                      onPress={() =>
+                        selectedTask && handleDeleteTask(selectedTask.id)
+                      }
                       style={[
                         styles.chipButton,
                         {
@@ -1961,7 +2262,7 @@ export default function TaskMenuScreen() {
           </Modal>
         )}
 
-        {/* CALENDAR MODALS (unchanged logic) */}
+        {/* CALENDAR MODALS */}
         {showTaskStartCalendar && (
           <Modal transparent animationType="fade">
             <TouchableOpacity
@@ -2087,7 +2388,7 @@ export default function TaskMenuScreen() {
           </Modal>
         )}
 
-        {/* ADD MENU */}
+        {/* ADD MENU with neon card */}
         <Modal
           visible={showAddMenu}
           transparent
@@ -2105,12 +2406,25 @@ export default function TaskMenuScreen() {
             onPressOut={() => setShowAddMenu(false)}
           >
             <Card
-              style={{
-                width: "70%",
-                borderRadius: 16,
-                padding: theme.spacing.md,
-              }}
+              style={[
+                styles.neonShellCard,
+                {
+                  width: "70%",
+                },
+              ]}
             >
+              <View
+                style={[
+                  styles.neonBottomLine,
+                  {
+                    backgroundColor: MODULE_COLOR,
+                    shadowColor: MODULE_COLOR,
+                    shadowOpacity: 0.9,
+                    shadowRadius: 12,
+                    shadowOffset: { width: 0, height: 0 },
+                  },
+                ]}
+              />
               <Text
                 style={{
                   fontSize: theme.typography.fontSizes.md,
@@ -2143,10 +2457,7 @@ export default function TaskMenuScreen() {
                   setShowAddMenu(false);
                   router.push("/modules/task-management/EventAdd");
                 }}
-                style={[
-                  styles.chipButton,
-                  { backgroundColor: theme.colors.cardMuted || "#e5e7eb" },
-                ]}
+                style={[styles.chipButton, { backgroundColor: "#0256ffff" }]}
               >
                 <Text
                   style={[
@@ -2161,123 +2472,125 @@ export default function TaskMenuScreen() {
           </TouchableOpacity>
         </Modal>
 
-        {/* LIST MENU */}
-        <Modal
-          visible={showListMenu}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowListMenu(false)}
-        >
-          <TouchableOpacity
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.4)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-            activeOpacity={1}
-            onPressOut={() => setShowListMenu(false)}
-          >
-            <Card
+        {/* 🔻 BOTTOM TASKBAR NAVIGATION (Task highlighted) */}
+        <View style={styles.bottomBar}>
+          {/* Center FAB attached to bar */}
+          <View style={styles.floatingAdd}>
+            <View
               style={{
-                width: "70%",
-                borderRadius: 16,
-                padding: theme.spacing.md,
+                width: 65,
+                height: 65,
+                borderRadius: 32,
+                borderColor: MODULE_COLOR,
+                justifyContent: "center",
+                alignItems: "center",
+                backgroundColor: "#000",
+                shadowColor: MODULE_COLOR,
+                shadowOpacity: 1,
+                shadowRadius: 5,
+                shadowOffset: { width: 0, height: 0 },
               }}
             >
-              <Text
-                style={{
-                  fontSize: theme.typography.fontSizes.md,
-                  fontWeight: theme.typography.fontWeights.bold,
-                  marginBottom: theme.spacing.sm,
-                  color: theme.colors.textPrimary,
-                }}
-              >
-                Go to...
-              </Text>
               <TouchableOpacity
-                onPress={() => {
-                  setShowListMenu(false);
-                  router.push("/modules/task-management/EventList");
-                }}
-                style={[
-                  styles.chipButton,
-                  {
-                    backgroundColor: theme.colors.cardMuted || "#e5e7eb",
-                    marginBottom: theme.spacing.sm,
-                  },
-                ]}
+                style={styles.floatingAddButton}
+                onPress={() => setShowAddMenu(true)}
+                activeOpacity={0.8}
               >
-                <Text
-                  style={[
-                    styles.chipButtonText,
-                    { color: theme.colors.textPrimary },
-                  ]}
-                >
-                  My Event
-                </Text>
+                <Ionicons name="add" size={34} color="#000" />
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowListMenu(false);
-                  router.push("/modules/task-management/TaskDashboard");
-                }}
-                style={[
-                  styles.chipButton,
-                  {
-                    backgroundColor: `${MODULE_COLOR}20`,
-                    marginBottom: theme.spacing.sm,
-                  },
-                ]}
-              >
-                <Text style={[styles.chipButtonText, { color: MODULE_COLOR }]}>
-                  AI Task Dashboard
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowListMenu(false);
-                  router.push("/modules/task-management/Gamification");
-                }}
-                style={[
-                  styles.chipButton,
-                  {
-                    backgroundColor: theme.colors.cardMuted || "#e5e7eb",
-                    marginBottom: theme.spacing.sm,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipButtonText,
-                    { color: theme.colors.textPrimary },
-                  ]}
-                >
-                  My Productivity
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowListMenu(false);
-                  router.push("/modules/task-management/TaskChart");
-                }}
-                style={[
-                  styles.chipButton,
-                  { backgroundColor: theme.colors.cardMuted || "#e5e7eb" },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipButtonText,
-                    { color: theme.colors.textPrimary },
-                  ]}
-                >
-                  My Chart
-                </Text>
-              </TouchableOpacity>
-            </Card>
+            </View>
+          </View>
+
+          {/* Task (current) */}
+          <TouchableOpacity style={styles.bottomBarItem} disabled>
+            <View
+              style={[
+                styles.bottomBarIconWrapper,
+                { backgroundColor: `${MODULE_COLOR}22` },
+              ]}
+            >
+              <Ionicons
+                name="checkmark-done-outline"
+                size={20}
+                color={MODULE_COLOR}
+              />
+            </View>
+            <Text
+              style={[
+                styles.bottomBarLabel,
+                { color: MODULE_COLOR, fontWeight: "600" },
+              ]}
+            >
+              Task
+            </Text>
           </TouchableOpacity>
-        </Modal>
+
+          {/* Event */}
+          <TouchableOpacity
+            style={styles.bottomBarItem}
+            onPress={() => router.push("/modules/task-management/EventList")}
+          >
+            <View style={styles.bottomBarIconWrapper}>
+              <Ionicons
+                name="calendar-outline"
+                size={20}
+                color={theme.colors.textSecondary}
+              />
+            </View>
+            <Text
+              style={[
+                styles.bottomBarLabel,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Event
+            </Text>
+          </TouchableOpacity>
+
+          {/* Productivity */}
+          <TouchableOpacity
+            style={styles.bottomBarItem}
+            onPress={() => router.push("/modules/task-management/Gamification")}
+          >
+            <View style={styles.bottomBarIconWrapper}>
+              <Ionicons
+                name="game-controller-outline"
+                size={20}
+                color={theme.colors.textSecondary}
+              />
+            </View>
+            <Text
+              style={[
+                styles.bottomBarLabel,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Productivity
+            </Text>
+          </TouchableOpacity>
+
+          {/* Chart */}
+          <TouchableOpacity
+            style={styles.bottomBarItem}
+            onPress={() => router.push("/modules/task-management/TaskChart")}
+          >
+            <View style={styles.bottomBarIconWrapper}>
+              <Ionicons
+                name="stats-chart-outline"
+                size={20}
+                color={theme.colors.textSecondary}
+              />
+            </View>
+            <Text
+              style={[
+                styles.bottomBarLabel,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Chart
+            </Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     </GradientBackground>
   );
