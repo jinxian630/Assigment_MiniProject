@@ -1,460 +1,597 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   ScrollView,
-  TouchableOpacity,
   Text,
+  Image,
+  TouchableOpacity,
   StyleSheet,
+  Animated,
+  RefreshControl,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/hooks/useAuth";
+import { subscribeToLatestMemories } from "./utils/firebaseHelpers";
+import type { Memory } from "./utils/memoryHelpers";
+import PostCard from "./components/PostCard";
+import BottomNavBar from "./components/BottomNavBar";
+import AIInsights from "./components/AIInsights";
 
-import {
-  getFirestore,
-  collection,
-  query,
-  orderBy,
-  limit,
-  onSnapshot,
-} from "firebase/firestore";
+const PRIMARY_PURPLE = "#a855f7";
 
-type Memory = {
-  id: string;
-  title: string;
-  description: string;
-  mood?: string;
-  startDate?: number;
-  imageURL?: string;
-};
-
-const MODULE_PURPLE = "#a855f7"; // main violet
-const MODULE_PURPLE_SOFT = "#4c1d95";
+// Using Memory type from memoryHelpers
 
 export default function MemoryBookScreen() {
   const router = useRouter();
-  const { theme, isDarkMode } = useTheme();
+  const { theme, isDarkMode, toggleTheme } = useTheme();
+  const { user } = useAuth();
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showAIInsights, setShowAIInsights] = useState(true);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
-  const [latestMemory, setLatestMemory] = useState<Memory | null>(null);
-  const [totalMemories, setTotalMemories] = useState(0);
+  // Animation refs for interactive elements
+  const profileCardGlow = useRef(new Animated.Value(0)).current;
+  const headerGlow = useRef(new Animated.Value(0)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
+  const headerIconScale1 = useRef(new Animated.Value(1)).current;
+  const headerIconScale2 = useRef(new Animated.Value(1)).current;
+  const statItemScales = useRef<Record<number, Animated.Value>>({}).current;
+
+  const colors = {
+    background: isDarkMode ? "#020617" : "#FAF5FF",
+    surface: isDarkMode ? "#020617" : "#FFFFFF",
+    text: isDarkMode ? "#E5E7EB" : "#1E1B4B",
+    textSoft: isDarkMode ? "#9CA3AF" : "#9333EA",
+    border: isDarkMode ? "#1F2937" : "#7C3AED",
+    chipBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(124,58,237,0.2)",
+  };
 
   useEffect(() => {
-    const db = getFirestore();
-    const postsRef = collection(db, "MemoryPosts");
-
-    // latest 1 memory
-    const qLatest = query(postsRef, orderBy("startDate", "desc"), limit(1));
-    const unsubLatest = onSnapshot(qLatest, (snapshot) => {
-      if (!snapshot.empty) {
-        const doc = snapshot.docs[0];
-        setLatestMemory({ id: doc.id, ...(doc.data() as any) });
-      } else {
-        setLatestMemory(null);
-      }
+    const unsubscribe = subscribeToLatestMemories(20, (memoriesList) => {
+      setMemories(memoriesList);
     });
 
-    // total count
-    const qAll = query(postsRef, orderBy("startDate", "desc"));
-    const unsubAll = onSnapshot(qAll, (snapshot) => {
-      setTotalMemories(snapshot.size);
-    });
+    return () => unsubscribe();
+  }, []);
+
+  // Pulsing glow animation for profile card
+  useEffect(() => {
+    const glowAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(profileCardGlow, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(profileCardGlow, {
+          toValue: 0,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    glowAnimation.start();
+
+    // Header glow animation
+    const headerAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(headerGlow, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: false,
+        }),
+        Animated.timing(headerGlow, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    headerAnimation.start();
 
     return () => {
-      unsubLatest();
-      unsubAll();
+      glowAnimation.stop();
+      headerAnimation.stop();
     };
   }, []);
 
-  const formatShortDate = (timestamp?: number) => {
-    if (!timestamp) return "";
-    const d = new Date(timestamp);
-    return d.toLocaleDateString("en-US", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
+  }, []);
+
+  const handleProfilePress = () => {
+    Animated.sequence([
+      Animated.spring(scaleAnim, {
+        toValue: 0.95,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 10,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 10,
+      }),
+    ]).start();
+
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    // Pass current user's ID to UserProfile
+    const currentUserId = user?.id;
+    if (currentUserId) {
+      router.push(`/modules/memory-book/UserProfile?userId=${currentUserId}`);
+    } else {
+      router.push("/modules/memory-book/UserProfile");
+    }
   };
 
-  const colors = {
-    bg: isDarkMode ? "#020617" : "#0b1020",
-    card: isDarkMode ? "#020617" : "#020617",
-    headerBorder: MODULE_PURPLE,
-    headerBg: "#020617",
-    textMain: "#e5e7eb",
-    textSoft: "#9ca3af",
-    accent: MODULE_PURPLE,
-    accentSoft: MODULE_PURPLE_SOFT,
-    divider: "#1f2937",
-    chipBg: "rgba(168, 85, 247, 0.16)",
-    chipBorder: "rgba(216, 180, 254, 0.8)",
+  const stats = {
+    posts: memories.length,
+    following: 0, // Can be implemented later
+    followers: 0, // Can be implemented later
   };
 
   return (
     <GradientBackground>
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
-        {/* Top header / module title */}
-        <View style={styles.header}>
-          <IconButton
-            icon="arrow-back"
-            onPress={() => router.back()}
-            variant="secondary"
-            size="medium"
-          />
-
-          <View style={styles.headerCenter}>
-            <Text style={[styles.moduleLabel, { color: colors.textSoft }]}>
-              MEMORY BOOK
-            </Text>
-            <View style={styles.iconBlock}>
-              <View
-                style={[
-                  styles.iconCircle,
-                  {
-                    borderColor: MODULE_PURPLE,
-                    shadowColor: MODULE_PURPLE,
-                  },
-                ]}
-              >
-                <Ionicons name="book-outline" size={26} color={MODULE_PURPLE} />
-              </View>
-            </View>
-            <Text style={[styles.moduleName, { color: colors.textMain }]}>
+        {/* Header */}
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: colors.surface,
+              borderBottomColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.headerLeft}>
+            <IconButton
+              icon="arrow-back"
+              onPress={() => router.back()}
+              variant="ghost"
+            />
+            <Animated.Text
+              style={[
+                styles.headerTitle,
+                {
+                  color: colors.text,
+                  textShadowColor: PRIMARY_PURPLE + (isDarkMode ? "CC" : "88"),
+                  textShadowOffset: { width: 0, height: 0 },
+                  textShadowRadius: headerGlow.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [4, 12],
+                  }) as any,
+                  opacity: headerGlow.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 0.9],
+                  }),
+                },
+              ]}
+            >
               Memory Book
-            </Text>
-            <Text style={[styles.moduleTagline, { color: colors.textSoft }]}>
-              Save your moments, moods & reflections.
-            </Text>
+            </Animated.Text>
           </View>
-
-          <View style={{ width: 40 }} />
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              onPress={() => {
+                if (Platform.OS === "ios") {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }
+                router.push("/modules/memory-book/UserSearch");
+              }}
+              onPressIn={() => {
+                Animated.spring(headerIconScale1, {
+                  toValue: 0.8,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 10,
+                }).start();
+              }}
+              onPressOut={() => {
+                Animated.spring(headerIconScale1, {
+                  toValue: 1,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 10,
+                }).start();
+              }}
+              activeOpacity={0.7}
+              style={styles.headerIcon}
+            >
+              <Animated.View
+                style={{ transform: [{ scale: headerIconScale1 }] }}
+              >
+                <Ionicons
+                  name="person-add-outline"
+                  size={22}
+                  color={colors.text}
+                />
+              </Animated.View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                if (Platform.OS === "ios") {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }
+                toggleTheme();
+              }}
+              onPressIn={() => {
+                Animated.spring(headerIconScale2, {
+                  toValue: 0.8,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 10,
+                }).start();
+              }}
+              onPressOut={() => {
+                Animated.spring(headerIconScale2, {
+                  toValue: 1,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 10,
+                }).start();
+              }}
+              activeOpacity={0.7}
+              style={styles.headerIcon}
+            >
+              <Animated.View
+                style={{ transform: [{ scale: headerIconScale2 }] }}
+              >
+                <Ionicons
+                  name={isDarkMode ? "sunny-outline" : "moon-outline"}
+                  size={22}
+                  color={colors.text}
+                />
+              </Animated.View>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
-          style={[styles.scrollView, { backgroundColor: "transparent" }]}
+          style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={PRIMARY_PURPLE}
+            />
+          }
         >
-          {/* Overview / stats card */}
-          <View
+          {/* User Profile Section */}
+          <Animated.View
             style={[
-              styles.overviewCard,
+              styles.profileSection,
               {
-                backgroundColor: colors.headerBg,
-                borderColor: colors.headerBorder,
+                backgroundColor: colors.surface,
+                borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "CC"),
+                shadowColor: PRIMARY_PURPLE,
+                shadowOpacity: profileCardGlow.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: isDarkMode ? [0.6, 1.0] : [0.4, 0.7],
+                }),
+                shadowRadius: profileCardGlow.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 35],
+                }),
+                shadowOffset: { width: 0, height: 0 },
+                elevation: isDarkMode ? 18 : 12,
               },
             ]}
           >
-            {/* Top row: stats + chips */}
-            <View style={styles.overviewTopRow}>
-              <View>
-                <Text
-                  style={[styles.overviewLabel, { color: colors.textSoft }]}
-                >
-                  Memories recorded
-                </Text>
-                <Text
-                  style={[styles.overviewValue, { color: colors.textMain }]}
-                >
-                  {totalMemories}
-                </Text>
-              </View>
-
-              <View style={styles.overviewChipRow}>
-                {latestMemory && (
-                  <View
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: colors.chipBg,
-                        borderColor: colors.chipBorder,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name="sparkles-outline"
-                      size={14}
-                      color={colors.accent}
+            <View style={styles.profileTop}>
+              <TouchableOpacity
+                onPress={handleProfilePress}
+                activeOpacity={0.8}
+                style={styles.avatarContainer}
+              >
+                <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+                  {user?.photoURL ? (
+                    <Image
+                      source={{ uri: user.photoURL }}
+                      style={styles.avatar}
                     />
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.chipText, { color: colors.textMain }]}
+                  ) : (
+                    <View
+                      style={[
+                        styles.avatar,
+                        styles.avatarPlaceholder,
+                        {
+                          backgroundColor: colors.chipBg,
+                          borderColor: PRIMARY_PURPLE + "66",
+                        },
+                      ]}
                     >
-                      Last: {latestMemory.title}
-                    </Text>
-                  </View>
-                )}
+                      <Ionicons
+                        name="person"
+                        size={40}
+                        color={PRIMARY_PURPLE}
+                      />
+                    </View>
+                  )}
+                </Animated.View>
+              </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={() =>
-                    router.push("/modules/memory-book/MemoryTimeline")
+              <View style={styles.statsRow}>
+                {[
+                  { value: stats.posts, label: "posts", index: 0 },
+                  { value: stats.followers, label: "followers", index: 1 },
+                  { value: stats.following, label: "following", index: 2 },
+                ].map((stat) => {
+                  if (!statItemScales[stat.index]) {
+                    statItemScales[stat.index] = new Animated.Value(1);
                   }
-                  style={[
-                    styles.chipButton,
-                    {
-                      backgroundColor: MODULE_PURPLE,
-                      shadowColor: MODULE_PURPLE,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name="time-outline"
-                    size={14}
-                    color="#f9fafb"
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text style={styles.chipButtonText}>Open timeline</Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={14}
-                    color="#f9fafb"
-                    style={{ marginLeft: 1 }}
-                  />
-                </TouchableOpacity>
+                  const scaleAnim = statItemScales[stat.index];
+
+                  return (
+                    <TouchableOpacity
+                      key={stat.index}
+                      activeOpacity={0.8}
+                      onPressIn={() => {
+                        Animated.spring(scaleAnim, {
+                          toValue: 0.9,
+                          useNativeDriver: true,
+                          tension: 300,
+                          friction: 10,
+                        }).start();
+                        if (Platform.OS === "ios") {
+                          Haptics.impactAsync(
+                            Haptics.ImpactFeedbackStyle.Light
+                          );
+                        }
+                      }}
+                      onPressOut={() => {
+                        Animated.spring(scaleAnim, {
+                          toValue: 1,
+                          useNativeDriver: true,
+                          tension: 300,
+                          friction: 10,
+                        }).start();
+                      }}
+                    >
+                      <Animated.View
+                        style={[
+                          styles.statItem,
+                          {
+                            transform: [{ scale: scaleAnim }],
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.statNumber, { color: colors.text }]}
+                        >
+                          {stat.value}
+                        </Text>
+                        <Text
+                          style={[styles.statLabel, { color: colors.textSoft }]}
+                        >
+                          {stat.label}
+                        </Text>
+                      </Animated.View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
-            {/* Divider */}
-            <View
-              style={[styles.divider, { backgroundColor: colors.divider }]}
-            />
+            <View style={styles.profileInfo}>
+              <Text style={[styles.username, { color: colors.text }]}>
+                {user?.displayName || "User"}
+              </Text>
+              <Text style={[styles.bio, { color: colors.textSoft }]}>
+                Preserving moments, crafting memories
+              </Text>
+            </View>
 
-            {/* Latest memory preview / empty state */}
-            {latestMemory ? (
-              <View style={styles.previewRow}>
-                <View style={{ flex: 1 }}>
+            <View style={styles.profileActions}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (Platform.OS === "ios") {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  }
+                  router.push("/modules/memory-book/MemoryPostCreate");
+                }}
+                onPressIn={() => {
+                  Animated.spring(buttonScale, {
+                    toValue: 0.95,
+                    useNativeDriver: true,
+                    tension: 300,
+                    friction: 10,
+                  }).start();
+                }}
+                onPressOut={() => {
+                  Animated.spring(buttonScale, {
+                    toValue: 1,
+                    useNativeDriver: true,
+                    tension: 300,
+                    friction: 10,
+                  }).start();
+                }}
+                activeOpacity={0.9}
+              >
+                <Animated.View
+                  style={[
+                    styles.editButton,
+                    {
+                      backgroundColor: PRIMARY_PURPLE,
+                      borderColor: PRIMARY_PURPLE,
+                      transform: [{ scale: buttonScale }],
+                      shadowColor: PRIMARY_PURPLE,
+                      shadowOpacity: isDarkMode ? 0.8 : 0.6,
+                      shadowRadius: 15,
+                      shadowOffset: { width: 0, height: 4 },
+                      elevation: 8,
+                    },
+                  ]}
+                >
+                  <Ionicons name="add-circle" size={16} color="#fff" />
+                  <Text style={styles.editButtonText}>New Memory</Text>
+                </Animated.View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleProfilePress}
+                onPressIn={() => {
+                  Animated.spring(buttonScale, {
+                    toValue: 0.95,
+                    useNativeDriver: true,
+                    tension: 300,
+                    friction: 10,
+                  }).start();
+                }}
+                onPressOut={() => {
+                  Animated.spring(buttonScale, {
+                    toValue: 1,
+                    useNativeDriver: true,
+                    tension: 300,
+                    friction: 10,
+                  }).start();
+                }}
+                activeOpacity={0.9}
+              >
+                <Animated.View
+                  style={[
+                    styles.editButton,
+                    styles.editButtonOutline,
+                    {
+                      borderColor: colors.border,
+                      transform: [{ scale: buttonScale }],
+                    },
+                  ]}
+                >
                   <Text
-                    style={[styles.sectionLabel, { color: colors.textSoft }]}
-                  >
-                    Today&apos;s reflection
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.previewTitle, { color: colors.textMain }]}
-                  >
-                    {latestMemory.title}
-                  </Text>
-                  <Text
-                    numberOfLines={2}
                     style={[
-                      styles.previewDescription,
-                      { color: colors.textSoft },
+                      styles.editButtonText,
+                      styles.editButtonTextOutline,
+                      { color: colors.text },
                     ]}
                   >
-                    {latestMemory.description}
+                    View Profile
                   </Text>
+                </Animated.View>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
 
-                  <View style={styles.previewMetaRow}>
-                    {latestMemory.mood && (
-                      <View
-                        style={[
-                          styles.moodPill,
-                          { backgroundColor: colors.accentSoft },
-                        ]}
-                      >
-                        <Ionicons
-                          name="happy-outline"
-                          size={14}
-                          color="#f9fafb"
-                          style={{ marginRight: 4 }}
-                        />
-                        <Text style={styles.moodText}>{latestMemory.mood}</Text>
-                      </View>
-                    )}
-                    {latestMemory.startDate && (
-                      <Text
-                        style={[styles.dateText, { color: colors.textSoft }]}
-                      >
-                        {formatShortDate(latestMemory.startDate)}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              </View>
-            ) : (
+          {/* AI Insights Toggle */}
+          {memories.length > 0 && (
+            <TouchableOpacity
+              onPress={() => {
+                setShowAIInsights(!showAIInsights);
+                if (Platform.OS === "ios") {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }
+              }}
+              activeOpacity={0.8}
+              style={[
+                styles.insightsToggle,
+                {
+                  backgroundColor: colors.chipBg,
+                  borderColor: PRIMARY_PURPLE + "44",
+                  shadowColor: PRIMARY_PURPLE,
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 2 },
+                  elevation: 4,
+                },
+              ]}
+            >
+              <Ionicons
+                name={showAIInsights ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={PRIMARY_PURPLE}
+              />
+              <Text style={[styles.insightsToggleText, { color: colors.text }]}>
+                {showAIInsights ? "Hide" : "Show"} AI Insights
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* AI Insights */}
+          {showAIInsights && memories.length > 0 && (
+            <AIInsights memories={memories} isDarkMode={isDarkMode} />
+          )}
+
+          {/* Feed */}
+          <View style={styles.feedSection}>
+            <View style={styles.feedHeader}>
+              <Ionicons name="grid" size={20} color={colors.text} />
+              <Text style={[styles.feedTitle, { color: colors.text }]}>
+                Your Memories
+              </Text>
+            </View>
+
+            {memories.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons
                   name="images-outline"
-                  size={28}
+                  size={48}
                   color={colors.textSoft}
                 />
-                <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
                   No memories yet
                 </Text>
                 <Text
                   style={[styles.emptySubtitle, { color: colors.textSoft }]}
                 >
-                  Start by creating your first memory with a photo and story.
+                  Start by creating your first memory
                 </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (Platform.OS === "ios") {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    }
+                    router.push("/modules/memory-book/MemoryPostCreate");
+                  }}
+                  activeOpacity={0.9}
+                  style={[
+                    styles.createButton,
+                    {
+                      backgroundColor: PRIMARY_PURPLE,
+                      shadowColor: PRIMARY_PURPLE,
+                      shadowOpacity: isDarkMode ? 0.8 : 0.6,
+                      shadowRadius: 20,
+                      shadowOffset: { width: 0, height: 6 },
+                      elevation: 10,
+                    },
+                  ]}
+                >
+                  <Ionicons name="add" size={20} color="#fff" />
+                  <Text style={styles.createButtonText}>Create Memory</Text>
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
-
-          {/* Timeline section */}
-          <View style={styles.sectionBlock}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: colors.textMain }]}>
-                Timeline
-              </Text>
-              <Text
-                style={[styles.sectionSubtitle, { color: colors.textSoft }]}
-              >
-                Browse everything you’ve saved, by year and date.
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => router.push("/modules/memory-book/MemoryTimeline")}
-              style={[
-                styles.primaryRow,
-                {
-                  borderColor: MODULE_PURPLE,
-                  backgroundColor: "#020617",
-                },
-              ]}
-            >
-              <View style={styles.rowIconCircle}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={18}
-                  color={MODULE_PURPLE}
+            ) : (
+              memories.map((memory) => (
+                <PostCard
+                  key={memory.id}
+                  memory={memory}
+                  isDarkMode={isDarkMode}
                 />
-              </View>
-              <View style={styles.rowTextBlock}>
-                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
-                  View full timeline
-                </Text>
-                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
-                  Scroll through memories in chronological order.
-                </Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={colors.textSoft}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* Quick actions */}
-          <View style={styles.sectionBlock}>
-            <Text style={[styles.sectionTitle, { color: colors.textMain }]}>
-              Quick actions
-            </Text>
-
-            {/* New Memory */}
-            <TouchableOpacity
-              onPress={() =>
-                router.push("/modules/memory-book/MemoryPostCreate")
-              }
-              style={[
-                styles.secondaryRow,
-                { backgroundColor: "#020617", borderColor: "#4b5563" },
-              ]}
-            >
-              <View
-                style={[
-                  styles.rowIconCircle,
-                  { backgroundColor: "rgba(168,85,247,0.15)" },
-                ]}
-              >
-                <Ionicons name="add" size={18} color={MODULE_PURPLE} />
-              </View>
-              <View style={styles.rowTextBlock}>
-                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
-                  New Memory
-                </Text>
-                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
-                  Capture a new moment with photo, title, story and mood.
-                </Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={colors.textSoft}
-              />
-            </TouchableOpacity>
-
-            {/* Timeline View (shortcut) */}
-            <TouchableOpacity
-              onPress={() => router.push("/modules/memory-book/MemoryTimeline")}
-              style={[
-                styles.secondaryRow,
-                { backgroundColor: "#020617", borderColor: "#4b5563" },
-              ]}
-            >
-              <View
-                style={[
-                  styles.rowIconCircle,
-                  { backgroundColor: "rgba(129,140,248,0.15)" },
-                ]}
-              >
-                <Ionicons name="time-outline" size={18} color="#818cf8" />
-              </View>
-              <View style={styles.rowTextBlock}>
-                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
-                  Timeline View
-                </Text>
-                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
-                  See how your memories evolve over time.
-                </Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={colors.textSoft}
-              />
-            </TouchableOpacity>
-
-            {/* Explore Users */}
-            <TouchableOpacity
-              onPress={() => router.push("/modules/memory-book/UserSearch")}
-              style={[
-                styles.secondaryRow,
-                { backgroundColor: "#020617", borderColor: "#4b5563" },
-              ]}
-            >
-              <View
-                style={[
-                  styles.rowIconCircle,
-                  { backgroundColor: "rgba(56,189,248,0.16)" },
-                ]}
-              >
-                <Ionicons name="people-outline" size={18} color="#38bdf8" />
-              </View>
-              <View style={styles.rowTextBlock}>
-                <Text style={[styles.rowTitle, { color: colors.textMain }]}>
-                  Explore Users
-                </Text>
-                <Text style={[styles.rowSubtitle, { color: colors.textSoft }]}>
-                  Browse other users’ profiles and shared memories.
-                </Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={colors.textSoft}
-              />
-            </TouchableOpacity>
+              ))
+            )}
           </View>
         </ScrollView>
 
-        {/* Floating Add button (FAB) */}
-        <TouchableOpacity
-          onPress={() => router.push("/modules/memory-book/MemoryPostCreate")}
-          style={[
-            styles.fab,
-            {
-              backgroundColor: MODULE_PURPLE,
-              shadowColor: MODULE_PURPLE,
-            },
-          ]}
-        >
-          <Ionicons name="add" size={26} color="#ffffff" />
-        </TouchableOpacity>
+        {/* Bottom Navigation */}
+        <BottomNavBar isDarkMode={isDarkMode} />
       </SafeAreaView>
     </GradientBackground>
   );
@@ -465,228 +602,187 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    shadowColor: PRIMARY_PURPLE,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
-  headerCenter: {
+  headerLeft: {
+    flexDirection: "row",
     alignItems: "center",
     flex: 1,
   },
-  moduleLabel: {
-    fontSize: 11,
-    letterSpacing: 1.4,
-    textTransform: "uppercase",
-    opacity: 0.9,
-  },
-  iconBlock: {
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOpacity: 0.55,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  moduleName: {
-    fontSize: 22,
+  headerTitle: {
+    fontSize: 18,
     fontWeight: "700",
+    marginLeft: 8,
   },
-  moduleTagline: {
-    fontSize: 12,
-    marginTop: 2,
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerIcon: {
+    padding: 4,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 96,
+    paddingBottom: 80,
   },
-  overviewCard: {
-    borderRadius: 22,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderWidth: 1,
-    marginBottom: 22,
+  profileSection: {
+    margin: 16,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 18,
   },
-  overviewTopRow: {
+  profileTop: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
+    marginBottom: 16,
   },
-  overviewLabel: {
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+  avatarContainer: {
+    marginRight: 20,
   },
-  overviewValue: {
-    fontSize: 30,
-    fontWeight: "800",
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  avatarPlaceholder: {
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statsRow: {
+    flexDirection: "row",
+    flex: 1,
+    justifyContent: "space-around",
+  },
+  statItem: {
+    alignItems: "center",
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: "500",
     marginTop: 6,
-  },
-  overviewChipRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    marginRight: 8,
-    maxWidth: 170,
-  },
-  chipText: {
-    fontSize: 11,
-    marginLeft: 4,
-  },
-  chipButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    shadowOpacity: 0.7,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  chipButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#f9fafb",
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginTop: 14,
-    marginBottom: 14,
-    opacity: 0.7,
-  },
-  previewRow: {
-    flexDirection: "row",
-  },
-  sectionLabel: {
-    fontSize: 11,
+    letterSpacing: 0.5,
     textTransform: "uppercase",
-    letterSpacing: 0.9,
-    marginBottom: 4,
+    opacity: 0.8,
   },
-  previewTitle: {
-    fontSize: 16,
+  profileInfo: {
+    marginBottom: 16,
+    paddingTop: 4,
+  },
+  username: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  bio: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "400",
+    letterSpacing: 0.2,
+    opacity: 0.85,
+  },
+  profileActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  editButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    gap: 6,
+  },
+  editButtonOutline: {
+    backgroundColor: "transparent",
+  },
+  editButtonText: {
+    color: "#fff",
+    fontSize: 14,
     fontWeight: "600",
-    marginBottom: 2,
+    letterSpacing: 0.5,
   },
-  previewDescription: {
+  editButtonTextOutline: {
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+  },
+  insightsToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 6,
+  },
+  insightsToggleText: {
     fontSize: 13,
-    lineHeight: 18,
+    fontWeight: "600",
   },
-  previewMetaRow: {
+  feedSection: {
+    paddingHorizontal: 16,
+  },
+  feedHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 10,
+    marginBottom: 16,
+    gap: 8,
   },
-  moodPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    marginRight: 8,
-  },
-  moodText: {
-    fontSize: 11,
-    color: "#f9fafb",
-  },
-  dateText: {
-    fontSize: 11,
+  feedTitle: {
+    fontSize: 18,
+    fontWeight: "700",
   },
   emptyState: {
     alignItems: "center",
-    paddingVertical: 20,
+    paddingVertical: 60,
   },
   emptyTitle: {
-    marginTop: 8,
-    fontSize: 15,
-    fontWeight: "600",
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: 16,
+    marginBottom: 8,
   },
   emptySubtitle: {
-    marginTop: 4,
-    fontSize: 12,
+    fontSize: 14,
+    marginBottom: 24,
     textAlign: "center",
-    maxWidth: 260,
   },
-  sectionBlock: {
-    marginBottom: 22,
+  createButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 16,
+    gap: 8,
   },
-  sectionHeaderRow: {
-    marginBottom: 10,
-  },
-  sectionTitle: {
+  createButtonText: {
+    color: "#fff",
     fontSize: 15,
     fontWeight: "600",
-    marginBottom: 2,
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-  },
-  primaryRow: {
-    borderWidth: 1,
-    borderRadius: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  secondaryRow: {
-    borderWidth: 1,
-    borderRadius: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    marginTop: 10,
-  },
-  rowIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  rowTextBlock: {
-    flex: 1,
-  },
-  rowTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  rowSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  fab: {
-    position: "absolute",
-    right: 20,
-    bottom: 26,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOpacity: 0.7,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
+    letterSpacing: 0.5,
   },
 });

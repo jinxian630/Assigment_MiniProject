@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
   ScrollView,
@@ -6,10 +6,16 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  StyleSheet,
+  Animated,
+  Platform,
 } from "react-native";
-import { Layout, TopNav, useTheme, themeColor } from "react-native-rapi-ui";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
+import FilterModal, { type FilterOptions } from "./components/FilterModal";
+import { applyFilters } from "./utils/filterHelpers";
 
 import {
   getFirestore,
@@ -22,24 +28,101 @@ import {
 } from "firebase/firestore";
 import { getStorage, ref, deleteObject } from "firebase/storage";
 
+import { GradientBackground } from "@/components/common/GradientBackground";
+import { IconButton } from "@/components/common/IconButton";
+import { useTheme } from "@/hooks/useTheme";
+
+const PRIMARY_PURPLE = "#a855f7";
+
 type MemoryPost = {
   id: string;
   title: string;
   description: string;
   imageURL?: string;
   startDate: number;
+  emotionColor?: string;
+  emotionSpectrum?: {
+    energy: number;
+    stress: number;
+    clarity: number;
+    warmth: number;
+  };
   CreatedUser?: {
     CreatedUserName?: string;
     CreatedUserPhoto?: string;
   };
 };
 
-export default function MemoryTimelineScreen() {
+/** 🎨 Cyberpunk neon card shell helper */
+const createNeonCardShell = (
+  accentColor: string,
+  isDark: boolean,
+  extra: any = {}
+) => {
+  return {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: accentColor + (isDark ? "66" : "CC"), // Stronger border in light mode for dark purple glow
+    shadowColor: accentColor,
+    shadowOpacity: isDark ? 0.9 : 0.75, // Stronger shadow in light mode for dark purple glow
+    shadowRadius: isDark ? 30 : 25, // Larger glow radius in light mode
+    shadowOffset: { width: 0, height: 0 },
+    elevation: isDark ? 18 : 15, // Higher elevation in light mode
+    ...extra,
+  };
+};
+
+/** 🎨 Glow text styles */
+const getGlowText = (accentColor: string, isDark: boolean) => ({
+  color: isDark ? "#E0F2FE" : "#6B21A8", // Dark purple for light mode
+  textShadowColor: accentColor + (isDark ? "CC" : "88"), // Stronger glow in light mode
+  textShadowOffset: { width: 0, height: 0 },
+  textShadowRadius: isDark ? 8 : 6, // Stronger glow radius in light mode
+});
+
+const getSoftText = (isDark: boolean) => ({
+  color: isDark ? "#CBD5E1" : "#9333EA", // Dark glowing purple for light mode
+});
+
+export default function MemoryTimeline() {
   const router = useRouter();
-  const { isDarkmode, setTheme } = useTheme();
+  const { theme, isDarkMode, toggleTheme } = useTheme();
 
   const [memories, setMemories] = useState<MemoryPost[]>([]);
   const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
+  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<FilterOptions>({
+    keyword: "",
+    emotionColor: null,
+    feelingType: null,
+    feelingRank: null,
+  });
+
+  // Animation refs for each memory card
+  const animationRefs = useRef<
+    Record<
+      string,
+      {
+        imageHeight: Animated.Value;
+        cardScale: Animated.Value;
+        opacity: Animated.Value;
+      }
+    >
+  >({});
+
+  // 🎨 Theme-aware colors
+  const colors = {
+    background: isDarkMode ? "#020617" : "#FAF5FF",
+    surface: isDarkMode ? "#020617" : "#FFFFFF",
+    text: isDarkMode ? "#E5E7EB" : "#1E1B4B",
+    textSoft: isDarkMode ? "#9CA3AF" : "#9333EA", // Dark glowing purple for light mode
+    borderSoft: isDarkMode ? "#1F2937" : "#7C3AED", // Dark purple border for light mode
+    chipBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(124,58,237,0.2)", // Dark purple with glow for light mode
+  };
+
+  const glowText = getGlowText(PRIMARY_PURPLE, isDarkMode);
+  const softText = getSoftText(isDarkMode);
 
   useEffect(() => {
     const db = getFirestore();
@@ -57,14 +140,6 @@ export default function MemoryTimelineScreen() {
     return () => unsubscribe();
   }, []);
 
-  const colors = {
-    primary: "#a855f7",
-    background: isDarkmode ? "#020617" : "#0f172a",
-    surface: isDarkmode ? "#020617" : "#020617",
-    text: isDarkmode ? "#e5e7eb" : "#e5e7eb",
-    accent: "#38bdf8",
-  };
-
   const groupByYear = (items: MemoryPost[]) => {
     const groups: Record<string, MemoryPost[]> = {};
     items.forEach((m) => {
@@ -75,9 +150,96 @@ export default function MemoryTimelineScreen() {
     return groups;
   };
 
-  const groupedMemories = groupByYear(memories);
+  const filteredMemories = useMemo(() => {
+    const hasActiveFilters =
+      activeFilters.keyword ||
+      activeFilters.emotionColor ||
+      (activeFilters.feelingType && activeFilters.feelingRank);
+
+    if (!hasActiveFilters) {
+      return memories;
+    }
+
+    const filtered = applyFilters(memories as any[], activeFilters);
+    return filtered;
+  }, [memories, activeFilters]);
+
+  const groupedMemories = groupByYear(filteredMemories);
+
+  const hasActiveFilters = useMemo(() => {
+    return (
+      !!activeFilters.keyword ||
+      !!activeFilters.emotionColor ||
+      (!!activeFilters.feelingType && !!activeFilters.feelingRank)
+    );
+  }, [activeFilters]);
+
+  const handleApplyFilters = (filters: FilterOptions) => {
+    setActiveFilters(filters);
+    const filtered = applyFilters(memories as any[], filters);
+
+    if (filtered.length === 0 && memories.length > 0) {
+      setTimeout(() => {
+        Alert.alert(
+          "No Results Found",
+          "No memories match your filter criteria. Try adjusting your filters.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                if (Platform.OS === "ios") {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }
+              },
+            },
+          ]
+        );
+      }, 300);
+    }
+  };
 
   const toggleExpand = (id: string) => {
+    const isCurrentlyExpanded = expandedMemoryId === id;
+    const willBeExpanded = !isCurrentlyExpanded;
+
+    // Haptic feedback
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
+    // Initialize animation refs if needed
+    if (!animationRefs.current[id]) {
+      animationRefs.current[id] = {
+        imageHeight: new Animated.Value(isCurrentlyExpanded ? 300 : 180),
+        cardScale: new Animated.Value(1),
+        opacity: new Animated.Value(1),
+      };
+    }
+
+    const anims = animationRefs.current[id];
+
+    // Animate image height smoothly
+    Animated.parallel([
+      Animated.spring(anims.imageHeight, {
+        toValue: willBeExpanded ? 300 : 180,
+        useNativeDriver: false,
+        tension: 50,
+        friction: 7,
+      }),
+      Animated.sequence([
+        Animated.timing(anims.cardScale, {
+          toValue: 0.98,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(anims.cardScale, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+
     setExpandedMemoryId((prev) => (prev === id ? null : id));
   };
 
@@ -85,398 +247,1128 @@ export default function MemoryTimelineScreen() {
     const date = new Date(timestamp);
     return date.toLocaleString("en-US", {
       year: "numeric",
-      month: "long",
+      month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     });
   };
 
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+  };
+
   const deleteMemory = async (memoryId: string, imageURL?: string) => {
     try {
+      setDeleteLoadingId(memoryId);
       const db = getFirestore();
       const storage = getStorage();
 
-      // 1. delete Firestore document
-      await deleteDoc(doc(db, "MemoryPosts", memoryId));
-
-      // 2. delete image from Storage (if exists)
-      if (imageURL) {
-        const imageRef = ref(storage, imageURL);
-        await deleteObject(imageRef).catch(() => {});
+      // Animate card out before deletion
+      if (animationRefs.current[memoryId]) {
+        Animated.parallel([
+          Animated.timing(animationRefs.current[memoryId].opacity, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(animationRefs.current[memoryId].cardScale, {
+            toValue: 0.8,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start();
       }
 
-      Alert.alert("Deleted", "Memory deleted successfully.");
+      // Delete the document from Firestore
+      await deleteDoc(doc(db, "MemoryPosts", memoryId));
+
+      // Delete the image from Storage if it exists
+      if (imageURL) {
+        try {
+          const imageRef = ref(storage, imageURL);
+          await deleteObject(imageRef);
+        } catch (err: any) {
+          // Image might already be deleted or not exist
+          console.log("Image deletion warning:", err.message);
+        }
+      }
+
+      // Success haptic
+      if (Platform.OS === "ios") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+
+      Alert.alert("Success", "Memory deleted successfully");
     } catch (err: any) {
-      Alert.alert("Error", err.message || "Failed to delete memory.");
+      console.error("Delete error:", err);
+
+      // Error haptic
+      if (Platform.OS === "ios") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+
+      Alert.alert(
+        "Error",
+        err.message || "Failed to delete memory. Please try again."
+      );
+
+      // Reset animation on error
+      if (animationRefs.current[memoryId]) {
+        Animated.parallel([
+          Animated.timing(animationRefs.current[memoryId].opacity, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(animationRefs.current[memoryId].cardScale, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
+    } finally {
+      setDeleteLoadingId(null);
     }
   };
 
+  const confirmDelete = (
+    memoryId: string,
+    title: string,
+    imageURL?: string
+  ) => {
+    // Haptic feedback
+    if (Platform.OS === "ios") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
+
+    Alert.alert(
+      "Delete Memory",
+      `Are you sure you want to delete "${
+        title || "this memory"
+      }"? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => {
+            if (Platform.OS === "ios") {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }
+          },
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            if (Platform.OS === "ios") {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            }
+            deleteMemory(memoryId, imageURL);
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   return (
-    <Layout>
-      <TopNav
-        middleContent="Memory Timeline"
-        leftContent={
-          <Ionicons
-            name="chevron-back"
-            size={20}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
+    <GradientBackground>
+      <SafeAreaView style={styles.safeArea}>
+        {/* HEADER */}
+        <View style={styles.headerRow}>
+          <IconButton
+            icon="arrow-back"
+            onPress={() => router.back()}
+            variant="ghost"
           />
-        }
-        leftAction={() => router.back()}
-        rightContent={
-          <Ionicons
-            name={isDarkmode ? "sunny" : "moon"}
-            size={20}
-            color={isDarkmode ? themeColor.white100 : themeColor.dark}
-          />
-        }
-        rightAction={() => setTheme(isDarkmode ? "light" : "dark")}
-      />
-
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={{ padding: 20, paddingBottom: 80 }}
-      >
-        {memories.length === 0 ? (
-          <View style={{ alignItems: "center", paddingTop: 80 }}>
-            <Ionicons
-              name="time-outline"
-              size={48}
-              color={colors.text}
-              style={{ opacity: 0.35 }}
-            />
-            <Text
-              style={{
-                marginTop: 14,
-                fontSize: 18,
-                color: colors.text,
-                opacity: 0.85,
-              }}
-            >
-              No memories yet
-            </Text>
-            <Text
-              style={{
-                marginTop: 6,
-                fontSize: 13,
-                color: colors.text,
-                opacity: 0.6,
-                textAlign: "center",
-              }}
-            >
-              Create a new memory from the Memory Book home screen to see it
-              appear here.
-            </Text>
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text style={[styles.headerTitle, glowText]}>Memory Timeline</Text>
+            {memories.length > 0 && (
+              <Text style={[styles.headerSubtitle, softText]}>
+                {hasActiveFilters
+                  ? `${filteredMemories.length} of ${memories.length}`
+                  : memories.length}{" "}
+                {filteredMemories.length === 1 ? "memory" : "memories"}
+                {hasActiveFilters && " (Filtered)"}
+              </Text>
+            )}
           </View>
-        ) : (
-          Object.entries(groupedMemories)
-            .sort(([a], [b]) => parseInt(b) - parseInt(a))
-            .map(([year, yearMemories]) => (
-              <View key={year} style={{ marginBottom: 32 }}>
-                <Text
-                  style={{
-                    fontSize: 24,
-                    fontWeight: "700",
-                    color: colors.accent,
-                    marginBottom: 18,
-                    textAlign: "center",
-                  }}
-                >
-                  {year}
-                </Text>
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            <TouchableOpacity
+              onPress={() => {
+                setShowFilterModal(true);
+                if (Platform.OS === "ios") {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }
+              }}
+              style={[
+                styles.filterButton,
+                {
+                  backgroundColor: hasActiveFilters
+                    ? PRIMARY_PURPLE
+                    : colors.chipBg,
+                  borderColor: hasActiveFilters
+                    ? PRIMARY_PURPLE
+                    : colors.borderSoft,
+                },
+              ]}
+            >
+              <Ionicons
+                name="filter"
+                size={20}
+                color={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
+              />
+              {hasActiveFilters && (
+                <View
+                  style={[styles.filterBadge, { backgroundColor: "#FFFFFF" }]}
+                />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
+              <Ionicons
+                name={isDarkMode ? "sunny-outline" : "moon-outline"}
+                size={20}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-                <View style={{ position: "relative", paddingLeft: 30 }}>
-                  {/* timeline vertical line */}
-                  <View
-                    style={{
-                      position: "absolute",
-                      left: 10,
-                      top: 0,
-                      bottom: 0,
-                      width: 2,
-                      backgroundColor: colors.primary,
-                      opacity: 0.9,
-                    }}
-                  />
-
-                  {yearMemories
-                    .sort((a, b) => b.startDate - a.startDate)
-                    .map((memory) => {
-                      const dateObj = new Date(memory.startDate);
-                      const chipLabel = dateObj.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      });
-                      const isExpanded = expandedMemoryId === memory.id;
-
-                      return (
-                        <View
-                          key={memory.id}
-                          style={{ marginBottom: 26, position: "relative" }}
-                        >
-                          {/* timeline dot */}
-                          <View
-                            style={{
-                              position: "absolute",
-                              left: -2,
-                              top: 24,
-                              width: 14,
-                              height: 14,
-                              borderRadius: 7,
-                              backgroundColor: colors.primary,
-                              borderWidth: 2,
-                              borderColor: colors.background,
-                            }}
-                          />
-
-                          {/* date chip on right */}
-                          <View
-                            style={{
-                              position: "absolute",
-                              right: 12,
-                              top: 10,
-                              paddingHorizontal: 10,
-                              paddingVertical: 4,
-                              borderRadius: 999,
-                              backgroundColor: colors.primary,
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: "#f9fafb",
-                                fontSize: 12,
-                                fontWeight: "600",
-                              }}
-                            >
-                              {chipLabel}
-                            </Text>
-                          </View>
-
-                          <TouchableOpacity
-                            activeOpacity={0.9}
-                            onPress={() => toggleExpand(memory.id)}
-                            style={{
-                              backgroundColor: colors.surface,
-                              borderRadius: 16,
-                              padding: 14,
-                              shadowColor: "#000",
-                              shadowOpacity: 0.18,
-                              shadowRadius: 6,
-                              shadowOffset: { width: 0, height: 3 },
-                              elevation: 3,
-                            }}
-                          >
-                            {/* delete button */}
-                            <TouchableOpacity
-                              onPress={() =>
-                                Alert.alert(
-                                  "Delete memory",
-                                  "Are you sure you want to delete this memory?",
-                                  [
-                                    { text: "Cancel", style: "cancel" },
-                                    {
-                                      text: "Delete",
-                                      style: "destructive",
-                                      onPress: () =>
-                                        deleteMemory(
-                                          memory.id,
-                                          memory.imageURL
-                                        ),
-                                    },
-                                  ]
-                                )
-                              }
-                              style={{
-                                position: "absolute",
-                                top: 10,
-                                left: 10,
-                                width: 26,
-                                height: 26,
-                                borderRadius: 13,
-                                backgroundColor: "rgba(239,68,68,0.9)",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                zIndex: 10,
-                              }}
-                            >
-                              <Ionicons
-                                name="trash-outline"
-                                size={15}
-                                color="#fff"
-                              />
-                            </TouchableOpacity>
-
-                            {/* image */}
-                            {memory.imageURL && (
-                              <View
-                                style={{
-                                  width: "100%",
-                                  height: isExpanded ? 320 : 140,
-                                  marginBottom: 10,
-                                  overflow: "hidden",
-                                  borderRadius: 10,
-                                }}
-                              >
-                                <Image
-                                  source={{ uri: memory.imageURL }}
-                                  style={{
-                                    width: "100%",
-                                    height: "100%",
-                                    resizeMode: isExpanded
-                                      ? "contain"
-                                      : "cover",
-                                  }}
-                                />
-                              </View>
-                            )}
-
-                            {/* title */}
-                            <Text
-                              numberOfLines={2}
-                              style={{
-                                fontSize: 18,
-                                fontWeight: "600",
-                                color: colors.text,
-                                marginBottom: 6,
-                              }}
-                            >
-                              {memory.title}
-                            </Text>
-
-                            {/* date row */}
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                marginBottom: 6,
-                                paddingVertical: 4,
-                                paddingHorizontal: 8,
-                                borderRadius: 999,
-                                backgroundColor: isDarkmode
-                                  ? "#020617"
-                                  : "#0b1020",
-                                alignSelf: "flex-start",
-                              }}
-                            >
-                              <Ionicons
-                                name="time-outline"
-                                size={14}
-                                color={colors.accent}
-                                style={{ marginRight: 4 }}
-                              />
-                              <Text
-                                style={{
-                                  fontSize: 11,
-                                  color: colors.accent,
-                                  fontWeight: "600",
-                                }}
-                              >
-                                {formatDateTime(memory.startDate)}
-                              </Text>
-                            </View>
-
-                            {/* description */}
-                            <Text
-                              numberOfLines={isExpanded ? undefined : 3}
-                              style={{
-                                fontSize: 13,
-                                lineHeight: 19,
-                                color: colors.text,
-                                opacity: 0.85,
-                              }}
-                            >
-                              {memory.description}
-                            </Text>
-
-                            {/* created user (optional) */}
-                            {memory.CreatedUser?.CreatedUserName && (
-                              <View
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  marginTop: 10,
-                                }}
-                              >
-                                {memory.CreatedUser.CreatedUserPhoto ? (
-                                  <Image
-                                    source={{
-                                      uri: memory.CreatedUser.CreatedUserPhoto,
-                                    }}
-                                    style={{
-                                      width: 22,
-                                      height: 22,
-                                      borderRadius: 11,
-                                      marginRight: 8,
-                                    }}
-                                  />
-                                ) : (
-                                  <View
-                                    style={{
-                                      width: 22,
-                                      height: 22,
-                                      borderRadius: 11,
-                                      backgroundColor: "#111827",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      marginRight: 8,
-                                    }}
-                                  >
-                                    <Ionicons
-                                      name="person-outline"
-                                      size={13}
-                                      color="#9ca3af"
-                                    />
-                                  </View>
-                                )}
-                                <Text
-                                  style={{
-                                    fontSize: 12,
-                                    color: colors.text,
-                                    opacity: 0.7,
-                                  }}
-                                >
-                                  {memory.CreatedUser.CreatedUserName}
-                                </Text>
-                              </View>
-                            )}
-
-                            {/* read more / less */}
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                marginTop: 8,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  color: colors.primary,
-                                  fontWeight: "600",
-                                }}
-                              >
-                                {isExpanded ? "Show less" : "Read more"}
-                              </Text>
-                              <Ionicons
-                                name={
-                                  isExpanded ? "chevron-up" : "chevron-down"
-                                }
-                                size={16}
-                                color={colors.primary}
-                                style={{ marginLeft: 4 }}
-                              />
-                            </View>
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })}
-                </View>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {filteredMemories.length === 0 && hasActiveFilters ? (
+            <View style={styles.emptyState}>
+              <View
+                style={[
+                  styles.emptyIconWrapper,
+                  { borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "CC") },
+                ]}
+              >
+                <Ionicons
+                  name="filter-outline"
+                  size={48}
+                  color={PRIMARY_PURPLE}
+                />
               </View>
-            ))
-        )}
-      </ScrollView>
-    </Layout>
+              <Text style={[styles.emptyTitle, glowText]}>
+                No memories match your filters
+              </Text>
+              <Text style={[styles.emptySubtitle, softText]}>
+                Try adjusting your filter criteria
+              </Text>
+            </View>
+          ) : memories.length === 0 ? (
+            <View style={styles.emptyState}>
+              <View
+                style={[
+                  styles.emptyIconWrapper,
+                  { borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "CC") },
+                ]}
+              >
+                <Ionicons
+                  name="time-outline"
+                  size={48}
+                  color={PRIMARY_PURPLE}
+                />
+              </View>
+              <Text style={[styles.emptyTitle, glowText]}>No memories yet</Text>
+              <Text style={[styles.emptySubtitle, softText]}>
+                Create your first memory to see it appear on your timeline
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.createBtn,
+                  createNeonCardShell(PRIMARY_PURPLE, isDarkMode),
+                  { backgroundColor: PRIMARY_PURPLE, marginTop: 20 },
+                ]}
+                onPress={() => router.back()}
+              >
+                <Ionicons name="add-circle" size={18} color="#fff" />
+                <Text style={styles.createBtnText}>Create Memory</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            Object.entries(groupedMemories)
+              .sort(([a], [b]) => parseInt(b) - parseInt(a))
+              .map(([year, yearMemories]) => (
+                <View key={year} style={styles.yearSection}>
+                  {/* Year Header */}
+                  <View style={styles.yearHeaderRow}>
+                    <View
+                      style={[
+                        styles.yearBadge,
+                        {
+                          backgroundColor: colors.chipBg,
+                          borderColor:
+                            PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.yearLabel, glowText]}>{year}</Text>
+                    </View>
+                    <View style={styles.yearDivider} />
+                    <View
+                      style={[
+                        styles.countBadge,
+                        {
+                          backgroundColor: colors.chipBg,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="images-outline"
+                        size={12}
+                        color={PRIMARY_PURPLE}
+                      />
+                      <Text style={[styles.memoryCount, softText]}>
+                        {yearMemories.length}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Timeline Container */}
+                  <View style={styles.timelineContainer}>
+                    {/* Vertical Timeline Line */}
+                    <View
+                      style={[
+                        styles.timelineLineWrapper,
+                        {
+                          backgroundColor:
+                            PRIMARY_PURPLE + (isDarkMode ? "33" : "55"),
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.timelineLine,
+                          { backgroundColor: PRIMARY_PURPLE },
+                        ]}
+                      />
+                    </View>
+
+                    {/* Memory Items */}
+                    <View style={styles.memoriesWrapper}>
+                      {yearMemories
+                        .sort((a, b) => b.startDate - a.startDate)
+                        .map((memory, index) => {
+                          const isExpanded = expandedMemoryId === memory.id;
+                          const isDeleting = deleteLoadingId === memory.id;
+                          const emotionColor =
+                            memory.emotionColor || PRIMARY_PURPLE;
+
+                          // Initialize animation refs for this memory
+                          if (!animationRefs.current[memory.id]) {
+                            animationRefs.current[memory.id] = {
+                              imageHeight: new Animated.Value(180),
+                              cardScale: new Animated.Value(1),
+                              opacity: new Animated.Value(1),
+                            };
+                          }
+                          const anims = animationRefs.current[memory.id];
+
+                          return (
+                            <View
+                              key={memory.id}
+                              style={styles.memoryItemWrapper}
+                            >
+                              {/* Timeline Dot */}
+                              <View
+                                style={[
+                                  styles.timelineDot,
+                                  {
+                                    backgroundColor: emotionColor,
+                                    borderColor: colors.surface,
+                                    shadowColor: emotionColor,
+                                  },
+                                ]}
+                              />
+
+                              {/* Memory Card */}
+                              <Animated.View
+                                style={[
+                                  createNeonCardShell(
+                                    emotionColor,
+                                    isDarkMode,
+                                    {
+                                      paddingBottom: 0,
+                                      marginBottom: 24,
+                                      overflow: "hidden",
+                                    }
+                                  ),
+                                  {
+                                    backgroundColor: colors.surface,
+                                    transform: [{ scale: anims.cardScale }],
+                                    opacity: anims.opacity,
+                                  },
+                                ]}
+                              >
+                                {/* Delete Button - Positioned absolutely outside touchable area */}
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    console.log(
+                                      "Delete button pressed for:",
+                                      memory.id
+                                    );
+                                    confirmDelete(
+                                      memory.id,
+                                      memory.title,
+                                      memory.imageURL
+                                    );
+                                  }}
+                                  onPressIn={() => {
+                                    // Visual feedback on press
+                                    if (Platform.OS === "ios") {
+                                      Haptics.impactAsync(
+                                        Haptics.ImpactFeedbackStyle.Medium
+                                      );
+                                    }
+                                  }}
+                                  disabled={isDeleting}
+                                  activeOpacity={0.6}
+                                  hitSlop={{
+                                    top: 10,
+                                    bottom: 10,
+                                    left: 10,
+                                    right: 10,
+                                  }}
+                                  style={[
+                                    styles.deleteBtn,
+                                    {
+                                      backgroundColor: isDeleting
+                                        ? "rgba(168, 85, 247, 0.5)"
+                                        : "rgba(239, 68, 68, 0.95)",
+                                      opacity: isDeleting ? 0.6 : 1,
+                                    },
+                                  ]}
+                                >
+                                  <Ionicons
+                                    name={
+                                      isDeleting
+                                        ? "hourglass-outline"
+                                        : "trash-outline"
+                                    }
+                                    size={18}
+                                    color="#fff"
+                                  />
+                                </TouchableOpacity>
+
+                                {/* Card Content - Touchable for expand/collapse */}
+                                <TouchableOpacity
+                                  activeOpacity={0.92}
+                                  onPress={() => toggleExpand(memory.id)}
+                                  onPressIn={() => {
+                                    // Scale down animation on press
+                                    Animated.spring(anims.cardScale, {
+                                      toValue: 0.97,
+                                      useNativeDriver: true,
+                                      tension: 300,
+                                      friction: 10,
+                                    }).start();
+                                  }}
+                                  onPressOut={() => {
+                                    // Scale back up
+                                    Animated.spring(anims.cardScale, {
+                                      toValue: 1,
+                                      useNativeDriver: true,
+                                      tension: 300,
+                                      friction: 10,
+                                    }).start();
+                                  }}
+                                  disabled={isDeleting}
+                                  style={{ flex: 1 }}
+                                >
+                                  {/* Date Chip */}
+                                  <View style={styles.dateChipWrapper}>
+                                    <View
+                                      style={[
+                                        styles.dateChip,
+                                        {
+                                          backgroundColor: emotionColor,
+                                        },
+                                      ]}
+                                    >
+                                      <Ionicons
+                                        name="calendar-outline"
+                                        size={12}
+                                        color="#fff"
+                                        style={{ marginRight: 4 }}
+                                      />
+                                      <Text style={styles.dateChipText}>
+                                        {formatDate(memory.startDate)}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  {/* Cover Image */}
+                                  {memory.imageURL && (
+                                    <Animated.View
+                                      style={[
+                                        styles.imageContainer,
+                                        {
+                                          height: anims.imageHeight,
+                                        },
+                                      ]}
+                                    >
+                                      <Image
+                                        source={{ uri: memory.imageURL }}
+                                        style={[
+                                          styles.image,
+                                          {
+                                            resizeMode: isExpanded
+                                              ? "contain"
+                                              : "cover",
+                                          },
+                                        ]}
+                                      />
+                                      {/* Image overlay gradient */}
+                                      <Animated.View
+                                        style={[
+                                          styles.imageOverlay,
+                                          {
+                                            backgroundColor: isDarkMode
+                                              ? "rgba(2,6,23,0.3)"
+                                              : "rgba(250,245,255,0.3)",
+                                            opacity: isExpanded ? 0 : 1,
+                                          },
+                                        ]}
+                                      />
+                                    </Animated.View>
+                                  )}
+
+                                  {/* Content Section */}
+                                  <View style={styles.contentSection}>
+                                    {/* Title */}
+                                    <View style={styles.titleRow}>
+                                      <Text
+                                        numberOfLines={
+                                          isExpanded ? undefined : 2
+                                        }
+                                        style={[styles.title, glowText]}
+                                      >
+                                        {memory.title}
+                                      </Text>
+                                    </View>
+
+                                    {/* Emotion Spectrum (if available) */}
+                                    {memory.emotionSpectrum && (
+                                      <View
+                                        style={[
+                                          styles.emotionSpectrumCard,
+                                          {
+                                            backgroundColor: colors.chipBg,
+                                            borderColor:
+                                              emotionColor +
+                                              (isDarkMode ? "33" : "88"),
+                                          },
+                                        ]}
+                                      >
+                                        <View style={styles.emotionHeaderRow}>
+                                          <Ionicons
+                                            name="pulse-outline"
+                                            size={14}
+                                            color={emotionColor}
+                                          />
+                                          <Text
+                                            style={[
+                                              styles.emotionHeaderText,
+                                              { color: emotionColor },
+                                            ]}
+                                          >
+                                            Emotional State
+                                          </Text>
+                                        </View>
+                                        {[
+                                          {
+                                            key: "energy",
+                                            icon: "flash",
+                                            label: "Energy",
+                                            color: "#f59e0b",
+                                          },
+                                          {
+                                            key: "stress",
+                                            icon: "alert-circle",
+                                            label: "Stress",
+                                            color: "#ef4444",
+                                          },
+                                          {
+                                            key: "clarity",
+                                            icon: "bulb",
+                                            label: "Clarity",
+                                            color: "#3b82f6",
+                                          },
+                                          {
+                                            key: "warmth",
+                                            icon: "heart",
+                                            label: "Warmth",
+                                            color: "#ec4899",
+                                          },
+                                        ].map((emotion) => {
+                                          const value =
+                                            memory.emotionSpectrum?.[
+                                              emotion.key as keyof typeof memory.emotionSpectrum
+                                            ] || 0;
+                                          return (
+                                            <View
+                                              key={emotion.key}
+                                              style={styles.emotionBarRow}
+                                            >
+                                              <View
+                                                style={styles.emotionBarLabel}
+                                              >
+                                                <Ionicons
+                                                  name={emotion.icon as any}
+                                                  size={14}
+                                                  color={emotion.color}
+                                                />
+                                                <Text
+                                                  style={[
+                                                    styles.emotionLabel,
+                                                    softText,
+                                                  ]}
+                                                >
+                                                  {emotion.label}
+                                                </Text>
+                                              </View>
+                                              <View
+                                                style={
+                                                  styles.emotionBarContainer
+                                                }
+                                              >
+                                                <View
+                                                  style={[
+                                                    styles.emotionBarTrack,
+                                                    {
+                                                      backgroundColor:
+                                                        colors.borderSoft,
+                                                    },
+                                                  ]}
+                                                >
+                                                  <View
+                                                    style={[
+                                                      styles.emotionBarFill,
+                                                      {
+                                                        width: `${value}%`,
+                                                        backgroundColor:
+                                                          emotion.color,
+                                                        shadowColor:
+                                                          emotion.color,
+                                                        shadowOpacity:
+                                                          isDarkMode
+                                                            ? 0.8
+                                                            : 0.5,
+                                                        shadowRadius: 8,
+                                                        shadowOffset: {
+                                                          width: 0,
+                                                          height: 0,
+                                                        },
+                                                      },
+                                                    ]}
+                                                  />
+                                                </View>
+                                                <Text
+                                                  style={[
+                                                    styles.emotionValue,
+                                                    { color: emotion.color },
+                                                  ]}
+                                                >
+                                                  {value}%
+                                                </Text>
+                                              </View>
+                                            </View>
+                                          );
+                                        })}
+                                      </View>
+                                    )}
+
+                                    {/* Description */}
+                                    <Text
+                                      numberOfLines={isExpanded ? undefined : 3}
+                                      style={[
+                                        styles.description,
+                                        { color: colors.text },
+                                      ]}
+                                    >
+                                      {memory.description}
+                                    </Text>
+
+                                    {/* DateTime & Creator Row */}
+                                    <View style={styles.metaRow}>
+                                      <View style={styles.dateTimeRow}>
+                                        <Ionicons
+                                          name="time-outline"
+                                          size={13}
+                                          color={PRIMARY_PURPLE}
+                                        />
+                                        <Text
+                                          style={[styles.dateTime, softText]}
+                                        >
+                                          {formatDateTime(memory.startDate)}
+                                        </Text>
+                                      </View>
+                                    </View>
+
+                                    {/* Creator Info */}
+                                    {memory.CreatedUser?.CreatedUserName && (
+                                      <View
+                                        style={[
+                                          styles.creatorRow,
+                                          {
+                                            backgroundColor: colors.chipBg,
+                                            borderColor:
+                                              emotionColor +
+                                              (isDarkMode ? "33" : "88"),
+                                          },
+                                        ]}
+                                      >
+                                        {memory.CreatedUser.CreatedUserPhoto ? (
+                                          <Image
+                                            source={{
+                                              uri: memory.CreatedUser
+                                                .CreatedUserPhoto,
+                                            }}
+                                            style={styles.creatorAvatar}
+                                          />
+                                        ) : (
+                                          <View
+                                            style={[
+                                              styles.creatorAvatar,
+                                              styles.creatorAvatarPlaceholder,
+                                              {
+                                                backgroundColor: colors.surface,
+                                              },
+                                            ]}
+                                          >
+                                            <Ionicons
+                                              name="person-outline"
+                                              size={12}
+                                              color={PRIMARY_PURPLE}
+                                            />
+                                          </View>
+                                        )}
+                                        <Text
+                                          style={[styles.creatorName, softText]}
+                                        >
+                                          {memory.CreatedUser.CreatedUserName}
+                                        </Text>
+                                      </View>
+                                    )}
+
+                                    {/* Expand/Collapse Indicator */}
+                                    <View
+                                      style={[
+                                        styles.expandIndicator,
+                                        {
+                                          backgroundColor: colors.chipBg,
+                                          borderTopWidth: 1,
+                                          borderTopColor:
+                                            emotionColor +
+                                            (isDarkMode ? "33" : "88"),
+                                        },
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.expandText,
+                                          { color: emotionColor },
+                                        ]}
+                                      >
+                                        {isExpanded ? "Show less" : "Read more"}
+                                      </Text>
+                                      <Ionicons
+                                        name={
+                                          isExpanded
+                                            ? "chevron-up"
+                                            : "chevron-down"
+                                        }
+                                        size={16}
+                                        color={emotionColor}
+                                      />
+                                    </View>
+                                  </View>
+                                </TouchableOpacity>
+                              </Animated.View>
+                            </View>
+                          );
+                        })}
+                    </View>
+                  </View>
+                </View>
+              ))
+          )}
+        </ScrollView>
+
+        {/* Filter Modal */}
+        <FilterModal
+          visible={showFilterModal}
+          onClose={() => setShowFilterModal(false)}
+          onApply={handleApplyFilters}
+          isDarkMode={isDarkMode}
+          memories={memories as any[]}
+        />
+      </SafeAreaView>
+    </GradientBackground>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
+  flex: { flex: 1 },
+
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 6,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  themeToggle: {
+    width: 40,
+    alignItems: "flex-end",
+  },
+  filterButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    position: "relative",
+    shadowColor: PRIMARY_PURPLE,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  filterBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 40,
+  },
+
+  /* Empty State */
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 80,
+  },
+  emptyIconWrapper: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    textAlign: "center",
+    maxWidth: 280,
+  },
+  createBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  createBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+    marginLeft: 8,
+  },
+
+  /* Year Section */
+  yearSection: {
+    marginBottom: 32,
+  },
+  yearHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  yearBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  yearLabel: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  yearDivider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: PRIMARY_PURPLE + "33",
+    marginHorizontal: 12,
+  },
+  countBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
+  },
+  memoryCount: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  /* Timeline */
+  timelineContainer: {
+    position: "relative",
+    paddingLeft: 24,
+  },
+  timelineLineWrapper: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 8,
+    borderRadius: 4,
+  },
+  timelineLine: {
+    flex: 1,
+    width: 2,
+    marginLeft: 3,
+  },
+  memoriesWrapper: {
+    position: "relative",
+  },
+
+  memoryItemWrapper: {
+    position: "relative",
+    marginBottom: 8,
+  },
+  timelineDot: {
+    position: "absolute",
+    left: -32,
+    top: 24,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2.5,
+    shadowOpacity: 0.8,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+    zIndex: 10,
+  },
+
+  deleteBtn: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+    shadowColor: "#ef4444",
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+
+  dateChipWrapper: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  dateChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+  },
+  dateChipText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  imageContainer: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderRadius: 14,
+    overflow: "hidden",
+    position: "relative",
+  },
+  image: {
+    width: "100%",
+    height: "100%",
+  },
+  imageOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+  },
+
+  contentSection: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+
+  titleRow: {
+    marginBottom: 10,
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: "700",
+    lineHeight: 24,
+  },
+
+  emotionSpectrumCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 12,
+  },
+  emotionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 6,
+  },
+  emotionHeaderText: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  emotionBarRow: {
+    marginBottom: 10,
+  },
+  emotionBarLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    gap: 6,
+  },
+  emotionLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  emotionBarContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  emotionBarTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  emotionBarFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  emotionValue: {
+    fontSize: 11,
+    fontWeight: "700",
+    minWidth: 36,
+    textAlign: "right",
+  },
+
+  metaRow: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  dateTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  dateTime: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+
+  description: {
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 12,
+    opacity: 0.9,
+  },
+
+  creatorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+    gap: 8,
+    alignSelf: "flex-start",
+  },
+  creatorAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  creatorAvatarPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: PRIMARY_PURPLE + "66",
+  },
+  creatorName: {
+    fontSize: 12,
+  },
+
+  expandIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    gap: 6,
+    marginTop: 4,
+  },
+  expandText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+});

@@ -26,18 +26,51 @@ import EmotionSelector, { MoodData } from "./EmotionSelector";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import { testFirestoreConnection } from "./utils/testFirestore";
 
 const PRIMARY_PURPLE = "#a855f7";
 
+/** 🎨 Cyberpunk neon card shell helper */
+const createNeonCardShell = (
+  accentColor: string,
+  isDark: boolean,
+  extra: any = {}
+) => {
+  return {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: accentColor + (isDark ? "66" : "CC"), // Stronger border in light mode
+    shadowColor: accentColor,
+    shadowOpacity: isDark ? 0.9 : 0.75, // Stronger shadow in light mode
+    shadowRadius: isDark ? 30 : 25, // Larger glow in light mode
+    shadowOffset: { width: 0, height: 0 },
+    elevation: isDark ? 18 : 15, // Higher elevation in light mode
+    ...extra,
+  };
+};
+
+/** 🎨 Glow text styles - adapts to theme */
+const getGlowText = (accentColor: string, isDark: boolean) => ({
+  color: isDark ? "#E0F2FE" : "#6B21A8", // Dark purple for light mode
+  textShadowColor: accentColor + (isDark ? "CC" : "88"), // Stronger glow in light mode
+  textShadowOffset: { width: 0, height: 0 },
+  textShadowRadius: isDark ? 8 : 6, // Stronger glow radius in light mode
+});
+
+const getSoftText = (isDark: boolean) => ({
+  color: isDark ? "#CBD5E1" : "#9333EA", // Dark glowing purple for light mode
+});
+
 export default function MemoryPostCreate() {
   const router = useRouter();
-  const { theme, toggleTheme }: any = useTheme();
-  const isDarkMode = theme === "dark";
+  const { theme, isDarkMode, toggleTheme } = useTheme();
 
   const [image, setImage] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [createdDocId, setCreatedDocId] = useState<string | null>(null);
 
   const [moodData, setMoodData] = useState<MoodData>({
     energy: 50,
@@ -47,15 +80,21 @@ export default function MemoryPostCreate() {
     color: "#a78bfa",
   });
 
-  // 🎨 FIXED THEME COLORS — CARDS STAY DARK ALWAYS
+  // 🎨 Theme-aware colors - Professional dark glowing purple for light mode
   const colors = {
-    background: isDarkMode ? "#020617" : "#0b1020",
-    surface: "#020617",
-    text: isDarkMode ? "#e5e7eb" : "#f3f4f6",
-    textSoft: isDarkMode ? "#9ca3af" : "#c7d2fe",
-    borderSoft: "#1f2937",
-    chipBg: "rgba(168,85,247,0.12)",
+    background: isDarkMode ? "#020617" : "#FAF5FF", // Soft lavender-tinted white
+    surface: isDarkMode ? "#020617" : "#FFFFFF",
+    text: isDarkMode ? "#E5E7EB" : "#1E1B4B", // Deep indigo for better contrast
+    textSoft: isDarkMode ? "#9CA3AF" : "#9333EA", // Dark glowing purple for light mode
+    borderSoft: isDarkMode ? "#1F2937" : "#7C3AED", // Dark purple border for light mode
+    chipBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(124,58,237,0.2)", // Dark purple with glow for light mode
+    inputBg: isDarkMode ? "#020617" : "#F8F7FF", // Very subtle purple tint
+    inputBorder: isDarkMode ? "#1F2937" : "#C4B5FD", // Dark purple border for light mode
+    stepChipBg: isDarkMode ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.98)", // More opaque white in light mode
   };
+
+  const glowText = getGlowText(PRIMARY_PURPLE, isDarkMode);
+  const softText = getSoftText(isDarkMode);
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -120,7 +159,8 @@ export default function MemoryPostCreate() {
 
       const now = Date.now();
 
-      await addDoc(collection(db, "MemoryPosts"), {
+      // Prepare the data object
+      const memoryData = {
         userId: user.uid,
         title: title.trim(),
         description: description.trim(),
@@ -139,11 +179,28 @@ export default function MemoryPostCreate() {
         savesCount: 0,
         CreatedUser: {
           CreatedUserId: user.uid,
-          CreatedUserName: user.displayName,
-          CreatedUserPhoto: user.photoURL,
+          CreatedUserName: user.displayName || "Unknown User",
+          CreatedUserPhoto: user.photoURL || null,
         },
-      });
+      };
 
+      console.log("📝 Attempting to save memory to Firestore...");
+      console.log("📦 Data:", JSON.stringify(memoryData, null, 2));
+      console.log("👤 User ID:", user.uid);
+      console.log("📚 Collection: MemoryPosts");
+
+      // Add document to Firestore
+      const docRef = await addDoc(collection(db, "MemoryPosts"), memoryData);
+
+      console.log("✅ Success! Document created with ID:", docRef.id);
+      console.log("🔗 Document path:", docRef.path);
+
+      // Show visual success indicator immediately
+      setCreatedDocId(docRef.id);
+      setShowSuccess(true);
+      setLoading(false);
+
+      // Reset form
       setTitle("");
       setDescription("");
       setImage(null);
@@ -155,12 +212,57 @@ export default function MemoryPostCreate() {
         color: "#a78bfa",
       });
 
-      Alert.alert("Success", "Memory post created successfully!", [
-        { text: "OK", onPress: () => router.back() },
-      ]);
+      // Show success alert after a brief delay
+      setTimeout(() => {
+        Alert.alert(
+          "✅ Success!",
+          `Memory post created successfully!\n\nDocument ID: ${docRef.id.substring(
+            0,
+            20
+          )}...\n\nYour memory has been saved to Firestore.`,
+          [
+            {
+              text: "View Timeline",
+              onPress: () => {
+                setShowSuccess(false);
+                router.back();
+              },
+            },
+            {
+              text: "Create Another",
+              style: "cancel",
+              onPress: () => {
+                setShowSuccess(false);
+                setCreatedDocId(null);
+              },
+            },
+          ],
+          { cancelable: false }
+        );
+      }, 300);
     } catch (err: any) {
-      console.log(err);
-      Alert.alert("Error", err.message || "Failed to create memory.");
+      console.error("❌ Error creating memory:", err);
+      console.error("❌ Error code:", err.code);
+      console.error("❌ Error message:", err.message);
+      console.error("❌ Full error:", JSON.stringify(err, null, 2));
+
+      // More detailed error messages
+      let errorMessage = "Failed to create memory.";
+      if (err.code === "permission-denied") {
+        errorMessage = "Permission denied. Check Firestore security rules.";
+      } else if (err.code === "unavailable") {
+        errorMessage =
+          "Firestore is unavailable. Check your internet connection.";
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      Alert.alert(
+        "Error",
+        `${errorMessage}\n\nError Code: ${
+          err.code || "Unknown"
+        }\n\nCheck console for details.`
+      );
     } finally {
       setLoading(false);
     }
@@ -169,6 +271,73 @@ export default function MemoryPostCreate() {
   return (
     <GradientBackground>
       <SafeAreaView style={styles.safeArea}>
+        {/* SUCCESS OVERLAY */}
+        {showSuccess && (
+          <View
+            style={[
+              styles.successOverlay,
+              {
+                backgroundColor: isDarkMode
+                  ? "rgba(15,23,42,0.95)"
+                  : "rgba(255,255,255,0.95)",
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.successCard,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 24,
+                }),
+                {
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.successIcon,
+                  {
+                    backgroundColor: PRIMARY_PURPLE + "20",
+                    borderColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="checkmark-circle"
+                  size={64}
+                  color={PRIMARY_PURPLE}
+                />
+              </View>
+              <Text style={[styles.successTitle, glowText]}>
+                Memory Created!
+              </Text>
+              <Text style={[styles.successSubtitle, softText]}>
+                Your memory has been saved successfully
+              </Text>
+              {createdDocId && (
+                <Text style={[styles.successDocId, softText]}>
+                  ID: {createdDocId.substring(0, 16)}...
+                </Text>
+              )}
+              <TouchableOpacity
+                onPress={() => {
+                  setShowSuccess(false);
+                  router.back();
+                }}
+                style={[
+                  styles.successButton,
+                  {
+                    backgroundColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Text style={styles.successButtonText}>View Timeline</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* HEADER */}
         <View style={styles.headerRow}>
           <IconButton
@@ -177,21 +346,33 @@ export default function MemoryPostCreate() {
             variant="ghost"
           />
           <View style={{ flex: 1, alignItems: "center" }}>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>
-              New Memory
-            </Text>
+            <Text style={[styles.headerTitle, glowText]}>New Memory</Text>
           </View>
-          <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
-            <Ionicons
-              name={isDarkMode ? "sunny-outline" : "moon-outline"}
-              size={20}
-              color={colors.text}
-            />
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity
+              onPress={testFirestoreConnection}
+              style={{
+                padding: 6,
+                borderRadius: 6,
+                backgroundColor: isDarkMode
+                  ? "rgba(139,92,246,0.2)"
+                  : "rgba(139,92,246,0.1)",
+              }}
+            >
+              <Ionicons name="bug-outline" size={18} color={PRIMARY_PURPLE} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
+              <Ionicons
+                name={isDarkMode ? "sunny-outline" : "moon-outline"}
+                size={20}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <KeyboardAvoidingView
-          style={[styles.flex]}
+          style={styles.flex}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <ScrollView
@@ -202,33 +383,42 @@ export default function MemoryPostCreate() {
             {/* INTRO */}
             <View style={styles.introRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.introTitle, { color: colors.text }]}>
+                <Text style={[styles.introTitle, glowText]}>
                   Capture a moment
                 </Text>
-                <Text
-                  style={[styles.introSubtitle, { color: colors.textSoft }]}
-                >
+                <Text style={[styles.introSubtitle, softText]}>
                   Add a photo, give it a title, describe what happened, and how
                   you felt.
                 </Text>
               </View>
 
               <View
-                style={[styles.stepChip, { borderColor: colors.borderSoft }]}
+                style={[
+                  styles.stepChip,
+                  {
+                    borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
+                    backgroundColor: colors.stepChipBg,
+                    shadowColor: PRIMARY_PURPLE,
+                    shadowOpacity: isDarkMode ? 0.3 : 0.4,
+                    shadowRadius: isDarkMode ? 8 : 10,
+                    shadowOffset: { width: 0, height: 0 },
+                    elevation: isDarkMode ? 4 : 6,
+                  },
+                ]}
               >
-                <Text style={[styles.stepChipText, { color: colors.textSoft }]}>
-                  STEP 1 OF 2
-                </Text>
+                <Text style={[styles.stepChipText, glowText]}>STEP 1 OF 2</Text>
               </View>
             </View>
 
             {/* IMAGE CARD */}
             <View
               style={[
-                styles.card,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 16,
+                  marginBottom: 18,
+                }),
                 {
                   backgroundColor: colors.surface,
-                  borderColor: colors.borderSoft,
                 },
               ]}
             >
@@ -244,12 +434,8 @@ export default function MemoryPostCreate() {
                 </View>
 
                 <View>
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>
-                    Cover image
-                  </Text>
-                  <Text
-                    style={[styles.cardSubtitle, { color: colors.textSoft }]}
-                  >
+                  <Text style={[styles.cardTitle, glowText]}>Cover image</Text>
+                  <Text style={[styles.cardSubtitle, softText]}>
                     This photo will appear in your timeline.
                   </Text>
                 </View>
@@ -260,7 +446,19 @@ export default function MemoryPostCreate() {
                   <Image source={{ uri: image }} style={styles.coverImage} />
                   <TouchableOpacity
                     onPress={removeImage}
-                    style={styles.removeImageBtn}
+                    style={[
+                      styles.removeImageBtn,
+                      {
+                        backgroundColor: isDarkMode
+                          ? "rgba(15,23,42,0.95)"
+                          : "rgba(124,58,237,0.95)",
+                        shadowColor: "#7C3AED",
+                        shadowOpacity: isDarkMode ? 0 : 0.5,
+                        shadowRadius: 8,
+                        shadowOffset: { width: 0, height: 2 },
+                        elevation: isDarkMode ? 0 : 6,
+                      },
+                    ]}
                   >
                     <Ionicons name="close" size={18} color="#fff" />
                   </TouchableOpacity>
@@ -270,28 +468,21 @@ export default function MemoryPostCreate() {
                   onPress={pickImage}
                   style={[
                     styles.imagePlaceholder,
-                    { borderColor: colors.textSoft },
+                    {
+                      borderColor: colors.inputBorder,
+                      backgroundColor: isDarkMode ? "transparent" : "#F5F3FF",
+                    },
                   ]}
                 >
                   <Ionicons
                     name="cloud-upload-outline"
-                    size={32}
-                    color={colors.textSoft}
+                    size={36}
+                    color={isDarkMode ? colors.textSoft : "#9333EA"}
                   />
-                  <Text
-                    style={[
-                      styles.imagePlaceholderTitle,
-                      { color: colors.text },
-                    ]}
-                  >
+                  <Text style={[styles.imagePlaceholderTitle, glowText]}>
                     Tap to add cover image
                   </Text>
-                  <Text
-                    style={[
-                      styles.imagePlaceholderSub,
-                      { color: colors.textSoft },
-                    ]}
-                  >
+                  <Text style={[styles.imagePlaceholderSub, softText]}>
                     JPG or PNG, up to 10MB
                   </Text>
                 </TouchableOpacity>
@@ -301,10 +492,12 @@ export default function MemoryPostCreate() {
             {/* DETAILS CARD */}
             <View
               style={[
-                styles.card,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 16,
+                  marginBottom: 18,
+                }),
                 {
                   backgroundColor: colors.surface,
-                  borderColor: colors.borderSoft,
                 },
               ]}
             >
@@ -315,22 +508,18 @@ export default function MemoryPostCreate() {
                     { backgroundColor: colors.chipBg },
                   ]}
                 >
-                  <Text
-                    style={[styles.detailsChipText, { color: colors.textSoft }]}
-                  >
+                  <Text style={[styles.detailsChipText, glowText]}>
                     DETAILS
                   </Text>
                 </View>
 
-                <Text style={[styles.detailsHint, { color: colors.textSoft }]}>
+                <Text style={[styles.detailsHint, softText]}>
                   Give this memory a name and tell the story behind it.
                 </Text>
               </View>
 
               {/* Title */}
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>
-                Title
-              </Text>
+              <Text style={[styles.fieldLabel, glowText]}>Title</Text>
               <RNTextInput
                 placeholder="eg. Picnic at KLCC park"
                 value={title}
@@ -338,8 +527,8 @@ export default function MemoryPostCreate() {
                 style={[
                   styles.textInput,
                   {
-                    borderColor: colors.borderSoft,
-                    backgroundColor: colors.surface,
+                    borderColor: colors.inputBorder,
+                    backgroundColor: colors.inputBg,
                     color: colors.text,
                   },
                 ]}
@@ -347,15 +536,10 @@ export default function MemoryPostCreate() {
               />
 
               {/* Story */}
-              <Text
-                style={[
-                  styles.fieldLabel,
-                  { color: colors.text, marginTop: 14 },
-                ]}
-              >
+              <Text style={[styles.fieldLabel, glowText, { marginTop: 14 }]}>
                 Story
               </Text>
-              <Text style={[styles.fieldHelper, { color: colors.textSoft }]}>
+              <Text style={[styles.fieldHelper, softText]}>
                 What happened? What made this moment special or important to
                 you?
               </Text>
@@ -368,8 +552,8 @@ export default function MemoryPostCreate() {
                 style={[
                   styles.textArea,
                   {
-                    borderColor: colors.borderSoft,
-                    backgroundColor: colors.surface,
+                    borderColor: colors.inputBorder,
+                    backgroundColor: colors.inputBg,
                     color: colors.text,
                   },
                 ]}
@@ -378,7 +562,11 @@ export default function MemoryPostCreate() {
             </View>
 
             {/* EMOTIONS */}
-            <EmotionSelector moodData={moodData} setMoodData={setMoodData} />
+            <EmotionSelector
+              moodData={moodData}
+              setMoodData={setMoodData}
+              isDarkMode={isDarkMode}
+            />
 
             {/* PUBLISH BUTTON */}
             <TouchableOpacity
@@ -386,13 +574,16 @@ export default function MemoryPostCreate() {
               disabled={loading}
               style={[
                 styles.publishBtn,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  paddingVertical: 14,
+                  opacity: loading ? 0.7 : 1,
+                }),
                 {
                   backgroundColor: PRIMARY_PURPLE,
-                  opacity: loading ? 0.7 : 1,
                 },
               ]}
             >
-              <Text style={styles.publishText}>
+              <Text style={[styles.publishText, { color: "#ffffff" }]}>
                 {loading ? "Publishing..." : "Publish memory"}
               </Text>
               {!loading && (
@@ -443,50 +634,50 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   introTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 4,
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 6,
+    letterSpacing: 0.3,
   },
   introSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
+    lineHeight: 20,
+    opacity: 0.85,
   },
   stepChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    backgroundColor: "rgba(15,23,42,0.85)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1.5,
   },
   stepChipText: {
     fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
 
-  card: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 18,
-  },
   cardHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 14,
   },
   iconPill: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
+    marginRight: 10,
   },
   cardTitle: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
   cardSubtitle: {
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 12,
+    marginTop: 3,
+    opacity: 0.8,
   },
 
   coverImage: {
@@ -498,17 +689,17 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 10,
     right: 10,
-    backgroundColor: "rgba(15,23,42,0.95)",
     padding: 6,
     borderRadius: 999,
   },
   imagePlaceholder: {
     borderStyle: "dashed",
-    borderWidth: 1.4,
-    borderRadius: 14,
-    paddingVertical: 30,
-    paddingHorizontal: 12,
+    borderWidth: 2,
+    borderRadius: 16,
+    paddingVertical: 40,
+    paddingHorizontal: 16,
     alignItems: "center",
+    justifyContent: "center",
   },
   imagePlaceholderTitle: {
     marginTop: 8,
@@ -523,60 +714,122 @@ const styles = StyleSheet.create({
   detailsHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   detailsChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    marginRight: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 10,
+    borderWidth: 1,
   },
   detailsChipText: {
     fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
   },
   detailsHint: {
     fontSize: 12,
     flex: 1,
+    lineHeight: 18,
   },
 
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 6,
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 8,
+    letterSpacing: 0.2,
   },
   fieldHelper: {
-    fontSize: 11,
-    marginBottom: 6,
+    fontSize: 12,
+    marginBottom: 8,
+    lineHeight: 18,
+    opacity: 0.85,
   },
 
   textInput: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 15,
+    fontWeight: "400",
   },
   textArea: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     textAlignVertical: "top",
     minHeight: 120,
+    fontWeight: "400",
+    lineHeight: 20,
   },
 
   publishBtn: {
     marginTop: 8,
     borderRadius: 999,
-    paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
   },
   publishText: {
-    color: "#ffffff",
     fontSize: 15,
     fontWeight: "600",
+  },
+  successOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  successCard: {
+    alignItems: "center",
+    maxWidth: 320,
+    width: "100%",
+  },
+  successIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  successSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  successDocId: {
+    fontSize: 11,
+    textAlign: "center",
+    marginBottom: 20,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
+  successButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 999,
+    minWidth: 160,
+  },
+  successButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

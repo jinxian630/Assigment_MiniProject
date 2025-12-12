@@ -1,6 +1,6 @@
 // app/modules/memory-book/UserSearch.tsx
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -10,10 +10,13 @@ import {
   ActivityIndicator,
   StyleSheet,
   Image,
+  Animated,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 
 import { getFirestore, collection, onSnapshot } from "firebase/firestore";
 
@@ -22,6 +25,25 @@ import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
 
 const MODULE_PURPLE = "#a855f7";
+
+/** 🎨 Neon card shell helper */
+const createNeonCardShell = (
+  accentColor: string,
+  isDark: boolean,
+  extra: any = {}
+) => {
+  return {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: accentColor + (isDark ? "66" : "80"),
+    shadowColor: accentColor,
+    shadowOpacity: isDark ? 0.8 : 0.5,
+    shadowRadius: isDark ? 25 : 18,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: isDark ? 15 : 10,
+    ...extra,
+  };
+};
 
 type User = {
   id: string;
@@ -33,26 +55,85 @@ type User = {
 
 export default function UserSearch() {
   const router = useRouter();
-  const { theme } = useTheme();
-  const isDarkMode = theme === "dark";
+  const { theme, isDarkMode, toggleTheme } = useTheme();
 
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFocused, setIsFocused] = useState(false);
+
+  // Animation refs
+  const cardScales = useRef<Record<string, Animated.Value>>({}).current;
+  const searchFocusAnim = useRef(new Animated.Value(0)).current;
+  const searchGlow = useRef(new Animated.Value(0)).current;
+  const cardGlow = useRef(new Animated.Value(0)).current;
 
   const colors = {
-    bg: isDarkMode ? "#020617" : "#f9fafb",
-    card: isDarkMode ? "#020617" : "#ffffff",
-    textMain: isDarkMode ? "#F9FAFB" : "#020617",
-    textSoft: isDarkMode ? "#9CA3AF" : "#6B7280",
-    borderSoft: isDarkMode ? "#1F2937" : "#E5E7EB",
-    inputBg: isDarkMode ? "#020617" : "#ffffff",
-    inputBorder: isDarkMode ? "#1F2937" : "#CBD5F5",
+    background: isDarkMode ? "#020617" : "#FAF5FF",
+    surface: isDarkMode ? "#020617" : "#FFFFFF",
+    card: isDarkMode ? "#0F172A" : "#FFFFFF",
+    text: isDarkMode ? "#E5E7EB" : "#1E1B4B",
+    textSecondary: isDarkMode ? "#9CA3AF" : "#9333EA",
+    border: isDarkMode ? "#1F2937" : "#7C3AED",
+    inputBg: isDarkMode ? "#0F172A" : "#FFFFFF",
+    inputBorder: isDarkMode ? "#1F2937" : "#7C3AED",
+    inputBorderFocused: MODULE_PURPLE,
+    accent: MODULE_PURPLE,
+    chipBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(124,58,237,0.2)",
   };
+
+  // Search focus animation
+  useEffect(() => {
+    Animated.timing(searchFocusAnim, {
+      toValue: isFocused ? 1 : 0,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  }, [isFocused]);
+
+  // Pulsing glow animations
+  useEffect(() => {
+    const searchGlowAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(searchGlow, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(searchGlow, {
+          toValue: 0,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    searchGlowAnimation.start();
+
+    const cardGlowAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(cardGlow, {
+          toValue: 1,
+          duration: 2500,
+          useNativeDriver: false,
+        }),
+        Animated.timing(cardGlow, {
+          toValue: 0,
+          duration: 2500,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    cardGlowAnimation.start();
+
+    return () => {
+      searchGlowAnimation.stop();
+      cardGlowAnimation.stop();
+    };
+  }, []);
 
   useEffect(() => {
     const db = getFirestore();
-    const usersRef = collection(db, "Users"); // ⚠️ change collection name if different
+    const usersRef = collection(db, "Users");
 
     const unsub = onSnapshot(
       usersRef,
@@ -75,8 +156,7 @@ export default function UserSearch() {
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return users;
-
+    if (!term) return [];
     return users.filter((u) => {
       const name = (u.displayName || "").toLowerCase();
       const email = (u.email || "").toLowerCase();
@@ -85,162 +165,388 @@ export default function UserSearch() {
   }, [search, users]);
 
   const handleOpenProfile = (userId: string) => {
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
     router.push(`/modules/memory-book/UserProfile?userId=${userId}`);
   };
 
+  const handleCardPress = (userId: string, cardId: string) => {
+    if (!cardScales[cardId]) {
+      cardScales[cardId] = new Animated.Value(1);
+    }
+    const scaleAnim = cardScales[cardId];
+
+    Animated.sequence([
+      Animated.spring(scaleAnim, {
+        toValue: 0.98,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 10,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 10,
+      }),
+    ]).start();
+
+    setTimeout(() => handleOpenProfile(userId), 100);
+  };
+
+  const borderColor = searchFocusAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [colors.inputBorder, colors.inputBorderFocused],
+  });
+
+  const searchShadowOpacity = searchGlow.interpolate({
+    inputRange: [0, 1],
+    outputRange: isDarkMode ? [0.6, 1.0] : [0.4, 0.7],
+  });
+
+  const searchShadowRadius = searchGlow.interpolate({
+    inputRange: [0, 1],
+    outputRange: [20, 35],
+  });
+
   return (
     <GradientBackground>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
         {/* Header */}
-        <View style={styles.headerRow}>
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: colors.surface,
+              borderBottomColor: colors.border,
+              shadowColor: MODULE_PURPLE,
+              shadowOpacity: 0.2,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 4,
+            },
+          ]}
+        >
           <IconButton
             icon="arrow-back"
             variant="ghost"
             onPress={() => router.back()}
           />
-          <View style={{ flex: 1, alignItems: "center" }}>
-            <Text style={[styles.headerTitle, { color: colors.textMain }]}>
-              Explore Users
-            </Text>
-          </View>
-          <View style={{ width: 40 }} />
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Search Users
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              toggleTheme();
+              if (Platform.OS === "ios") {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+            }}
+            style={styles.themeButton}
+          >
+            <Ionicons
+              name={isDarkMode ? "sunny" : "moon"}
+              size={22}
+              color={colors.text}
+            />
+          </TouchableOpacity>
         </View>
 
-        {/* Body */}
-        <View style={[styles.flex, { backgroundColor: "transparent" }]}>
-          {/* Search bar */}
-          <View style={styles.searchWrapper}>
-            <View
-              style={[
-                styles.searchBox,
-                {
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                },
-              ]}
-            >
-              <Ionicons
-                name="search"
-                size={18}
-                color={colors.textSoft}
-                style={{ marginRight: 6 }}
-              />
-              <TextInput
-                placeholder="Search by name or email..."
-                placeholderTextColor={colors.textSoft}
-                value={search}
-                onChangeText={setSearch}
-                style={[styles.searchInput, { color: colors.textMain }]}
-              />
-              {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch("")}>
-                  <Ionicons
-                    name="close-circle"
-                    size={18}
-                    color={colors.textSoft}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-            <Text style={[styles.searchHint, { color: colors.textSoft }]}>
-              Find friends or classmates and view their shared memories.
+        {/* Search Bar */}
+        <View style={styles.searchSection}>
+          <Animated.View
+            style={[
+              styles.searchContainer,
+              createNeonCardShell(MODULE_PURPLE, isDarkMode, {
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+              }),
+              {
+                backgroundColor: colors.inputBg,
+                borderColor: borderColor,
+                shadowOpacity: searchShadowOpacity,
+                shadowRadius: searchShadowRadius,
+              },
+            ]}
+          >
+            <Ionicons
+              name="search"
+              size={20}
+              color={MODULE_PURPLE}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              placeholder="Search by name or email..."
+              placeholderTextColor={colors.textSecondary}
+              value={search}
+              onChangeText={setSearch}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              style={[styles.searchInput, { color: colors.text }]}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {search.length > 0 && (
+              <TouchableOpacity
+                onPress={() => {
+                  setSearch("");
+                  if (Platform.OS === "ios") {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          </Animated.View>
+        </View>
+
+        {/* Content */}
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+              Loading users...
             </Text>
           </View>
-
-          {/* Results */}
-          {loading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color={MODULE_PURPLE} />
-              <Text style={[styles.loadingText, { color: colors.textSoft }]}>
-                Loading users...
-              </Text>
-            </View>
-          ) : (
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={styles.resultsContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {filteredUsers.length === 0 ? (
-                <View style={styles.emptyBox}>
+        ) : (
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {search.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Animated.View
+                  style={[
+                    styles.emptyIconContainer,
+                    {
+                      backgroundColor: colors.chipBg,
+                      borderColor: MODULE_PURPLE + (isDarkMode ? "66" : "80"),
+                      shadowColor: MODULE_PURPLE,
+                      shadowOpacity: searchGlow.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.5, 0.9],
+                      }),
+                      shadowRadius: searchGlow.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [15, 30],
+                      }),
+                      shadowOffset: { width: 0, height: 0 },
+                      elevation: 8,
+                    },
+                  ]}
+                >
                   <Ionicons
                     name="search-outline"
-                    size={30}
-                    color={colors.textSoft}
+                    size={48}
+                    color={MODULE_PURPLE}
                   />
-                  <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
-                    No users found
-                  </Text>
+                </Animated.View>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  Start Searching
+                </Text>
+                <Text
+                  style={[
+                    styles.emptySubtitle,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Enter a name or email to find users
+                </Text>
+              </View>
+            ) : filteredUsers.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Animated.View
+                  style={[
+                    styles.emptyIconContainer,
+                    {
+                      backgroundColor: colors.chipBg,
+                      borderColor: MODULE_PURPLE + (isDarkMode ? "66" : "80"),
+                      shadowColor: MODULE_PURPLE,
+                      shadowOpacity: searchGlow.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.5, 0.9],
+                      }),
+                      shadowRadius: searchGlow.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [15, 30],
+                      }),
+                      shadowOffset: { width: 0, height: 0 },
+                      elevation: 8,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="person-remove-outline"
+                    size={48}
+                    color={MODULE_PURPLE}
+                  />
+                </Animated.View>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  No Results
+                </Text>
+                <Text
+                  style={[
+                    styles.emptySubtitle,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  No users found matching "{search}"
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.resultsHeader}>
                   <Text
-                    style={[styles.emptySubtitle, { color: colors.textSoft }]}
-                  >
-                    Try searching with a different name or email.
-                  </Text>
-                </View>
-              ) : (
-                filteredUsers.map((user) => (
-                  <TouchableOpacity
-                    key={user.id}
-                    onPress={() => handleOpenProfile(user.id)}
                     style={[
-                      styles.userRow,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: colors.borderSoft,
-                      },
+                      styles.resultsCount,
+                      { color: colors.textSecondary },
                     ]}
                   >
-                    {user.photoURL ? (
-                      <Image
-                        source={{ uri: user.photoURL }}
-                        style={styles.avatar}
-                      />
-                    ) : (
-                      <View style={styles.avatarPlaceholder}>
-                        <Ionicons
-                          name="person-circle-outline"
-                          size={32}
-                          color={MODULE_PURPLE}
-                        />
-                      </View>
-                    )}
+                    {filteredUsers.length}{" "}
+                    {filteredUsers.length === 1 ? "result" : "results"}
+                  </Text>
+                </View>
+                {filteredUsers.map((user) => {
+                  const cardId = user.id;
+                  if (!cardScales[cardId]) {
+                    cardScales[cardId] = new Animated.Value(1);
+                  }
+                  const scaleAnim = cardScales[cardId];
 
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        numberOfLines={1}
-                        style={[styles.userName, { color: colors.textMain }]}
+                  return (
+                    <TouchableOpacity
+                      key={user.id}
+                      activeOpacity={0.9}
+                      onPress={() => handleCardPress(user.id, cardId)}
+                      onPressIn={() => {
+                        Animated.spring(scaleAnim, {
+                          toValue: 0.98,
+                          useNativeDriver: true,
+                          tension: 300,
+                          friction: 10,
+                        }).start();
+                      }}
+                      onPressOut={() => {
+                        Animated.spring(scaleAnim, {
+                          toValue: 1,
+                          useNativeDriver: true,
+                          tension: 300,
+                          friction: 10,
+                        }).start();
+                      }}
+                    >
+                      <Animated.View
+                        style={[
+                          styles.userCard,
+                          createNeonCardShell(MODULE_PURPLE, isDarkMode, {
+                            paddingHorizontal: 16,
+                            paddingVertical: 16,
+                          }),
+                          {
+                            backgroundColor: colors.card,
+                            shadowOpacity: cardGlow.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: isDarkMode
+                                ? [0.7, 0.95]
+                                : [0.4, 0.6],
+                            }),
+                            shadowRadius: cardGlow.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [20, 30],
+                            }),
+                            transform: [{ scale: scaleAnim }],
+                          },
+                        ]}
                       >
-                        {user.displayName || "Unnamed user"}
-                      </Text>
-                      {user.email && (
-                        <Text
-                          numberOfLines={1}
-                          style={[styles.userEmail, { color: colors.textSoft }]}
-                        >
-                          {user.email}
-                        </Text>
-                      )}
-                      {user.bio && (
-                        <Text
-                          numberOfLines={1}
-                          style={[styles.userBio, { color: colors.textSoft }]}
-                        >
-                          {user.bio}
-                        </Text>
-                      )}
-                    </View>
+                        <View style={styles.userCardContent}>
+                          {/* Avatar */}
+                          {user.photoURL ? (
+                            <Image
+                              source={{ uri: user.photoURL }}
+                              style={[
+                                styles.avatar,
+                                {
+                                  borderColor: MODULE_PURPLE + "40",
+                                },
+                              ]}
+                            />
+                          ) : (
+                            <View
+                              style={[
+                                styles.avatarPlaceholder,
+                                {
+                                  backgroundColor: colors.chipBg,
+                                  borderColor:
+                                    MODULE_PURPLE + (isDarkMode ? "66" : "80"),
+                                },
+                              ]}
+                            >
+                              <Ionicons
+                                name="person"
+                                size={24}
+                                color={MODULE_PURPLE}
+                              />
+                            </View>
+                          )}
 
-                    <Ionicons
-                      name="chevron-forward"
-                      size={18}
-                      color={colors.textSoft}
-                    />
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
-          )}
-        </View>
+                          {/* User Info */}
+                          <View style={styles.userInfo}>
+                            <Text
+                              numberOfLines={1}
+                              style={[styles.userName, { color: colors.text }]}
+                            >
+                              {user.displayName || "Unnamed User"}
+                            </Text>
+                            {user.email && (
+                              <Text
+                                numberOfLines={1}
+                                style={[
+                                  styles.userEmail,
+                                  { color: colors.textSecondary },
+                                ]}
+                              >
+                                {user.email}
+                              </Text>
+                            )}
+                            {user.bio && (
+                              <Text
+                                numberOfLines={2}
+                                style={[
+                                  styles.userBio,
+                                  { color: colors.textSecondary },
+                                ]}
+                              >
+                                {user.bio}
+                              </Text>
+                            )}
+                          </View>
+
+                          {/* Arrow */}
+                          <Ionicons
+                            name="chevron-forward"
+                            size={20}
+                            color={MODULE_PURPLE}
+                            style={styles.chevron}
+                          />
+                        </View>
+                      </Animated.View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            )}
+          </ScrollView>
+        )}
       </SafeAreaView>
     </GradientBackground>
   );
@@ -250,103 +556,147 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  flex: {
-    flex: 1,
-  },
-  headerRow: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 6,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    flex: 1,
+    textAlign: "center",
   },
-  searchWrapper: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 4,
+  themeButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  searchBox: {
+  searchSection: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    height: 52,
+  },
+  searchIcon: {
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: "400",
+    padding: 0,
   },
-  searchHint: {
-    fontSize: 11,
-    marginTop: 6,
-  },
-  loadingBox: {
+  centerContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: 60,
   },
   loadingText: {
-    fontSize: 12,
-    marginTop: 8,
+    fontSize: 14,
+    fontWeight: "500",
+    marginTop: 16,
+    letterSpacing: 0.2,
   },
-  resultsContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 32,
+  scrollView: {
+    flex: 1,
   },
-  userRow: {
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  resultsHeader: {
+    marginBottom: 12,
+    paddingTop: 8,
+  },
+  resultsCount: {
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  userCard: {
+    marginBottom: 14,
+  },
+  userCardContent: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
   },
   avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    marginRight: 10,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
   },
   avatarPlaceholder: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
-    backgroundColor: "rgba(15,23,42,0.9)",
+    borderWidth: 2,
+  },
+  userInfo: {
+    flex: 1,
+    marginLeft: 12,
   },
   userName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "600",
+    letterSpacing: 0.2,
+    marginBottom: 4,
   },
   userEmail: {
-    fontSize: 12,
-    marginTop: 1,
+    fontSize: 14,
+    fontWeight: "400",
+    letterSpacing: 0.1,
+    marginTop: 2,
   },
   userBio: {
-    fontSize: 11,
-    marginTop: 1,
+    fontSize: 13,
+    fontWeight: "400",
+    letterSpacing: 0.1,
+    marginTop: 6,
+    lineHeight: 18,
   },
-  emptyBox: {
-    marginTop: 40,
+  chevron: {
+    marginLeft: 8,
+  },
+  emptyContainer: {
     alignItems: "center",
+    paddingVertical: 80,
+  },
+  emptyIconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    marginBottom: 24,
   },
   emptyTitle: {
-    marginTop: 6,
-    fontSize: 15,
+    fontSize: 20,
     fontWeight: "600",
+    letterSpacing: 0.3,
+    marginBottom: 8,
   },
   emptySubtitle: {
-    marginTop: 4,
-    fontSize: 12,
+    fontSize: 15,
+    fontWeight: "400",
+    letterSpacing: 0.2,
     textAlign: "center",
-    maxWidth: 260,
+    maxWidth: 280,
+    lineHeight: 22,
   },
 });
