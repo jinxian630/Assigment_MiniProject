@@ -15,16 +15,23 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 
-import { getFirestore, addDoc, collection } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { addDoc, collection, doc, getDoc, updateDoc } from "firebase/firestore";
+import { auth, db, storage } from "@/config/firebase";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
 import * as ImagePicker from "expo-image-picker";
+import { extractStoragePathFromURL } from "./utils/storageHelpers";
 
 import EmotionSelector, { MoodData } from "./EmotionSelector";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
+import InteractiveButton from "./components/InteractiveButton";
 import { useTheme } from "@/hooks/useTheme";
 import { testFirestoreConnection } from "./utils/testFirestore";
 
@@ -63,12 +70,18 @@ const getSoftText = (isDark: boolean) => ({
 
 export default function MemoryPostCreate() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ editId?: string }>();
   const { theme, isDarkMode, toggleTheme } = useTheme();
 
+  const editId = params.editId;
+  const isEditMode = !!editId;
+
   const [image, setImage] = useState<string | null>(null);
+  const [existingImageURL, setExistingImageURL] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMemory, setLoadingMemory] = useState(isEditMode);
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdDocId, setCreatedDocId] = useState<string | null>(null);
 
@@ -96,6 +109,44 @@ export default function MemoryPostCreate() {
   const glowText = getGlowText(PRIMARY_PURPLE, isDarkMode);
   const softText = getSoftText(isDarkMode);
 
+  // Load existing memory data when in edit mode
+  React.useEffect(() => {
+    const loadMemory = async () => {
+      if (!editId) return;
+
+      try {
+        setLoadingMemory(true);
+        const memoryRef = doc(db, "MemoryPosts", editId);
+        const memorySnap = await getDoc(memoryRef);
+
+        if (memorySnap.exists()) {
+          const data = memorySnap.data();
+          setTitle(data.title || "");
+          setDescription(data.description || "");
+          setExistingImageURL(data.imageURL || null);
+          setMoodData({
+            energy: data.emotionSpectrum?.energy || 50,
+            stress: data.emotionSpectrum?.stress || 20,
+            clarity: data.emotionSpectrum?.clarity || 50,
+            warmth: data.emotionSpectrum?.warmth || 40,
+            color: data.emotionColor || "#a78bfa",
+          });
+        } else {
+          Alert.alert("Error", "Memory not found.");
+          router.back();
+        }
+      } catch (error: any) {
+        console.error("Error loading memory:", error);
+        Alert.alert("Error", "Failed to load memory for editing.");
+        router.back();
+      } finally {
+        setLoadingMemory(false);
+      }
+    };
+
+    loadMemory();
+  }, [editId]);
+
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -120,14 +171,16 @@ export default function MemoryPostCreate() {
       Alert.alert("Missing story", "Please write something about this memory.");
       return;
     }
-    if (!image) {
+    // Validate image requirement
+    if (!isEditMode && !image) {
       Alert.alert("No cover image", "Please choose a cover image.");
       return;
     }
+    // In edit mode, allow saving without image if existing image exists
+    // (user might want to keep the existing image)
 
     try {
       setLoading(true);
-      const auth = getAuth();
       const user = auth.currentUser;
 
       if (!user) {
@@ -136,32 +189,38 @@ export default function MemoryPostCreate() {
         return;
       }
 
-      const db = getFirestore();
-      const storage = getStorage();
+      let downloadURL = existingImageURL;
+      let oldImagePath: string | null = null;
 
-      // upload image
-      const resp = await fetch(image);
-      const blob = await resp.blob();
+      // Upload new image only if a new one was selected
+      if (image) {
+        // If editing and there's an existing image, mark it for deletion
+        if (isEditMode && existingImageURL) {
+          oldImagePath = extractStoragePathFromURL(existingImageURL);
+        }
 
-      // create unique id for Firestore image name
-      const uniqueId =
-        Date.now().toString(16) + Math.random().toString(16) + "0".repeat(16);
-      const guid = [
-        uniqueId.substring(0, 8),
-        uniqueId.substring(8, 12),
-        "4000-8" + uniqueId.substring(13, 16),
-        uniqueId.substring(16, 28),
-      ].join("-");
+        const resp = await fetch(image);
+        const blob = await resp.blob();
 
-      const imageRef = ref(storage, `MemoryPosts/${guid}`);
-      const snap = await uploadBytes(imageRef, blob);
-      const downloadURL = await getDownloadURL(snap.ref);
+        // create unique id for Firestore image name
+        const uniqueId =
+          Date.now().toString(16) + Math.random().toString(16) + "0".repeat(16);
+        const guid = [
+          uniqueId.substring(0, 8),
+          uniqueId.substring(8, 12),
+          "4000-8" + uniqueId.substring(13, 16),
+          uniqueId.substring(16, 28),
+        ].join("-");
+
+        const imageRef = ref(storage, `MemoryPosts/${guid}`);
+        const snap = await uploadBytes(imageRef, blob);
+        downloadURL = await getDownloadURL(snap.ref);
+      }
 
       const now = Date.now();
 
       // Prepare the data object
-      const memoryData = {
-        userId: user.uid,
+      const memoryData: any = {
         title: title.trim(),
         description: description.trim(),
         imageURL: downloadURL,
@@ -172,33 +231,133 @@ export default function MemoryPostCreate() {
           warmth: moodData.warmth,
         },
         emotionColor: moodData.color,
-        startDate: now,
         updatedDate: now,
-        likesCount: 0,
-        commentsCount: 0,
-        savesCount: 0,
-        CreatedUser: {
+      };
+
+      // Only add these fields when creating new memory
+      if (!isEditMode) {
+        memoryData.userId = user.uid;
+        memoryData.startDate = now;
+        memoryData.likesCount = 0;
+        memoryData.commentsCount = 0;
+        memoryData.savesCount = 0;
+        memoryData.CreatedUser = {
           CreatedUserId: user.uid,
           CreatedUserName: user.displayName || "Unknown User",
           CreatedUserPhoto: user.photoURL || null,
-        },
-      };
+        };
+      }
 
-      console.log("📝 Attempting to save memory to Firestore...");
+      console.log(
+        isEditMode
+          ? "📝 Attempting to update memory..."
+          : "📝 Attempting to save memory to Firestore..."
+      );
       console.log("📦 Data:", JSON.stringify(memoryData, null, 2));
       console.log("👤 User ID:", user.uid);
       console.log("📚 Collection: MemoryPosts");
 
-      // Add document to Firestore
-      const docRef = await addDoc(collection(db, "MemoryPosts"), memoryData);
+      let docRef;
+      if (isEditMode && editId) {
+        // Update existing document
+        const memoryRef = doc(db, "MemoryPosts", editId);
+        await updateDoc(memoryRef, memoryData);
+        docRef = { id: editId } as any;
+        console.log("✅ Success! Document updated with ID:", editId);
 
-      console.log("✅ Success! Document created with ID:", docRef.id);
-      console.log("🔗 Document path:", docRef.path);
+        // Delete old image if a new one was uploaded
+        if (oldImagePath) {
+          try {
+            const oldImageRef = ref(storage, oldImagePath);
+            await deleteObject(oldImageRef);
+            console.log("✅ Old image deleted from storage:", oldImagePath);
+          } catch (error: any) {
+            // Image might already be deleted - this is okay
+            if (error.code !== "storage/object-not-found") {
+              console.warn("⚠️ Failed to delete old image:", error);
+            }
+          }
+        }
+      } else {
+        // Add new document to Firestore
+        try {
+          console.log("📝 Attempting to add document to Firestore...");
+          console.log("📊 Project ID:", db.app.options.projectId);
+          console.log("📚 Collection: MemoryPosts");
+          console.log("📦 Data keys:", Object.keys(memoryData));
 
-      // Show visual success indicator immediately
+          docRef = await addDoc(collection(db, "MemoryPosts"), memoryData);
+
+          console.log("✅ Success! Document created with ID:", docRef.id);
+          console.log("🔗 Document path:", docRef.path);
+          console.log("🌐 Full path: MemoryPosts/" + docRef.id);
+          console.log("📊 Project:", db.app.options.projectId);
+          console.log(
+            "💡 Check Firestore console: https://console.firebase.google.com/project/" +
+              db.app.options.projectId +
+              "/firestore/data/~2FMemoryPosts~2F" +
+              docRef.id
+          );
+          console.log("📊 Project ID:", db.app.options.projectId);
+          console.log(
+            "🌐 Database URL:",
+            `https://console.firebase.google.com/project/${db.app.options.projectId}/firestore/data/~2FMemoryPosts~2F${docRef.id}`
+          );
+        } catch (addError: any) {
+          console.error("❌ Error adding document:", addError);
+          console.error("Error code:", addError.code);
+          console.error("Error message:", addError.message);
+          let errorMessage = `Failed to save memory post.\n\nError: ${
+            addError.message || "Unknown error"
+          }\n\nCode: ${addError.code || "N/A"}`;
+
+          if (addError.code === "permission-denied") {
+            errorMessage += `\n\n⚠️ PERMISSION DENIED!\n\nYour Firestore security rules are blocking writes.\n\nTo fix this:\n1. Go to Firebase Console\n2. Firestore Database > Rules\n3. Copy rules from firestore.rules file\n4. Paste and Publish\n\nOr visit:\nhttps://console.firebase.google.com/project/${db.app.options.projectId}/firestore/rules`;
+          }
+
+          Alert.alert("Error Saving Post", errorMessage, [{ text: "OK" }]);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Show visual success indicator first
       setCreatedDocId(docRef.id);
       setShowSuccess(true);
       setLoading(false);
+
+      // Show success alert with document ID (user requested this)
+      // Use setTimeout to ensure UI is ready and alert displays properly
+      setTimeout(() => {
+        console.log("🎉 Showing success alert with doc ID:", docRef.id);
+        Alert.alert(
+          "✅ Success!",
+          isEditMode
+            ? `Memory updated successfully!\n\nDocument ID: ${docRef.id}`
+            : `Memory post published successfully!\n\nDocument ID: ${docRef.id}\nProject: ${db.app.options.projectId}`,
+          [
+            {
+              text: "View Timeline",
+              onPress: () => {
+                setShowSuccess(false);
+                router.back();
+              },
+            },
+            {
+              text: isEditMode ? "OK" : "Create Another",
+              style: "cancel",
+              onPress: () => {
+                setShowSuccess(false);
+                setCreatedDocId(null);
+                if (isEditMode) {
+                  router.back();
+                }
+              },
+            },
+          ],
+          { cancelable: false }
+        );
+      }, 100);
 
       // Reset form
       setTitle("");
@@ -211,35 +370,6 @@ export default function MemoryPostCreate() {
         warmth: 40,
         color: "#a78bfa",
       });
-
-      // Show success alert after a brief delay
-      setTimeout(() => {
-        Alert.alert(
-          "✅ Success!",
-          `Memory post created successfully!\n\nDocument ID: ${docRef.id.substring(
-            0,
-            20
-          )}...\n\nYour memory has been saved to Firestore.`,
-          [
-            {
-              text: "View Timeline",
-              onPress: () => {
-                setShowSuccess(false);
-                router.back();
-              },
-            },
-            {
-              text: "Create Another",
-              style: "cancel",
-              onPress: () => {
-                setShowSuccess(false);
-                setCreatedDocId(null);
-              },
-            },
-          ],
-          { cancelable: false }
-        );
-      }, 300);
     } catch (err: any) {
       console.error("❌ Error creating memory:", err);
       console.error("❌ Error code:", err.code);
@@ -310,10 +440,12 @@ export default function MemoryPostCreate() {
                 />
               </View>
               <Text style={[styles.successTitle, glowText]}>
-                Memory Created!
+                {isEditMode ? "Memory Updated!" : "Memory Created!"}
               </Text>
               <Text style={[styles.successSubtitle, softText]}>
-                Your memory has been saved successfully
+                {isEditMode
+                  ? "Your memory has been updated successfully"
+                  : "Your memory has been saved successfully"}
               </Text>
               {createdDocId && (
                 <Text style={[styles.successDocId, softText]}>
@@ -346,7 +478,9 @@ export default function MemoryPostCreate() {
             variant="ghost"
           />
           <View style={{ flex: 1, alignItems: "center" }}>
-            <Text style={[styles.headerTitle, glowText]}>New Memory</Text>
+            <Text style={[styles.headerTitle, glowText]}>
+              {isEditMode ? "Edit Memory" : "New Memory"}
+            </Text>
           </View>
           <View style={{ flexDirection: "row", gap: 8 }}>
             <TouchableOpacity
@@ -361,242 +495,296 @@ export default function MemoryPostCreate() {
             >
               <Ionicons name="bug-outline" size={18} color={PRIMARY_PURPLE} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
-              <Ionicons
-                name={isDarkMode ? "sunny-outline" : "moon-outline"}
-                size={20}
-                color={colors.text}
-              />
-            </TouchableOpacity>
+            <InteractiveButton
+              onPress={toggleTheme}
+              icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+              description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={colors.text}
+              iconSize={20}
+              style={styles.themeToggle}
+              accessibilityLabel="Toggle theme"
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
+            />
           </View>
         </View>
 
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
-          <ScrollView
+        {loadingMemory ? (
+          <View style={styles.loadingContainer}>
+            <Text style={[styles.loadingText, glowText]}>
+              Loading memory...
+            </Text>
+          </View>
+        ) : (
+          <KeyboardAvoidingView
             style={styles.flex}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            {/* INTRO */}
-            <View style={styles.introRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.introTitle, glowText]}>
-                  Capture a moment
-                </Text>
-                <Text style={[styles.introSubtitle, softText]}>
-                  Add a photo, give it a title, describe what happened, and how
-                  you felt.
-                </Text>
-              </View>
-
-              <View
-                style={[
-                  styles.stepChip,
-                  {
-                    borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
-                    backgroundColor: colors.stepChipBg,
-                    shadowColor: PRIMARY_PURPLE,
-                    shadowOpacity: isDarkMode ? 0.3 : 0.4,
-                    shadowRadius: isDarkMode ? 8 : 10,
-                    shadowOffset: { width: 0, height: 0 },
-                    elevation: isDarkMode ? 4 : 6,
-                  },
-                ]}
-              >
-                <Text style={[styles.stepChipText, glowText]}>STEP 1 OF 2</Text>
-              </View>
-            </View>
-
-            {/* IMAGE CARD */}
-            <View
-              style={[
-                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
-                  padding: 16,
-                  marginBottom: 18,
-                }),
-                {
-                  backgroundColor: colors.surface,
-                },
-              ]}
+            <ScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
             >
-              <View style={styles.cardHeaderRow}>
-                <View
-                  style={[styles.iconPill, { backgroundColor: colors.chipBg }]}
-                >
-                  <Ionicons
-                    name="image-outline"
-                    size={16}
-                    color={PRIMARY_PURPLE}
-                  />
-                </View>
-
-                <View>
-                  <Text style={[styles.cardTitle, glowText]}>Cover image</Text>
-                  <Text style={[styles.cardSubtitle, softText]}>
-                    This photo will appear in your timeline.
+              {/* INTRO */}
+              <View style={styles.introRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.introTitle, glowText]}>
+                    Capture a moment
+                  </Text>
+                  <Text style={[styles.introSubtitle, softText]}>
+                    Add a photo, give it a title, describe what happened, and
+                    how you felt.
                   </Text>
                 </View>
-              </View>
 
-              {image ? (
-                <View style={{ position: "relative" }}>
-                  <Image source={{ uri: image }} style={styles.coverImage} />
-                  <TouchableOpacity
-                    onPress={removeImage}
-                    style={[
-                      styles.removeImageBtn,
-                      {
-                        backgroundColor: isDarkMode
-                          ? "rgba(15,23,42,0.95)"
-                          : "rgba(124,58,237,0.95)",
-                        shadowColor: "#7C3AED",
-                        shadowOpacity: isDarkMode ? 0 : 0.5,
-                        shadowRadius: 8,
-                        shadowOffset: { width: 0, height: 2 },
-                        elevation: isDarkMode ? 0 : 6,
-                      },
-                    ]}
-                  >
-                    <Ionicons name="close" size={18} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  onPress={pickImage}
+                <View
                   style={[
-                    styles.imagePlaceholder,
+                    styles.stepChip,
                     {
-                      borderColor: colors.inputBorder,
-                      backgroundColor: isDarkMode ? "transparent" : "#F5F3FF",
+                      borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
+                      backgroundColor: colors.stepChipBg,
+                      shadowColor: PRIMARY_PURPLE,
+                      shadowOpacity: isDarkMode ? 0.3 : 0.4,
+                      shadowRadius: isDarkMode ? 8 : 10,
+                      shadowOffset: { width: 0, height: 0 },
+                      elevation: isDarkMode ? 4 : 6,
                     },
                   ]}
                 >
-                  <Ionicons
-                    name="cloud-upload-outline"
-                    size={36}
-                    color={isDarkMode ? colors.textSoft : "#9333EA"}
-                  />
-                  <Text style={[styles.imagePlaceholderTitle, glowText]}>
-                    Tap to add cover image
+                  <Text style={[styles.stepChipText, glowText]}>
+                    STEP 1 OF 2
                   </Text>
-                  <Text style={[styles.imagePlaceholderSub, softText]}>
-                    JPG or PNG, up to 10MB
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
+                </View>
+              </View>
 
-            {/* DETAILS CARD */}
-            <View
-              style={[
-                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
-                  padding: 16,
-                  marginBottom: 18,
-                }),
-                {
-                  backgroundColor: colors.surface,
-                },
-              ]}
-            >
-              <View style={styles.detailsHeaderRow}>
-                <View
-                  style={[
-                    styles.detailsChip,
-                    { backgroundColor: colors.chipBg },
-                  ]}
-                >
-                  <Text style={[styles.detailsChipText, glowText]}>
-                    DETAILS
+              {/* IMAGE CARD */}
+              <View
+                style={[
+                  createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                    padding: 16,
+                    marginBottom: 18,
+                  }),
+                  {
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+              >
+                <View style={styles.cardHeaderRow}>
+                  <View
+                    style={[
+                      styles.iconPill,
+                      { backgroundColor: colors.chipBg },
+                    ]}
+                  >
+                    <Ionicons
+                      name="image-outline"
+                      size={16}
+                      color={PRIMARY_PURPLE}
+                    />
+                  </View>
+
+                  <View>
+                    <Text style={[styles.cardTitle, glowText]}>
+                      Cover image
+                    </Text>
+                    <Text style={[styles.cardSubtitle, softText]}>
+                      {isEditMode
+                        ? "Image cannot be changed when editing."
+                        : "This photo will appear in your timeline."}
+                    </Text>
+                  </View>
+                </View>
+
+                {image || existingImageURL ? (
+                  <View style={{ position: "relative" }}>
+                    <Image
+                      source={{ uri: image || existingImageURL || "" }}
+                      style={styles.coverImage}
+                    />
+                    {!isEditMode && (
+                      <TouchableOpacity
+                        onPress={removeImage}
+                        style={[
+                          styles.removeImageBtn,
+                          {
+                            backgroundColor: isDarkMode
+                              ? "rgba(15,23,42,0.95)"
+                              : "rgba(124,58,237,0.95)",
+                            shadowColor: "#7C3AED",
+                            shadowOpacity: isDarkMode ? 0 : 0.5,
+                            shadowRadius: 8,
+                            shadowOffset: { width: 0, height: 2 },
+                            elevation: isDarkMode ? 0 : 6,
+                          },
+                        ]}
+                      >
+                        <Ionicons name="close" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    )}
+                    {isEditMode && (
+                      <View
+                        style={[
+                          styles.editModeBadge,
+                          {
+                            backgroundColor: PRIMARY_PURPLE + "CC",
+                          },
+                        ]}
+                      >
+                        <Ionicons name="lock-closed" size={16} color="#fff" />
+                        <Text style={styles.editModeBadgeText}>
+                          Cannot change
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    onPress={pickImage}
+                    disabled={isEditMode}
+                    style={[
+                      styles.imagePlaceholder,
+                      {
+                        borderColor: colors.inputBorder,
+                        backgroundColor: isDarkMode ? "transparent" : "#F5F3FF",
+                        opacity: isEditMode ? 0.5 : 1,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="cloud-upload-outline"
+                      size={36}
+                      color={isDarkMode ? colors.textSoft : "#9333EA"}
+                    />
+                    <Text style={[styles.imagePlaceholderTitle, glowText]}>
+                      {isEditMode ? "Image locked" : "Tap to add cover image"}
+                    </Text>
+                    <Text style={[styles.imagePlaceholderSub, softText]}>
+                      {isEditMode
+                        ? "Cannot change image when editing"
+                        : "JPG or PNG, up to 10MB"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* DETAILS CARD */}
+              <View
+                style={[
+                  createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                    padding: 16,
+                    marginBottom: 18,
+                  }),
+                  {
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+              >
+                <View style={styles.detailsHeaderRow}>
+                  <View
+                    style={[
+                      styles.detailsChip,
+                      { backgroundColor: colors.chipBg },
+                    ]}
+                  >
+                    <Text style={[styles.detailsChipText, glowText]}>
+                      DETAILS
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.detailsHint, softText]}>
+                    Give this memory a name and tell the story behind it.
                   </Text>
                 </View>
 
-                <Text style={[styles.detailsHint, softText]}>
-                  Give this memory a name and tell the story behind it.
+                {/* Title */}
+                <Text style={[styles.fieldLabel, glowText]}>Title</Text>
+                <RNTextInput
+                  placeholder="eg. Picnic at KLCC park"
+                  value={title}
+                  onChangeText={setTitle}
+                  style={[
+                    styles.textInput,
+                    {
+                      borderColor: colors.inputBorder,
+                      backgroundColor: colors.inputBg,
+                      color: colors.text,
+                    },
+                  ]}
+                  placeholderTextColor={colors.textSoft}
+                />
+
+                {/* Story */}
+                <Text style={[styles.fieldLabel, glowText, { marginTop: 14 }]}>
+                  Story
                 </Text>
+                <Text style={[styles.fieldHelper, softText]}>
+                  What happened? What made this moment special or important to
+                  you?
+                </Text>
+                <RNTextInput
+                  placeholder="Write your memory here..."
+                  value={description}
+                  onChangeText={setDescription}
+                  multiline
+                  numberOfLines={6}
+                  style={[
+                    styles.textArea,
+                    {
+                      borderColor: colors.inputBorder,
+                      backgroundColor: colors.inputBg,
+                      color: colors.text,
+                    },
+                  ]}
+                  placeholderTextColor={colors.textSoft}
+                />
               </View>
 
-              {/* Title */}
-              <Text style={[styles.fieldLabel, glowText]}>Title</Text>
-              <RNTextInput
-                placeholder="eg. Picnic at KLCC park"
-                value={title}
-                onChangeText={setTitle}
-                style={[
-                  styles.textInput,
-                  {
-                    borderColor: colors.inputBorder,
-                    backgroundColor: colors.inputBg,
-                    color: colors.text,
-                  },
-                ]}
-                placeholderTextColor={colors.textSoft}
+              {/* EMOTIONS */}
+              <EmotionSelector
+                moodData={moodData}
+                setMoodData={setMoodData}
+                isDarkMode={isDarkMode}
               />
 
-              {/* Story */}
-              <Text style={[styles.fieldLabel, glowText, { marginTop: 14 }]}>
-                Story
-              </Text>
-              <Text style={[styles.fieldHelper, softText]}>
-                What happened? What made this moment special or important to
-                you?
-              </Text>
-              <RNTextInput
-                placeholder="Write your memory here..."
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={6}
-                style={[
-                  styles.textArea,
-                  {
-                    borderColor: colors.inputBorder,
-                    backgroundColor: colors.inputBg,
-                    color: colors.text,
-                  },
-                ]}
-                placeholderTextColor={colors.textSoft}
+              {/* PUBLISH BUTTON */}
+              <InteractiveButton
+                onPress={handlePublish}
+                disabled={loading}
+                icon={loading ? undefined : "paper-plane"}
+                label={
+                  loading
+                    ? isEditMode
+                      ? "Updating..."
+                      : "Publishing..."
+                    : isEditMode
+                    ? "Update memory"
+                    : "Publish memory"
+                }
+                description={
+                  isEditMode
+                    ? "Save changes to this memory"
+                    : "Publish your memory to the timeline"
+                }
+                variant="primary"
+                size="lg"
+                isDarkMode={isDarkMode}
+                style={styles.publishBtn}
+                accessibilityLabel={
+                  isEditMode ? "Update memory" : "Publish memory"
+                }
+                accessibilityHint={
+                  isEditMode
+                    ? "Saves your changes"
+                    : "Publishes memory to timeline"
+                }
               />
-            </View>
-
-            {/* EMOTIONS */}
-            <EmotionSelector
-              moodData={moodData}
-              setMoodData={setMoodData}
-              isDarkMode={isDarkMode}
-            />
-
-            {/* PUBLISH BUTTON */}
-            <TouchableOpacity
-              onPress={handlePublish}
-              disabled={loading}
-              style={[
-                styles.publishBtn,
-                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
-                  paddingVertical: 14,
-                  opacity: loading ? 0.7 : 1,
-                }),
-                {
-                  backgroundColor: PRIMARY_PURPLE,
-                },
-              ]}
-            >
-              <Text style={[styles.publishText, { color: "#ffffff" }]}>
-                {loading ? "Publishing..." : "Publish memory"}
-              </Text>
-              {!loading && (
-                <Ionicons
-                  name="paper-plane"
-                  size={18}
-                  color="#ffffff"
-                  style={{ marginLeft: 6 }}
-                />
-              )}
-            </TouchableOpacity>
-          </ScrollView>
-        </KeyboardAvoidingView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        )}
       </SafeAreaView>
     </GradientBackground>
   );
@@ -691,6 +879,34 @@ const styles = StyleSheet.create({
     right: 10,
     padding: 6,
     borderRadius: 999,
+  },
+  editModeBadge: {
+    position: "absolute",
+    bottom: 10,
+    left: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 6,
+  },
+  editModeBadgeText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 40,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: "600",
   },
   imagePlaceholder: {
     borderStyle: "dashed",

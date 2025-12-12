@@ -1,14 +1,16 @@
-import React from "react";
+import React, { useRef } from "react";
 import {
   View,
   TouchableOpacity,
   Text,
   StyleSheet,
   Platform,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, usePathname } from "expo-router";
 import * as Haptics from "expo-haptics";
+import InteractiveNavItem from "./InteractiveNavItem";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -32,28 +34,46 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
     {
       id: "home",
       icon: "home-outline",
+      activeIcon: "home",
       label: "Home",
       route: "/modules/memory-book",
+      description: "View your memory feed and profile",
     },
     {
       id: "timeline",
       icon: "time-outline",
+      activeIcon: "time",
       label: "Timeline",
       route: "/modules/memory-book/MemoryTimeline",
+      description: "Browse all memories in chronological order",
     },
     {
       id: "saved",
       icon: "bookmark-outline",
+      activeIcon: "bookmark",
       label: "Saved",
       route: "/modules/memory-book/SavedPosts",
+      description: "View your saved memories",
+    },
+    {
+      id: "insights",
+      icon: "sparkles-outline",
+      activeIcon: "sparkles",
+      label: "Insights",
+      route: "/modules/memory-book/AIInsightsPage",
+      description: "AI-powered mood analysis and insights",
     },
     {
       id: "search",
       icon: "search-outline",
+      activeIcon: "search",
       label: "Search",
       route: "/modules/memory-book/UserSearch",
+      description: "Search for other users",
     },
   ];
+
+  const createButtonScale = useRef(new Animated.Value(1)).current;
 
   const handlePress = (route: string) => {
     if (Platform.OS === "ios") {
@@ -91,14 +111,36 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
     >
       {/* Center Floating Create Button */}
       <View style={styles.floatingAdd}>
-        <View
+        <Animated.View
           style={[
             styles.floatingAddOuter,
             {
               borderColor: PRIMARY_PURPLE,
               shadowColor: PRIMARY_PURPLE,
+              transform: [{ scale: createButtonScale }],
             },
           ]}
+          // @ts-ignore - web only
+          onMouseEnter={() => {
+            if (Platform.OS === "web") {
+              Animated.spring(createButtonScale, {
+                toValue: 1.15,
+                useNativeDriver: true,
+                tension: 300,
+                friction: 8,
+              }).start();
+            }
+          }}
+          onMouseLeave={() => {
+            if (Platform.OS === "web") {
+              Animated.spring(createButtonScale, {
+                toValue: 1,
+                useNativeDriver: true,
+                tension: 300,
+                friction: 8,
+              }).start();
+            }
+          }}
         >
           <TouchableOpacity
             style={[
@@ -110,160 +152,47 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
               },
             ]}
             onPress={handleCreatePress}
-            activeOpacity={0.8}
+            onPressIn={() => {
+              Animated.spring(createButtonScale, {
+                toValue: 0.9,
+                useNativeDriver: true,
+                tension: 300,
+                friction: 8,
+              }).start();
+            }}
+            onPressOut={() => {
+              Animated.spring(createButtonScale, {
+                toValue: 1,
+                useNativeDriver: true,
+                tension: 300,
+                friction: 8,
+              }).start();
+            }}
+            activeOpacity={1}
+            accessibilityLabel="Create new memory"
+            accessibilityRole="button"
+            accessibilityHint="Opens memory creation screen"
           >
             <Ionicons name="add" size={32} color="#FFFFFF" />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       </View>
 
-      {/* Home */}
-      <TouchableOpacity
-        style={styles.bottomBarItem}
-        onPress={() => handlePress(navItems[0].route)}
-        activeOpacity={0.7}
-      >
-        <View
-          style={[
-            styles.bottomBarIconWrapper,
-            isActive(navItems[0].route) && {
-              backgroundColor: PRIMARY_PURPLE + "22",
-            },
-          ]}
-        >
-          <Ionicons
-            name={isActive(navItems[0].route) ? "home" : "home-outline"}
-            size={20}
-            color={
-              isActive(navItems[0].route) ? PRIMARY_PURPLE : colors.inactive
-            }
-          />
-        </View>
-        <Text
-          style={[
-            styles.bottomBarLabel,
-            {
-              color: isActive(navItems[0].route)
-                ? PRIMARY_PURPLE
-                : colors.textSecondary,
-              fontWeight: isActive(navItems[0].route) ? "600" : "400",
-            },
-          ]}
-        >
-          {navItems[0].label}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Timeline */}
-      <TouchableOpacity
-        style={styles.bottomBarItem}
-        onPress={() => handlePress(navItems[1].route)}
-        activeOpacity={0.7}
-      >
-        <View
-          style={[
-            styles.bottomBarIconWrapper,
-            isActive(navItems[1].route) && {
-              backgroundColor: PRIMARY_PURPLE + "22",
-            },
-          ]}
-        >
-          <Ionicons
-            name={isActive(navItems[1].route) ? "time" : "time-outline"}
-            size={20}
-            color={
-              isActive(navItems[1].route) ? PRIMARY_PURPLE : colors.inactive
-            }
-          />
-        </View>
-        <Text
-          style={[
-            styles.bottomBarLabel,
-            {
-              color: isActive(navItems[1].route)
-                ? PRIMARY_PURPLE
-                : colors.textSecondary,
-              fontWeight: isActive(navItems[1].route) ? "600" : "400",
-            },
-          ]}
-        >
-          {navItems[1].label}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Saved */}
-      <TouchableOpacity
-        style={styles.bottomBarItem}
-        onPress={() => handlePress(navItems[2].route)}
-        activeOpacity={0.7}
-      >
-        <View
-          style={[
-            styles.bottomBarIconWrapper,
-            isActive(navItems[2].route) && {
-              backgroundColor: PRIMARY_PURPLE + "22",
-            },
-          ]}
-        >
-          <Ionicons
-            name={isActive(navItems[2].route) ? "bookmark" : "bookmark-outline"}
-            size={20}
-            color={
-              isActive(navItems[2].route) ? PRIMARY_PURPLE : colors.inactive
-            }
-          />
-        </View>
-        <Text
-          style={[
-            styles.bottomBarLabel,
-            {
-              color: isActive(navItems[2].route)
-                ? PRIMARY_PURPLE
-                : colors.textSecondary,
-              fontWeight: isActive(navItems[2].route) ? "600" : "400",
-            },
-          ]}
-        >
-          {navItems[2].label}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Search */}
-      <TouchableOpacity
-        style={styles.bottomBarItem}
-        onPress={() => handlePress(navItems[3].route)}
-        activeOpacity={0.7}
-      >
-        <View
-          style={[
-            styles.bottomBarIconWrapper,
-            isActive(navItems[3].route) && {
-              backgroundColor: PRIMARY_PURPLE + "22",
-            },
-          ]}
-        >
-          <Ionicons
-            name={isActive(navItems[3].route) ? "search" : "search-outline"}
-            size={20}
-            color={
-              isActive(navItems[3].route) ? PRIMARY_PURPLE : colors.inactive
-            }
-          />
-        </View>
-        <Text
-          style={[
-            styles.bottomBarLabel,
-            {
-              color: isActive(navItems[3].route)
-                ? PRIMARY_PURPLE
-                : colors.textSecondary,
-              fontWeight: isActive(navItems[3].route) ? "600" : "400",
-            },
-          ]}
-        >
-          {navItems[3].label}
-        </Text>
-      </TouchableOpacity>
+      {/* Navigation Items */}
+      {navItems.map((item) => (
+        <InteractiveNavItem
+          key={item.id}
+          icon={item.icon}
+          activeIcon={item.activeIcon}
+          label={item.label}
+          description={item.description}
+          isActive={isActive(item.route)}
+          onPress={() => handlePress(item.route)}
+          isDarkMode={isDarkMode}
+          activeColor={PRIMARY_PURPLE}
+          inactiveColor={colors.inactive}
+        />
+      ))}
     </View>
   );
 }
@@ -324,13 +253,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    minWidth: 60,
   },
   bottomBarIconWrapper: {
     padding: 6,
     borderRadius: 999,
   },
   bottomBarLabel: {
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 2,
   },
 });

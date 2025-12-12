@@ -1,6 +1,6 @@
 // Test Firestore connection utility
-import { getFirestore, collection, addDoc, getDocs } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { collection, addDoc, getDocs } from "firebase/firestore";
+import { auth, db } from "@/config/firebase";
 import { Alert } from "react-native";
 
 /**
@@ -9,8 +9,6 @@ import { Alert } from "react-native";
  */
 export async function testFirestoreConnection(): Promise<void> {
   try {
-    const db = getFirestore();
-    const auth = getAuth();
     const user = auth.currentUser;
 
     if (!user) {

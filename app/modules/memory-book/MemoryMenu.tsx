@@ -12,13 +12,13 @@ import {
 } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import {
-  getFirestore,
   collection,
   query,
   orderBy,
   limit,
   onSnapshot,
 } from "firebase/firestore";
+import { db } from "@/config/firebase";
 
 type Props = NativeStackScreenProps<MainStackParamList, "MemoryMenu">;
 
@@ -37,7 +37,6 @@ export default function MemoryMenu({ navigation }: Props) {
   const [totalMemories, setTotalMemories] = useState(0);
 
   useEffect(() => {
-    const db = getFirestore();
     const postsRef = collection(db, "MemoryPosts");
 
     // Get latest 1 memory

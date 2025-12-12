@@ -1,5 +1,4 @@
 import {
-  getFirestore,
   collection,
   query,
   orderBy,
@@ -11,7 +10,7 @@ import {
   updateDoc,
   Unsubscribe,
 } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { auth, db } from "@/config/firebase";
 
 export type Comment = {
   id: string;
@@ -29,7 +28,6 @@ export function subscribeToComments(
   memoryId: string,
   callback: (comments: Comment[]) => void
 ): Unsubscribe {
-  const db = getFirestore();
   const commentsRef = collection(db, "MemoryPosts", memoryId, "Comments");
   const q = query(commentsRef, orderBy("createdAt", "asc"));
 
@@ -49,14 +47,12 @@ export async function addComment(
   memoryId: string,
   text: string
 ): Promise<string> {
-  const auth = getAuth();
   const user = auth.currentUser;
 
   if (!user) {
     throw new Error("User must be logged in to comment");
   }
 
-  const db = getFirestore();
   const commentsRef = collection(db, "MemoryPosts", memoryId, "Comments");
 
   const commentData = {
@@ -86,14 +82,12 @@ export async function deleteComment(
   memoryId: string,
   commentId: string
 ): Promise<void> {
-  const auth = getAuth();
   const user = auth.currentUser;
 
   if (!user) {
     throw new Error("User must be logged in to delete comments");
   }
 
-  const db = getFirestore();
   const commentRef = doc(db, "MemoryPosts", memoryId, "Comments", commentId);
 
   // Get comment to check ownership

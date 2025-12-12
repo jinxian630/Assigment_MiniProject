@@ -19,11 +19,12 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
-import { getAuth } from "firebase/auth";
+import { auth } from "@/config/firebase";
 import { subscribeToSavedMemories } from "./utils/saveHelpers";
 import PostCard from "./components/PostCard";
 import BottomNavBar from "./components/BottomNavBar";
 import FilterModal, { type FilterOptions } from "./components/FilterModal";
+import InteractiveButton from "./components/InteractiveButton";
 import { applyFilters } from "./utils/filterHelpers";
 import type { Memory } from "./utils/memoryHelpers";
 
@@ -33,7 +34,6 @@ export default function SavedPosts() {
   const router = useRouter();
   const { theme, isDarkMode } = useTheme();
   const { user } = useAuth();
-  const auth = getAuth();
   const [savedMemories, setSavedMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -149,34 +149,32 @@ export default function SavedPosts() {
               Saved Posts
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => {
-              setShowFilterModal(true);
-              if (Platform.OS === "ios") {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          <View style={{ position: "relative" }}>
+            <InteractiveButton
+              onPress={() => {
+                setShowFilterModal(true);
+              }}
+              icon="filter"
+              description={
+                hasActiveFilters
+                  ? "Filter active - tap to adjust filters"
+                  : "Filter saved memories by mood, color, feeling, or keyword"
               }
-            }}
-            style={[
-              styles.filterButton,
-              {
-                backgroundColor: hasActiveFilters
-                  ? PRIMARY_PURPLE
-                  : colors.chipBg,
-                borderColor: hasActiveFilters ? PRIMARY_PURPLE : colors.border,
-              },
-            ]}
-          >
-            <Ionicons
-              name="filter"
-              size={20}
-              color={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
+              variant={hasActiveFilters ? "primary" : "secondary"}
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
+              iconSize={20}
+              style={styles.filterButton}
+              accessibilityLabel="Filter saved memories"
+              accessibilityHint="Opens filter options"
             />
             {hasActiveFilters && (
               <View
                 style={[styles.filterBadge, { backgroundColor: "#FFFFFF" }]}
               />
             )}
-          </TouchableOpacity>
+          </View>
         </View>
 
         {loading ? (

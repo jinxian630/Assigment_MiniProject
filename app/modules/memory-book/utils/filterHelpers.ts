@@ -36,12 +36,23 @@ export function applyFilters(
       return rank === "most" ? bValue - aValue : aValue - bValue;
     });
 
-    // Get the top/bottom value
+    // For "most", show top 25% of memories with highest values
+    // For "least", show bottom 25% of memories with lowest values
     if (filtered.length > 0) {
-      const targetValue = filtered[0].emotionSpectrum?.[type] ?? 0;
-      filtered = filtered.filter(
-        (memory) => (memory.emotionSpectrum?.[type] ?? 0) === targetValue
-      );
+      const topCount = Math.max(1, Math.ceil(filtered.length * 0.25));
+      if (rank === "most") {
+        // Get top values (may have multiple memories with same top value)
+        const topValue = filtered[0].emotionSpectrum?.[type] ?? 0;
+        filtered = filtered.filter(
+          (memory) => (memory.emotionSpectrum?.[type] ?? 0) >= topValue
+        ).slice(0, topCount * 2); // Allow some flexibility
+      } else {
+        // Get bottom values
+        const bottomValue = filtered[filtered.length - 1].emotionSpectrum?.[type] ?? 0;
+        filtered = filtered.filter(
+          (memory) => (memory.emotionSpectrum?.[type] ?? 0) <= bottomValue
+        ).slice(-topCount * 2); // Allow some flexibility
+      }
     }
   }
 

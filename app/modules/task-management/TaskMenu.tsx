@@ -15,7 +15,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Print from "expo-print";
-import { shareAsync } from "expo-sharing";
+// Conditionally import expo-sharing (not available on web)
+let shareAsync: any = null;
+if (Platform.OS !== "web") {
+  try {
+    const Sharing = require("expo-sharing");
+    shareAsync = Sharing.shareAsync;
+  } catch (e) {
+    console.log("expo-sharing not available");
+  }
+}
 import { Ionicons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
 import {
@@ -1249,7 +1258,11 @@ export default function TaskMenuScreen() {
     `;
 
       const { uri } = await Print.printToFileAsync({ html });
-      await shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf" });
+      if (shareAsync) {
+        await shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf" });
+      } else {
+        Alert.alert("Error", "Sharing is not available on this platform.");
+      }
     } catch (error: any) {
       console.error(error);
       Alert.alert("Error", error.message ?? "Failed to generate PDF.");

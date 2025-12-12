@@ -24,6 +24,7 @@ import type { Memory } from "./utils/memoryHelpers";
 import PostCard from "./components/PostCard";
 import BottomNavBar from "./components/BottomNavBar";
 import AIInsights from "./components/AIInsights";
+import InteractiveButton from "./components/InteractiveButton";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -56,11 +57,17 @@ export default function MemoryBookScreen() {
   };
 
   useEffect(() => {
+    console.log("🔄 Setting up memory subscription...");
     const unsubscribe = subscribeToLatestMemories(20, (memoriesList) => {
+      console.log("📦 Memory feed: Received", memoriesList.length, "memories");
+      console.log("📋 Memory IDs:", memoriesList.map(m => m.id));
       setMemories(memoriesList);
     });
 
-    return () => unsubscribe();
+    return () => {
+      console.log("🛑 Unsubscribing from memories");
+      unsubscribe();
+    };
   }, []);
 
   // Pulsing glow animation for profile card
@@ -190,78 +197,34 @@ export default function MemoryBookScreen() {
             </Animated.Text>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity
+            <InteractiveButton
               onPress={() => {
-                if (Platform.OS === "ios") {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
                 router.push("/modules/memory-book/UserSearch");
               }}
-              onPressIn={() => {
-                Animated.spring(headerIconScale1, {
-                  toValue: 0.8,
-                  useNativeDriver: true,
-                  tension: 300,
-                  friction: 10,
-                }).start();
-              }}
-              onPressOut={() => {
-                Animated.spring(headerIconScale1, {
-                  toValue: 1,
-                  useNativeDriver: true,
-                  tension: 300,
-                  friction: 10,
-                }).start();
-              }}
-              activeOpacity={0.7}
+              icon="person-add-outline"
+              description="Search and add friends to your network"
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={colors.text}
+              iconSize={22}
               style={styles.headerIcon}
-            >
-              <Animated.View
-                style={{ transform: [{ scale: headerIconScale1 }] }}
-              >
-                <Ionicons
-                  name="person-add-outline"
-                  size={22}
-                  color={colors.text}
-                />
-              </Animated.View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                if (Platform.OS === "ios") {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-                toggleTheme();
-              }}
-              onPressIn={() => {
-                Animated.spring(headerIconScale2, {
-                  toValue: 0.8,
-                  useNativeDriver: true,
-                  tension: 300,
-                  friction: 10,
-                }).start();
-              }}
-              onPressOut={() => {
-                Animated.spring(headerIconScale2, {
-                  toValue: 1,
-                  useNativeDriver: true,
-                  tension: 300,
-                  friction: 10,
-                }).start();
-              }}
-              activeOpacity={0.7}
+              accessibilityLabel="Search users"
+              accessibilityHint="Opens user search page"
+            />
+            <InteractiveButton
+              onPress={toggleTheme}
+              icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+              description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={colors.text}
+              iconSize={22}
               style={styles.headerIcon}
-            >
-              <Animated.View
-                style={{ transform: [{ scale: headerIconScale2 }] }}
-              >
-                <Ionicons
-                  name={isDarkMode ? "sunny-outline" : "moon-outline"}
-                  size={22}
-                  color={colors.text}
-                />
-              </Animated.View>
-            </TouchableOpacity>
+              accessibilityLabel="Toggle theme"
+              accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
+            />
           </View>
         </View>
 
@@ -403,91 +366,31 @@ export default function MemoryBookScreen() {
             </View>
 
             <View style={styles.profileActions}>
-              <TouchableOpacity
+              <InteractiveButton
                 onPress={() => {
-                  if (Platform.OS === "ios") {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  }
                   router.push("/modules/memory-book/MemoryPostCreate");
                 }}
-                onPressIn={() => {
-                  Animated.spring(buttonScale, {
-                    toValue: 0.95,
-                    useNativeDriver: true,
-                    tension: 300,
-                    friction: 10,
-                  }).start();
-                }}
-                onPressOut={() => {
-                  Animated.spring(buttonScale, {
-                    toValue: 1,
-                    useNativeDriver: true,
-                    tension: 300,
-                    friction: 10,
-                  }).start();
-                }}
-                activeOpacity={0.9}
-              >
-                <Animated.View
-                  style={[
-                    styles.editButton,
-                    {
-                      backgroundColor: PRIMARY_PURPLE,
-                      borderColor: PRIMARY_PURPLE,
-                      transform: [{ scale: buttonScale }],
-                      shadowColor: PRIMARY_PURPLE,
-                      shadowOpacity: isDarkMode ? 0.8 : 0.6,
-                      shadowRadius: 15,
-                      shadowOffset: { width: 0, height: 4 },
-                      elevation: 8,
-                    },
-                  ]}
-                >
-                  <Ionicons name="add-circle" size={16} color="#fff" />
-                  <Text style={styles.editButtonText}>New Memory</Text>
-                </Animated.View>
-              </TouchableOpacity>
-              <TouchableOpacity
+                icon="add-circle"
+                label="New Memory"
+                description="Create a new memory with photo, title, and mood"
+                variant="primary"
+                size="md"
+                isDarkMode={isDarkMode}
+                style={styles.editButton}
+                accessibilityLabel="Create new memory"
+                accessibilityHint="Opens the memory creation screen"
+              />
+              <InteractiveButton
                 onPress={handleProfilePress}
-                onPressIn={() => {
-                  Animated.spring(buttonScale, {
-                    toValue: 0.95,
-                    useNativeDriver: true,
-                    tension: 300,
-                    friction: 10,
-                  }).start();
-                }}
-                onPressOut={() => {
-                  Animated.spring(buttonScale, {
-                    toValue: 1,
-                    useNativeDriver: true,
-                    tension: 300,
-                    friction: 10,
-                  }).start();
-                }}
-                activeOpacity={0.9}
-              >
-                <Animated.View
-                  style={[
-                    styles.editButton,
-                    styles.editButtonOutline,
-                    {
-                      borderColor: colors.border,
-                      transform: [{ scale: buttonScale }],
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.editButtonText,
-                      styles.editButtonTextOutline,
-                      { color: colors.text },
-                    ]}
-                  >
-                    View Profile
-                  </Text>
-                </Animated.View>
-              </TouchableOpacity>
+                label="View Profile"
+                description="View your profile, stats, and all your memories"
+                variant="ghost"
+                size="md"
+                isDarkMode={isDarkMode}
+                style={[styles.editButton, styles.editButtonOutline]}
+                accessibilityLabel="View profile"
+                accessibilityHint="Opens your profile page"
+              />
             </View>
           </Animated.View>
 
@@ -554,29 +457,20 @@ export default function MemoryBookScreen() {
                 >
                   Start by creating your first memory
                 </Text>
-                <TouchableOpacity
+                <InteractiveButton
                   onPress={() => {
-                    if (Platform.OS === "ios") {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    }
                     router.push("/modules/memory-book/MemoryPostCreate");
                   }}
-                  activeOpacity={0.9}
-                  style={[
-                    styles.createButton,
-                    {
-                      backgroundColor: PRIMARY_PURPLE,
-                      shadowColor: PRIMARY_PURPLE,
-                      shadowOpacity: isDarkMode ? 0.8 : 0.6,
-                      shadowRadius: 20,
-                      shadowOffset: { width: 0, height: 6 },
-                      elevation: 10,
-                    },
-                  ]}
-                >
-                  <Ionicons name="add" size={20} color="#fff" />
-                  <Text style={styles.createButtonText}>Create Memory</Text>
-                </TouchableOpacity>
+                  icon="add"
+                  label="Create Memory"
+                  description="Start creating your first memory with photo and story"
+                  variant="primary"
+                  size="lg"
+                  isDarkMode={isDarkMode}
+                  style={styles.createButton}
+                  accessibilityLabel="Create memory"
+                  accessibilityHint="Opens memory creation screen"
+                />
               </View>
             ) : (
               memories.map((memory) => (

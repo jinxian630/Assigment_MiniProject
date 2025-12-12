@@ -1,5 +1,4 @@
 import {
-  getFirestore,
   collection,
   query,
   where,
@@ -13,7 +12,7 @@ import {
   increment,
   updateDoc,
 } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { auth, db } from "@/config/firebase";
 import { Memory } from "./memoryHelpers";
 
 /**
@@ -23,7 +22,6 @@ export async function isMemorySaved(
   memoryId: string,
   userId: string
 ): Promise<boolean> {
-  const db = getFirestore();
   const savesRef = collection(db, "SavedPosts");
   const q = query(
     savesRef,
@@ -48,7 +46,6 @@ export function subscribeToSavedPosts(
     savedPosts: Array<{ id: string; memoryId: string; savedAt: number }>
   ) => void
 ): Unsubscribe {
-  const db = getFirestore();
   const savesRef = collection(db, "SavedPosts");
   const q = query(savesRef, where("userId", "==", userId));
 
@@ -66,14 +63,12 @@ export function subscribeToSavedPosts(
  * Save a memory post
  */
 export async function saveMemory(memoryId: string): Promise<void> {
-  const auth = getAuth();
   const user = auth.currentUser;
 
   if (!user) {
     throw new Error("User must be logged in to save posts");
   }
 
-  const db = getFirestore();
   const savesRef = collection(db, "SavedPosts");
 
   // Check if already saved using a query
@@ -110,14 +105,12 @@ export async function saveMemory(memoryId: string): Promise<void> {
  * Unsave a memory post
  */
 export async function unsaveMemory(memoryId: string): Promise<void> {
-  const auth = getAuth();
   const user = auth.currentUser;
 
   if (!user) {
     throw new Error("User must be logged in to unsave posts");
   }
 
-  const db = getFirestore();
   const savesRef = collection(db, "SavedPosts");
   const q = query(
     savesRef,
@@ -149,7 +142,6 @@ export async function unsaveMemory(memoryId: string): Promise<void> {
  * Get saved memory IDs for a user
  */
 export async function getSavedMemoryIds(userId: string): Promise<string[]> {
-  const db = getFirestore();
   const savesRef = collection(db, "SavedPosts");
   const q = query(savesRef, where("userId", "==", userId));
 
@@ -175,7 +167,6 @@ export function subscribeToSavedMemories(
   userId: string,
   callback: (memories: Memory[]) => void
 ): Unsubscribe {
-  const db = getFirestore();
   const savesRef = collection(db, "SavedPosts");
   const q = query(savesRef, where("userId", "==", userId));
 

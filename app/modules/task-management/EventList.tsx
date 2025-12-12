@@ -16,7 +16,16 @@ import { useRouter } from "expo-router";
 
 import { Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
-import { shareAsync } from "expo-sharing";
+// Conditionally import expo-sharing (not available on web)
+let shareAsync: any = null;
+if (Platform.OS !== "web") {
+  try {
+    const Sharing = require("expo-sharing");
+    shareAsync = Sharing.shareAsync;
+  } catch (e) {
+    console.log("expo-sharing not available");
+  }
+}
 import {
   getFirestore,
   doc,
@@ -1080,10 +1089,14 @@ export default function EventListScreen() {
         await Print.printAsync({ html });
       } else {
         const { uri } = await Print.printToFileAsync({ html });
-        await shareAsync(uri, {
-          UTI: ".pdf",
-          mimeType: "application/pdf",
-        });
+        if (shareAsync) {
+          await shareAsync(uri, {
+            UTI: ".pdf",
+            mimeType: "application/pdf",
+          });
+        } else {
+          Alert.alert("Error", "Sharing is not available on this platform.");
+        }
       }
     } catch (error: any) {
       console.error(error);

@@ -15,7 +15,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 import {
-  getFirestore,
   doc,
   getDoc,
   collection,
@@ -28,7 +27,7 @@ import {
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
-import { getAuth } from "firebase/auth";
+import { auth, db } from "@/config/firebase";
 import { useAuth } from "@/hooks/useAuth";
 
 const MODULE_PURPLE = "#a855f7";
@@ -87,7 +86,6 @@ export default function UserProfile() {
   const { theme } = useTheme();
   const isDarkMode = theme === "dark";
   const { user: authUser } = useAuth();
-  const auth = getAuth();
 
   // Use provided userId or fall back to current user's ID
   const providedUserId = params.userId as string | undefined;
@@ -132,8 +130,6 @@ export default function UserProfile() {
       }
       return;
     }
-
-    const db = getFirestore();
 
     // Fetch user document - try both "users" and "Users" collections
     (async () => {

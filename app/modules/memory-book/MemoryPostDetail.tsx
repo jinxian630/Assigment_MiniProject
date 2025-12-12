@@ -15,11 +15,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/config/firebase";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
+import InteractiveButton from "./components/InteractiveButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -61,7 +62,6 @@ export default function MemoryPostDetail() {
   }>();
   const { theme, isDarkMode } = useTheme();
   const { user: authUser } = useAuth();
-  const auth = getAuth();
 
   // Support multiple parameter names for compatibility
   const memoryId = params.memoryId || params.postId || params.id;
@@ -91,7 +91,6 @@ export default function MemoryPostDetail() {
           setLoading(false);
           return;
         }
-        const db = getFirestore();
         const ref = doc(db, "MemoryPosts", String(memoryId));
         const snap = await getDoc(ref);
         if (snap.exists()) {
@@ -400,16 +399,19 @@ export default function MemoryPostDetail() {
                             </Text>
                           </View>
                           {auth.currentUser?.uid === comment.userId && (
-                            <TouchableOpacity
+                            <InteractiveButton
                               onPress={() => handleDeleteComment(comment.id)}
+                              icon="trash-outline"
+                              description="Delete this comment"
+                              variant="ghost"
+                              size="sm"
+                              isDarkMode={isDarkMode}
+                              iconColor={colors.textSoft}
+                              iconSize={16}
                               style={styles.deleteCommentBtn}
-                            >
-                              <Ionicons
-                                name="trash-outline"
-                                size={16}
-                                color={colors.textSoft}
-                              />
-                            </TouchableOpacity>
+                              accessibilityLabel="Delete comment"
+                              accessibilityHint="Permanently deletes this comment"
+                            />
                           )}
                         </View>
                         <Text
@@ -450,25 +452,28 @@ export default function MemoryPostDetail() {
                 multiline
                 maxLength={500}
               />
-              <TouchableOpacity
+              <InteractiveButton
                 onPress={handleAddComment}
                 disabled={!commentText.trim() || submittingComment}
-                style={[
-                  styles.sendButton,
-                  {
-                    backgroundColor:
-                      commentText.trim() && !submittingComment
-                        ? PRIMARY_PURPLE
-                        : colors.border,
-                  },
-                ]}
-              >
-                {submittingComment ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Ionicons name="send" size={20} color="#fff" />
-                )}
-              </TouchableOpacity>
+                icon={submittingComment ? undefined : "send"}
+                label={submittingComment ? "Sending..." : undefined}
+                description="Post your comment"
+                variant={commentText.trim() && !submittingComment ? "primary" : "secondary"}
+                size="sm"
+                isDarkMode={isDarkMode}
+                iconColor="#fff"
+                iconSize={20}
+                style={styles.sendButton}
+                accessibilityLabel="Send comment"
+                accessibilityHint="Posts your comment"
+              />
+              {submittingComment && (
+                <ActivityIndicator
+                  size="small"
+                  color="#fff"
+                  style={{ position: "absolute" }}
+                />
+              )}
             </View>
           </KeyboardAvoidingView>
         )}

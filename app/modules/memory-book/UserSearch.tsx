@@ -18,7 +18,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
-import { getFirestore, collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
+import { db } from "@/config/firebase";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
@@ -132,7 +133,6 @@ export default function UserSearch() {
   }, []);
 
   useEffect(() => {
-    const db = getFirestore();
     const usersRef = collection(db, "Users");
 
     const unsub = onSnapshot(

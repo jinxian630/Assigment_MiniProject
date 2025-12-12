@@ -107,14 +107,33 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!validateForm()) return;
 
+    setAuthError(null); // Clear previous errors
+    
     try {
+      console.log('🔐 Login button pressed');
+      console.log('📧 Email:', email);
       await login({ email, password });
+      console.log('✅ Login successful, navigation should happen automatically');
       // Navigation handled by useEffect above
     } catch (error: any) {
+      console.error('❌ Login failed:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
+      
       // Extract Firebase error code and map to user-friendly message
       const errorCode = error.code || '';
       const errorInfo = ERROR_MESSAGES[errorCode] || DEFAULT_ERROR;
-      setAuthError(errorInfo);
+      
+      // Add more detail to error message
+      let detailedMessage = errorInfo.message;
+      if (error.message && !errorCode) {
+        detailedMessage = error.message;
+      }
+      
+      setAuthError({
+        title: errorInfo.title,
+        message: detailedMessage,
+      });
     }
   };
 

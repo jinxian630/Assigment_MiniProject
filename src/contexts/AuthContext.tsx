@@ -59,21 +59,56 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async ({ email, password }: LoginCredentials): Promise<void> => {
     setIsLoading(true);
     try {
+      console.log('🔐 Attempting login...');
+      console.log('📧 Email:', email);
+      console.log('🌐 Firebase project:', auth.app.options.projectId);
+      
       // Real Firebase authentication
       const userCredential = await authService.signIn({ email, password });
-      console.log('✅ User signed in:', userCredential.user.uid);
+      console.log('✅ Firebase Auth successful:', userCredential.user.uid);
+      console.log('👤 User email:', userCredential.user.email);
+      console.log('👤 User displayName:', userCredential.user.displayName);
 
       // Fetch user data from Firestore
-      const userData = await firestoreService.getUserDocument(userCredential.user.uid);
-
-      if (userData) {
-        setUser(userData);
+      try {
+        const userData = await firestoreService.getUserDocument(userCredential.user.uid);
+        
+        if (userData) {
+          console.log('✅ User data found in Firestore');
+          setUser(userData);
+          setIsAuthenticated(true);
+        } else {
+          console.warn('⚠️ User document not found in Firestore, using Firebase Auth data');
+          // Fallback: Use Firebase Auth data if Firestore document doesn't exist
+          const fallbackUser: User = {
+            id: userCredential.user.uid,
+            email: userCredential.user.email || email,
+            displayName: userCredential.user.displayName || email.split('@')[0],
+            photoURL: userCredential.user.photoURL || null,
+            createdAt: new Date(),
+          };
+          setUser(fallbackUser);
+          setIsAuthenticated(true);
+          console.log('✅ Using Firebase Auth data as fallback');
+        }
+      } catch (firestoreError: any) {
+        console.error('❌ Error fetching user from Firestore:', firestoreError);
+        // Still allow login even if Firestore fetch fails
+        const fallbackUser: User = {
+          id: userCredential.user.uid,
+          email: userCredential.user.email || email,
+          displayName: userCredential.user.displayName || email.split('@')[0],
+          photoURL: userCredential.user.photoURL || null,
+          createdAt: new Date(),
+        };
+        setUser(fallbackUser);
         setIsAuthenticated(true);
-      } else {
-        throw new Error('User profile not found');
+        console.log('✅ Using Firebase Auth data as fallback (Firestore error)');
       }
     } catch (error: any) {
       console.error('❌ Login error:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
       throw error;
     } finally {
       setIsLoading(false);

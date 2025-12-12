@@ -15,10 +15,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import FilterModal, { type FilterOptions } from "./components/FilterModal";
+import InteractiveButton from "./components/InteractiveButton";
 import { applyFilters } from "./utils/filterHelpers";
 
 import {
-  getFirestore,
   collection,
   onSnapshot,
   orderBy,
@@ -26,7 +26,9 @@ import {
   doc,
   deleteDoc,
 } from "firebase/firestore";
-import { getStorage, ref, deleteObject } from "firebase/storage";
+import { ref, deleteObject } from "firebase/storage";
+import { db, storage } from "@/config/firebase";
+import { extractStoragePathFromURL } from "./utils/storageHelpers";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
@@ -92,6 +94,13 @@ export default function MemoryTimeline() {
   const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    memoryId: string;
+    title: string;
+    imageURL?: string;
+  } | null>(null);
   const [activeFilters, setActiveFilters] = useState<FilterOptions>({
     keyword: "",
     emotionColor: null,
@@ -125,19 +134,62 @@ export default function MemoryTimeline() {
   const softText = getSoftText(isDarkMode);
 
   useEffect(() => {
-    const db = getFirestore();
+    console.log("🔄 MemoryTimeline: Setting up subscription...");
     const postsRef = collection(db, "MemoryPosts");
+    
+    // Try query with orderBy first
     const q = query(postsRef, orderBy("startDate", "desc"));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: MemoryPost[] = [];
-      snapshot.forEach((d) => {
-        list.push({ id: d.id, ...(d.data() as any) });
-      });
-      setMemories(list);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        console.log("📖 MemoryTimeline: Received", snapshot.size, "documents");
+        const list: MemoryPost[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          console.log("📄 Timeline doc:", d.id, "startDate:", data.startDate);
+          list.push({ id: d.id, ...(data as any) });
+        });
+        console.log("✅ MemoryTimeline: Total memories:", list.length);
+        setMemories(list);
+      },
+      (error: any) => {
+        console.error("❌ MemoryTimeline query error:", error);
+        console.error("❌ Error code:", error.code);
+        
+        // Fallback: query without orderBy if index is missing
+        if (error.code === "failed-precondition" || error.code === 9) {
+          console.log("⚠️ Index missing, trying fallback query...");
+          const fallbackQ = query(postsRef);
+          
+          return onSnapshot(
+            fallbackQ,
+            (snapshot) => {
+              console.log("📖 MemoryTimeline fallback: Received", snapshot.size, "documents");
+              const list: MemoryPost[] = [];
+              snapshot.forEach((d) => {
+                list.push({ id: d.id, ...(d.data() as any) });
+              });
+              // Sort manually
+              list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
+              console.log("✅ MemoryTimeline fallback: Total memories:", list.length);
+              setMemories(list);
+            },
+            (fallbackError: any) => {
+              console.error("❌ MemoryTimeline fallback also failed:", fallbackError);
+              setMemories([]);
+            }
+          );
+        } else {
+          setMemories([]);
+        }
+      }
+    );
 
-    return () => unsubscribe();
+    return () => {
+      console.log("🛑 MemoryTimeline: Unsubscribing");
+      unsubscribe();
+    };
   }, []);
 
   const groupByYear = (items: MemoryPost[]) => {
@@ -265,8 +317,6 @@ export default function MemoryTimeline() {
   const deleteMemory = async (memoryId: string, imageURL?: string) => {
     try {
       setDeleteLoadingId(memoryId);
-      const db = getFirestore();
-      const storage = getStorage();
 
       // Animate card out before deletion
       if (animationRefs.current[memoryId]) {
@@ -290,11 +340,19 @@ export default function MemoryTimeline() {
       // Delete the image from Storage if it exists
       if (imageURL) {
         try {
-          const imageRef = ref(storage, imageURL);
-          await deleteObject(imageRef);
+          const storagePath = extractStoragePathFromURL(imageURL);
+          if (storagePath) {
+            const imageRef = ref(storage, storagePath);
+            await deleteObject(imageRef);
+            console.log("✅ Image deleted from storage:", storagePath);
+          } else {
+            console.warn("⚠️ Could not extract storage path from URL:", imageURL);
+          }
         } catch (err: any) {
-          // Image might already be deleted or not exist
-          console.log("Image deletion warning:", err.message);
+          // Image might already be deleted or not exist - this is okay
+          if (err.code !== "storage/object-not-found") {
+            console.warn("Image deletion warning:", err.message);
+          }
         }
       }
 
@@ -303,7 +361,8 @@ export default function MemoryTimeline() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
 
-      Alert.alert("Success", "Memory deleted successfully");
+      // Show formal success overlay (matching create post style)
+      setShowDeleteSuccess(true);
     } catch (err: any) {
       console.error("Delete error:", err);
 
@@ -312,10 +371,13 @@ export default function MemoryTimeline() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
 
-      Alert.alert(
-        "Error",
-        err.message || "Failed to delete memory. Please try again."
-      );
+      let errorMessage = err.message || "Failed to delete memory. Please try again.";
+      
+      if (err.code === "permission-denied") {
+        errorMessage = `Permission denied!\n\nYour Firestore security rules are blocking deletes.\n\nMake sure you:\n1. Are logged in\n2. Own this memory post\n3. Have updated Firestore rules\n\nCheck rules at:\nhttps://console.firebase.google.com/project/${db.app.options.projectId}/firestore/rules`;
+      }
+      
+      Alert.alert("Error", errorMessage);
 
       // Reset animation on error
       if (animationRefs.current[memoryId]) {
@@ -342,44 +404,181 @@ export default function MemoryTimeline() {
     title: string,
     imageURL?: string
   ) => {
+    console.log("🔔 confirmDelete called with:", { memoryId, title });
+    
     // Haptic feedback
     if (Platform.OS === "ios") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }
 
-    Alert.alert(
-      "Delete Memory",
-      `Are you sure you want to delete "${
-        title || "this memory"
-      }"? This action cannot be undone.`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-          onPress: () => {
-            if (Platform.OS === "ios") {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }
-          },
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            if (Platform.OS === "ios") {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            }
-            deleteMemory(memoryId, imageURL);
-          },
-        },
-      ],
-      { cancelable: true }
-    );
+    // Show custom confirmation modal (works on web)
+    setDeleteTarget({ memoryId, title, imageURL });
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    
+    console.log("✅ User confirmed deletion");
+    if (Platform.OS === "ios") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+    setShowDeleteConfirm(false);
+    deleteMemory(deleteTarget.memoryId, deleteTarget.title, deleteTarget.imageURL);
+  };
+
+  const handleCancelDelete = () => {
+    console.log("❌ User cancelled deletion");
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setShowDeleteConfirm(false);
+    setDeleteTarget(null);
   };
 
   return (
     <GradientBackground>
       <SafeAreaView style={styles.safeArea}>
+        {/* DELETE CONFIRMATION MODAL */}
+        {showDeleteConfirm && deleteTarget && (
+          <View
+            style={[
+              styles.successOverlay,
+              {
+                backgroundColor: isDarkMode
+                  ? "rgba(15,23,42,0.95)"
+                  : "rgba(255,255,255,0.95)",
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.confirmCard,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 24,
+                }),
+                {
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.confirmIcon,
+                  {
+                    backgroundColor: "rgba(239, 68, 68, 0.2)",
+                    borderColor: "#ef4444",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="warning"
+                  size={64}
+                  color="#ef4444"
+                />
+              </View>
+              <Text style={[styles.confirmTitle, glowText]}>
+                Delete Memory
+              </Text>
+              <Text style={[styles.confirmSubtitle, softText]}>
+                Are you sure you want to delete "{deleteTarget.title || "this memory"}"?
+              </Text>
+              <Text style={[styles.confirmWarning, softText]}>
+                This action cannot be undone.
+              </Text>
+              <View style={styles.confirmButtons}>
+                <TouchableOpacity
+                  onPress={handleCancelDelete}
+                  style={[
+                    styles.confirmButton,
+                    styles.cancelButton,
+                    {
+                      borderColor: colors.borderSoft,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.confirmButtonText, { color: colors.textSoft }]}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleConfirmDelete}
+                  style={[
+                    styles.confirmButton,
+                    styles.deleteButton,
+                    {
+                      backgroundColor: "#ef4444",
+                    },
+                  ]}
+                >
+                  <Text style={styles.confirmButtonText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* DELETE SUCCESS OVERLAY */}
+        {showDeleteSuccess && (
+          <View
+            style={[
+              styles.successOverlay,
+              {
+                backgroundColor: isDarkMode
+                  ? "rgba(15,23,42,0.95)"
+                  : "rgba(255,255,255,0.95)",
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.successCard,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 24,
+                }),
+                {
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.successIcon,
+                  {
+                    backgroundColor: PRIMARY_PURPLE + "20",
+                    borderColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="checkmark-circle"
+                  size={64}
+                  color={PRIMARY_PURPLE}
+                />
+              </View>
+              <Text style={[styles.successTitle, glowText]}>
+                Memory Deleted!
+              </Text>
+              <Text style={[styles.successSubtitle, softText]}>
+                Your memory has been deleted successfully
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowDeleteSuccess(false);
+                }}
+                style={[
+                  styles.successButton,
+                  {
+                    backgroundColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Text style={styles.successButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* HEADER */}
         <View style={styles.headerRow}>
           <IconButton
@@ -400,43 +599,45 @@ export default function MemoryTimeline() {
             )}
           </View>
           <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-            <TouchableOpacity
-              onPress={() => {
-                setShowFilterModal(true);
-                if (Platform.OS === "ios") {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            <View style={{ position: "relative" }}>
+              <InteractiveButton
+                onPress={() => {
+                  setShowFilterModal(true);
+                }}
+                icon="filter"
+                description={
+                  hasActiveFilters
+                    ? "Filter active - tap to adjust filters"
+                    : "Filter memories by mood, color, feeling, or keyword"
                 }
-              }}
-              style={[
-                styles.filterButton,
-                {
-                  backgroundColor: hasActiveFilters
-                    ? PRIMARY_PURPLE
-                    : colors.chipBg,
-                  borderColor: hasActiveFilters
-                    ? PRIMARY_PURPLE
-                    : colors.borderSoft,
-                },
-              ]}
-            >
-              <Ionicons
-                name="filter"
-                size={20}
-                color={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
+                variant={hasActiveFilters ? "primary" : "secondary"}
+                size="sm"
+                isDarkMode={isDarkMode}
+                iconColor={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
+                iconSize={20}
+                style={styles.filterButton}
+                accessibilityLabel="Filter memories"
+                accessibilityHint="Opens filter options"
               />
               {hasActiveFilters && (
                 <View
                   style={[styles.filterBadge, { backgroundColor: "#FFFFFF" }]}
                 />
               )}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
-              <Ionicons
-                name={isDarkMode ? "sunny-outline" : "moon-outline"}
-                size={20}
-                color={colors.text}
-              />
-            </TouchableOpacity>
+            </View>
+            <InteractiveButton
+              onPress={toggleTheme}
+              icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+              description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={colors.text}
+              iconSize={20}
+              style={styles.themeToggle}
+              accessibilityLabel="Toggle theme"
+              accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
+            />
           </View>
         </View>
 
@@ -611,60 +812,52 @@ export default function MemoryTimeline() {
                                   },
                                 ]}
                               >
-                                {/* Delete Button - Positioned absolutely outside touchable area */}
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    console.log(
-                                      "Delete button pressed for:",
-                                      memory.id
-                                    );
-                                    confirmDelete(
-                                      memory.id,
-                                      memory.title,
-                                      memory.imageURL
-                                    );
+                                {/* Delete Button - Wrapped in View to prevent parent TouchableOpacity from blocking */}
+                                <View 
+                                  style={{ 
+                                    position: "absolute", 
+                                    top: 12, 
+                                    right: 12, 
+                                    zIndex: 9999,
+                                    pointerEvents: "box-only"
                                   }}
-                                  onPressIn={() => {
-                                    // Visual feedback on press
-                                    if (Platform.OS === "ios") {
-                                      Haptics.impactAsync(
-                                        Haptics.ImpactFeedbackStyle.Medium
-                                      );
-                                    }
-                                  }}
-                                  disabled={isDeleting}
-                                  activeOpacity={0.6}
-                                  hitSlop={{
-                                    top: 10,
-                                    bottom: 10,
-                                    left: 10,
-                                    right: 10,
-                                  }}
-                                  style={[
-                                    styles.deleteBtn,
-                                    {
-                                      backgroundColor: isDeleting
-                                        ? "rgba(168, 85, 247, 0.5)"
-                                        : "rgba(239, 68, 68, 0.95)",
-                                      opacity: isDeleting ? 0.6 : 1,
-                                    },
-                                  ]}
+                                  onStartShouldSetResponder={() => true}
+                                  onResponderTerminationRequest={() => false}
                                 >
-                                  <Ionicons
-                                    name={
-                                      isDeleting
-                                        ? "hourglass-outline"
-                                        : "trash-outline"
-                                    }
-                                    size={18}
-                                    color="#fff"
-                                  />
-                                </TouchableOpacity>
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      console.log("🗑️ Delete button pressed for:", memory.id);
+                                      if (Platform.OS === "ios") {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                      }
+                                      confirmDelete(memory.id, memory.title, memory.imageURL);
+                                    }}
+                                    disabled={isDeleting}
+                                    activeOpacity={0.7}
+                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                    style={[
+                                      styles.deleteBtn,
+                                      {
+                                        backgroundColor: isDeleting
+                                          ? "rgba(168, 85, 247, 0.5)"
+                                          : "rgba(239, 68, 68, 0.95)",
+                                        opacity: isDeleting ? 0.6 : 1,
+                                      },
+                                    ]}
+                                  >
+                                    {isDeleting ? (
+                                      <Ionicons name="hourglass-outline" size={18} color="#fff" />
+                                    ) : (
+                                      <Ionicons name="trash-outline" size={18} color="#fff" />
+                                    )}
+                                  </TouchableOpacity>
+                                </View>
 
                                 {/* Card Content - Touchable for expand/collapse */}
                                 <TouchableOpacity
                                   activeOpacity={0.92}
                                   onPress={() => toggleExpand(memory.id)}
+                                  style={{ flex: 1 }}
                                   onPressIn={() => {
                                     // Scale down animation on press
                                     Animated.spring(anims.cardScale, {
@@ -1173,6 +1366,7 @@ const styles = StyleSheet.create({
   memoryItemWrapper: {
     position: "relative",
     marginBottom: 8,
+    zIndex: 1,
   },
   timelineDot: {
     position: "absolute",
@@ -1190,22 +1384,18 @@ const styles = StyleSheet.create({
   },
 
   deleteBtn: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 1000,
     shadowColor: "#ef4444",
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 12,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
+    shadowOpacity: 0.8,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 20,
+    borderWidth: 2.5,
+    borderColor: "rgba(255, 255, 255, 0.4)",
   },
 
   dateChipWrapper: {
@@ -1369,6 +1559,117 @@ const styles = StyleSheet.create({
   },
   expandText: {
     fontSize: 12,
+    fontWeight: "600",
+  },
+
+  /* Success Overlay Styles */
+  successOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  successCard: {
+    alignItems: "center",
+    maxWidth: 320,
+    width: "100%",
+  },
+  successIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  successSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  successButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 999,
+    minWidth: 160,
+  },
+  successButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  /* Confirmation Modal Styles */
+  confirmCard: {
+    alignItems: "center",
+    maxWidth: 320,
+    width: "100%",
+  },
+  confirmIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    marginBottom: 16,
+  },
+  confirmTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  confirmSubtitle: {
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 8,
+    paddingHorizontal: 8,
+  },
+  confirmWarning: {
+    fontSize: 13,
+    textAlign: "center",
+    marginBottom: 24,
+    opacity: 0.8,
+  },
+  confirmButtons: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelButton: {
+    borderWidth: 1.5,
+  },
+  deleteButton: {
+    shadowColor: "#ef4444",
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 8,
+  },
+  confirmButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
     fontWeight: "600",
   },
 });

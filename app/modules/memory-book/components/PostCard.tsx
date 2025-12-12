@@ -14,8 +14,13 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { incrementLikes } from "../utils/firebaseHelpers";
 import { saveMemory, unsaveMemory, isMemorySaved } from "../utils/saveHelpers";
+import { shareMemory, saveImageToGallery } from "../utils/shareHelpers";
+import { getSmartDate } from "../utils/dateHelpers";
 import type { Memory } from "../utils/memoryHelpers";
-import { getAuth } from "firebase/auth";
+import { auth } from "@/config/firebase";
+import ImageZoomViewer from "./ImageZoomViewer";
+import InteractiveButton from "./InteractiveButton";
+import { TOUCH_TARGET_SIZE } from "../utils/constants";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -31,10 +36,14 @@ type PostCardProps = {
 
 export default function PostCard({ memory, isDarkMode }: PostCardProps) {
   const router = useRouter();
+  const currentUser = auth.currentUser;
+  const isOwnPost = memory.userId === currentUser?.uid;
+
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(memory.likes || 0);
   const [isSaved, setIsSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showImageZoom, setShowImageZoom] = useState(false);
   const scaleAnim = useState(new Animated.Value(1))[0];
   const heartScale = useState(new Animated.Value(1))[0];
   const bookmarkScale = useState(new Animated.Value(1))[0];
@@ -42,7 +51,6 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
   // Check if memory is saved on mount
   React.useEffect(() => {
     const checkSaved = async () => {
-      const auth = getAuth();
       const user = auth.currentUser;
       if (user) {
         try {
@@ -160,20 +168,28 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
     });
   };
 
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const days = Math.floor(hours / 24);
+  const handleShare = async () => {
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    await shareMemory(memory.title, memory.description, memory.imageURL);
+  };
 
-    if (hours < 1) return "Just now";
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
+  const handleImagePress = () => {
+    if (memory.imageURL) {
+      setShowImageZoom(true);
+      if (Platform.OS === "ios") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } else {
+      handlePress();
+    }
+  };
+
+  const handleSaveImage = async () => {
+    if (memory.imageURL) {
+      await saveImageToGallery(memory.imageURL);
+    }
   };
 
   const emotionColor = memory.emotionColor || PRIMARY_PURPLE;
@@ -216,22 +232,54 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
               {memory.CreatedUser?.CreatedUserName || "Unknown User"}
             </Text>
             <Text style={[styles.timestamp, { color: colors.textSoft }]}>
-              {formatDate(memory.startDate)}
+              {getSmartDate(memory.startDate)}
             </Text>
           </View>
         </View>
-        <TouchableOpacity>
-          <Ionicons
-            name="ellipsis-horizontal"
-            size={20}
-            color={colors.textSoft}
+        <View style={styles.headerActions}>
+          {isOwnPost && (
+            <InteractiveButton
+              onPress={() => {
+                router.push({
+                  pathname: "/modules/memory-book/MemoryPostCreate",
+                  params: { editId: memory.id },
+                });
+              }}
+              icon="create-outline"
+              description="Edit this memory's title, description, and mood"
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={colors.textSoft}
+              style={styles.editButton}
+              accessibilityLabel="Edit memory"
+              accessibilityHint="Opens edit screen for this memory"
+            />
+          )}
+          <InteractiveButton
+            onPress={handleShare}
+            icon="share-outline"
+            description="Share this memory via email, messages, or social media"
+            variant="ghost"
+            size="sm"
+            isDarkMode={isDarkMode}
+            iconColor={colors.textSoft}
+            style={styles.shareButton}
+            accessibilityLabel="Share memory"
+            accessibilityHint="Shares this memory with other apps"
           />
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* Image */}
       {memory.imageURL && (
-        <TouchableOpacity onPress={handlePress} activeOpacity={0.95}>
+        <TouchableOpacity
+          onPress={handleImagePress}
+          activeOpacity={0.95}
+          accessibilityLabel="View image"
+          accessibilityRole="imagebutton"
+          accessibilityHint="Double tap to view full screen image"
+        >
           <Image source={{ uri: memory.imageURL }} style={styles.image} />
         </TouchableOpacity>
       )}
@@ -239,41 +287,54 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
       {/* Actions */}
       <View style={styles.actions}>
         <View style={styles.actionLeft}>
-          <TouchableOpacity onPress={handleLike} activeOpacity={0.7}>
-            <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-              <Ionicons
-                name={isLiked ? "heart" : "heart-outline"}
-                size={26}
-                color={isLiked ? "#ef4444" : colors.text}
-              />
-            </Animated.View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handlePress}
-            style={styles.actionButton}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="chatbubble-outline" size={24} color={colors.text} />
+          <InteractiveButton
+            onPress={handleLike}
+            icon={isLiked ? "heart" : "heart-outline"}
+            description={isLiked ? "Unlike this memory" : "Like this memory"}
+            variant="ghost"
+            size="sm"
+            isDarkMode={isDarkMode}
+            iconColor={isLiked ? "#ef4444" : colors.text}
+            iconSize={26}
+            style={{ minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }}
+            accessibilityLabel={isLiked ? "Unlike memory" : "Like memory"}
+            accessibilityHint={isLiked ? "Remove your like" : "Like this memory"}
+          />
+          <View style={{ position: "relative" }}>
+            <InteractiveButton
+              onPress={handlePress}
+              icon="chatbubble-outline"
+              description={`View ${memory.comments || 0} comments on this memory`}
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={colors.text}
+              iconSize={24}
+              style={[styles.actionButton, { minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }]}
+              accessibilityLabel="View comments"
+              accessibilityHint={`${memory.comments || 0} comments on this memory`}
+            />
             {memory.comments && memory.comments > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{memory.comments}</Text>
               </View>
             )}
-          </TouchableOpacity>
+          </View>
         </View>
-        <TouchableOpacity
+        <InteractiveButton
           onPress={handleSave}
-          activeOpacity={0.7}
+          icon={isSaved ? "bookmark" : "bookmark-outline"}
+          description={isSaved ? "Remove from saved memories" : "Save to your saved memories"}
+          variant="ghost"
+          size="sm"
+          isDarkMode={isDarkMode}
           disabled={saving}
-        >
-          <Animated.View style={{ transform: [{ scale: bookmarkScale }] }}>
-            <Ionicons
-              name={isSaved ? "bookmark" : "bookmark-outline"}
-              size={24}
-              color={isSaved ? PRIMARY_PURPLE : colors.text}
-            />
-          </Animated.View>
-        </TouchableOpacity>
+          iconColor={isSaved ? PRIMARY_PURPLE : colors.text}
+          iconSize={24}
+          style={{ minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }}
+          accessibilityLabel={isSaved ? "Remove from saved" : "Save memory"}
+          accessibilityHint={isSaved ? "Unsave this memory" : "Save this memory for later"}
+        />
       </View>
 
       {/* Likes */}
@@ -345,6 +406,14 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
           </View>
         </View>
       )}
+
+      {/* Image Zoom Viewer */}
+      <ImageZoomViewer
+        visible={showImageZoom}
+        imageURL={memory.imageURL || ""}
+        onClose={() => setShowImageZoom(false)}
+        onSave={handleSaveImage}
+      />
     </Animated.View>
   );
 }
@@ -366,6 +435,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     padding: 12,
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  editButton: {
+    minWidth: TOUCH_TARGET_SIZE,
+    minHeight: TOUCH_TARGET_SIZE,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  shareButton: {
+    minWidth: TOUCH_TARGET_SIZE,
+    minHeight: TOUCH_TARGET_SIZE,
+    justifyContent: "center",
+    alignItems: "center",
   },
   userInfo: {
     flexDirection: "row",
