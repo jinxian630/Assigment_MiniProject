@@ -1,6 +1,6 @@
 // app/modules/memory-book/MemoryPostCreate.tsx
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import {
   deleteObject,
 } from "firebase/storage";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { extractStoragePathFromURL } from "./utils/storageHelpers";
 
 import EmotionSelector, { MoodData } from "./EmotionSelector";
@@ -86,6 +87,7 @@ export default function MemoryPostCreate() {
   const [loadingMemory, setLoadingMemory] = useState(isEditMode);
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdDocId, setCreatedDocId] = useState<string | null>(null);
+  const uploadAbortController = useRef<AbortController | null>(null);
 
   const [moodData, setMoodData] = useState<MoodData>({
     energy: 50,
@@ -159,28 +161,85 @@ export default function MemoryPostCreate() {
     loadMemory();
   }, [editId]);
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      // Abort any ongoing uploads
+      if (uploadAbortController.current) {
+        uploadAbortController.current.abort();
+      }
+      // Reset loading state
+      setLoading(false);
+    };
+  }, []);
 
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false, // Disable native editing to avoid dark UI issues
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const selectedImage = result.assets[0];
+
+        // Optionally resize/crop the image to maintain aspect ratio
+        // This helps with consistency without forcing users through native cropping UI
+        try {
+          const manipulatedImage = await ImageManipulator.manipulateAsync(
+            selectedImage.uri,
+            [
+              {
+                resize: {
+                  width: 1200, // Max width to keep file size reasonable
+                },
+              },
+            ],
+            {
+              compress: 0.9,
+              format: ImageManipulator.SaveFormat.JPEG,
+            }
+          );
+          setImage(manipulatedImage.uri);
+        } catch (manipulateError) {
+          // If manipulation fails, use original image
+          console.warn(
+            "Image manipulation failed, using original:",
+            manipulateError
+          );
+          setImage(selectedImage.uri);
+        }
+      }
+    } catch (error: any) {
+      console.error("Error picking image:", error);
+      Alert.alert("Error", "Failed to pick image. Please try again.");
     }
   };
 
   const removeImage = () => setImage(null);
 
   const handlePublish = async () => {
-    if (!title.trim()) {
+    const trimmedTitle = title.trim();
+    const trimmedDescription = description.trim();
+
+    if (!trimmedTitle) {
       Alert.alert("Missing title", "Please enter a title for this memory.");
       return;
     }
-    if (!description.trim()) {
+    if (trimmedTitle.length > 100) {
+      Alert.alert("Title too long", "Title must be 100 characters or less.");
+      return;
+    }
+    if (!trimmedDescription) {
       Alert.alert("Missing story", "Please write something about this memory.");
+      return;
+    }
+    if (trimmedDescription.length > 2000) {
+      Alert.alert(
+        "Description too long",
+        "Description must be 2000 characters or less."
+      );
       return;
     }
     // Validate image requirement
@@ -213,10 +272,10 @@ export default function MemoryPostCreate() {
           }
 
           console.log("📤 Uploading image:", image.substring(0, 50) + "...");
-          
+
           // Handle image upload for both web and mobile
           let blob: Blob;
-          
+
           if (Platform.OS === "web") {
             // Web: use fetch directly
             const resp = await fetch(image);
@@ -248,7 +307,9 @@ export default function MemoryPostCreate() {
 
           // create unique id for Firestore image name
           const uniqueId =
-            Date.now().toString(16) + Math.random().toString(16) + "0".repeat(16);
+            Date.now().toString(16) +
+            Math.random().toString(16) +
+            "0".repeat(16);
           const guid = [
             uniqueId.substring(0, 8),
             uniqueId.substring(8, 12),
@@ -261,13 +322,18 @@ export default function MemoryPostCreate() {
           const snap = await uploadBytes(imageRef, blob);
           console.log("✅ Image uploaded successfully");
           downloadURL = await getDownloadURL(snap.ref);
-          console.log("✅ Download URL obtained:", downloadURL.substring(0, 50) + "...");
+          console.log(
+            "✅ Download URL obtained:",
+            downloadURL.substring(0, 50) + "..."
+          );
         } catch (imageError: any) {
           console.error("❌ Error uploading image:", imageError);
           setLoading(false);
           Alert.alert(
             "Image Upload Error",
-            `Failed to upload image: ${imageError.message || "Unknown error"}\n\nPlease try selecting the image again or check your internet connection.`
+            `Failed to upload image: ${
+              imageError.message || "Unknown error"
+            }\n\nPlease try selecting the image again or check your internet connection.`
           );
           return;
         }
@@ -280,11 +346,72 @@ export default function MemoryPostCreate() {
       if (voiceJournalData?.audioURI) {
         try {
           console.log("📤 Uploading voice recording...");
-          const response = await fetch(voiceJournalData.audioURI);
-          const blob = await response.blob();
-          
+          console.log("📁 Audio URI:", voiceJournalData.audioURI);
+          console.log("📊 Voice journal data:", voiceJournalData);
+
+          // Use expo-file-system to read the file (works with file:// URIs on mobile)
+          const fileUri = voiceJournalData.audioURI;
+          let fileData: Blob | Uint8Array;
+
+          if (Platform.OS === "web") {
+            // Web: use fetch
+            console.log("🌐 Using fetch for web platform");
+            const response = await fetch(fileUri);
+            if (!response.ok) {
+              throw new Error(
+                `Failed to fetch audio: ${response.status} ${response.statusText}`
+              );
+            }
+            fileData = await response.blob();
+            console.log("✅ Fetched audio blob, size:", fileData.size, "bytes");
+          } else {
+            // Mobile: use expo-file-system
+            console.log("📱 Using expo-file-system for mobile platform");
+            const FileSystem = require("expo-file-system");
+
+            // Check if file exists
+            const fileInfo = await FileSystem.getInfoAsync(fileUri);
+            console.log("📄 File info:", fileInfo);
+
+            if (!fileInfo.exists) {
+              throw new Error(`Audio file does not exist at: ${fileUri}`);
+            }
+
+            // Validate file size (max 10MB)
+            const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+            if (fileInfo.size && fileInfo.size > maxSizeBytes) {
+              throw new Error(
+                `Audio file is too large (${(
+                  fileInfo.size /
+                  1024 /
+                  1024
+                ).toFixed(2)}MB). Maximum size is 10MB.`
+              );
+            }
+
+            const base64 = await FileSystem.readAsStringAsync(fileUri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            console.log("✅ Read base64, length:", base64.length);
+
+            // Convert base64 to Uint8Array for Firebase Storage
+            const byteCharacters = atob(base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            fileData = new Uint8Array(byteNumbers);
+            console.log(
+              "✅ Converted to Uint8Array, size:",
+              fileData.length,
+              "bytes"
+            );
+          }
+
           const uniqueId =
-            Date.now().toString(16) + Math.random().toString(16) + "0".repeat(16);
+            Date.now().toString(16) +
+            Math.random().toString(16) +
+            "0".repeat(16);
           const guid = [
             uniqueId.substring(0, 8),
             uniqueId.substring(8, 12),
@@ -293,19 +420,36 @@ export default function MemoryPostCreate() {
           ].join("-");
 
           const audioRef = ref(storage, `MemoryPosts/Voice/${guid}.m4a`);
-          await uploadBytes(audioRef, blob);
+          console.log("📤 Uploading to Firebase Storage:", audioRef.fullPath);
+          await uploadBytes(audioRef, fileData);
           voiceAudioURL = await getDownloadURL(audioRef);
-          console.log("✅ Voice recording uploaded:", voiceAudioURL.substring(0, 50) + "...");
+          console.log(
+            "✅ Voice recording uploaded successfully:",
+            voiceAudioURL.substring(0, 50) + "..."
+          );
+          console.log("🔗 Full URL:", voiceAudioURL);
         } catch (audioError: any) {
           console.error("❌ Error uploading voice recording:", audioError);
+          console.error("❌ Error details:", {
+            message: audioError.message,
+            stack: audioError.stack,
+            audioURI: voiceJournalData.audioURI,
+            platform: Platform.OS,
+          });
+          Alert.alert(
+            "Upload Warning",
+            `Voice recording could not be uploaded: ${audioError.message}. Your memory will still be saved.`
+          );
           // Don't block publishing if voice upload fails
         }
+      } else {
+        console.log("ℹ️ No audioURI in voiceJournalData:", voiceJournalData);
       }
 
       // Prepare the data object
       const memoryData: any = {
-        title: title.trim(),
-        description: description.trim(),
+        title: trimmedTitle,
+        description: trimmedDescription,
         imageURL: downloadURL,
         emotionSpectrum: {
           energy: moodData.energy,
@@ -317,17 +461,51 @@ export default function MemoryPostCreate() {
         updatedDate: now,
       };
 
-      // Add voice journal data if available
+      // Add voice journal data if available (only include defined values)
       if (voiceJournalData) {
-        memoryData.voiceJournal = {
-          emoji: voiceJournalData.emoji,
-          feeling: voiceJournalData.feeling,
-          prompt: voiceJournalData.prompt,
-          audioURL: voiceAudioURL,
-          duration: voiceJournalData.duration,
-          moodTag: voiceJournalData.moodTag,
-          timestamp: voiceJournalData.timestamp,
-        };
+        console.log("📝 Preparing voice journal data for Firestore...");
+        const voiceJournal: any = {};
+        if (voiceJournalData.emoji) voiceJournal.emoji = voiceJournalData.emoji;
+        if (voiceJournalData.feeling)
+          voiceJournal.feeling = voiceJournalData.feeling;
+        if (voiceJournalData.prompt)
+          voiceJournal.prompt = voiceJournalData.prompt;
+        if (voiceAudioURL) {
+          voiceJournal.audioURL = voiceAudioURL;
+          console.log(
+            "✅ Added audioURL to voiceJournal:",
+            voiceAudioURL.substring(0, 50) + "..."
+          );
+        } else {
+          console.warn(
+            "⚠️ No voiceAudioURL - upload may have failed or audioURI was missing"
+          );
+        }
+        if (
+          voiceJournalData.duration !== undefined &&
+          voiceJournalData.duration !== null
+        ) {
+          voiceJournal.duration = voiceJournalData.duration;
+        }
+        if (voiceJournalData.moodTag)
+          voiceJournal.moodTag = voiceJournalData.moodTag;
+        if (voiceJournalData.timestamp)
+          voiceJournal.timestamp = voiceJournalData.timestamp;
+
+        console.log("📋 Voice journal object:", voiceJournal);
+        console.log("📊 Voice journal keys:", Object.keys(voiceJournal));
+
+        // Only add voiceJournal if it has at least one field
+        if (Object.keys(voiceJournal).length > 0) {
+          memoryData.voiceJournal = voiceJournal;
+          console.log("✅ Added voiceJournal to memoryData");
+        } else {
+          console.warn(
+            "⚠️ Voice journal object is empty, not adding to memoryData"
+          );
+        }
+      } else {
+        console.log("ℹ️ No voiceJournalData to add");
       }
 
       // Only add these fields when creating new memory
@@ -349,7 +527,17 @@ export default function MemoryPostCreate() {
           ? "📝 Attempting to update memory..."
           : "📝 Attempting to save memory to Firestore..."
       );
-      console.log("📦 Data:", JSON.stringify(memoryData, null, 2));
+      console.log(
+        "📦 Final memoryData before saving:",
+        JSON.stringify(memoryData, null, 2)
+      );
+      console.log("🔍 Voice journal in memoryData:", memoryData.voiceJournal);
+      if (memoryData.voiceJournal) {
+        console.log(
+          "🎙️ Voice journal audioURL:",
+          memoryData.voiceJournal.audioURL
+        );
+      }
       console.log("👤 User ID:", user.uid);
       console.log("📚 Collection: MemoryPosts");
 
@@ -417,43 +605,10 @@ export default function MemoryPostCreate() {
         }
       }
 
-      // Show visual success indicator first
+      // Show visual success indicator (dark purple overlay only, no white alert)
       setCreatedDocId(docRef.id);
       setShowSuccess(true);
       setLoading(false);
-
-      // Show success alert with document ID (user requested this)
-      // Use setTimeout to ensure UI is ready and alert displays properly
-      setTimeout(() => {
-        console.log("🎉 Showing success alert with doc ID:", docRef.id);
-        Alert.alert(
-          "✅ Success!",
-          isEditMode
-            ? `Memory updated successfully!\n\nDocument ID: ${docRef.id}`
-            : `Memory post published successfully!\n\nDocument ID: ${docRef.id}\nProject: ${db.app.options.projectId}`,
-          [
-            {
-              text: "View Timeline",
-              onPress: () => {
-                setShowSuccess(false);
-                router.push("/modules/memory-book/MemoryTimeline");
-              },
-            },
-            {
-              text: isEditMode ? "OK" : "Create Another",
-              style: "cancel",
-              onPress: () => {
-                setShowSuccess(false);
-                setCreatedDocId(null);
-                if (isEditMode) {
-                  router.back();
-                }
-              },
-            },
-          ],
-          { cancelable: false }
-        );
-      }, 100);
 
       // Reset form
       setTitle("");
@@ -773,6 +928,7 @@ export default function MemoryPostCreate() {
                   placeholder="eg. Picnic at KLCC park"
                   value={title}
                   onChangeText={setTitle}
+                  maxLength={100}
                   style={[
                     styles.textInput,
                     {
@@ -783,6 +939,13 @@ export default function MemoryPostCreate() {
                   ]}
                   placeholderTextColor={colors.textSoft}
                 />
+                {title.length > 80 && (
+                  <Text
+                    style={[styles.characterCount, { color: colors.textSoft }]}
+                  >
+                    {title.length}/100 characters
+                  </Text>
+                )}
 
                 {/* Story */}
                 <Text style={[styles.fieldLabel, glowText, { marginTop: 14 }]}>
@@ -798,6 +961,7 @@ export default function MemoryPostCreate() {
                   onChangeText={setDescription}
                   multiline
                   numberOfLines={6}
+                  maxLength={2000}
                   style={[
                     styles.textArea,
                     {
@@ -808,6 +972,13 @@ export default function MemoryPostCreate() {
                   ]}
                   placeholderTextColor={colors.textSoft}
                 />
+                {description.length > 1800 && (
+                  <Text
+                    style={[styles.characterCount, { color: colors.textSoft }]}
+                  >
+                    {description.length}/2000 characters
+                  </Text>
+                )}
               </View>
 
               {/* EMOTIONS */}
@@ -1223,5 +1394,10 @@ const styles = StyleSheet.create({
   },
   voiceJournalDuration: {
     fontSize: 12,
+  },
+  characterCount: {
+    fontSize: 11,
+    marginTop: 4,
+    textAlign: "right",
   },
 });

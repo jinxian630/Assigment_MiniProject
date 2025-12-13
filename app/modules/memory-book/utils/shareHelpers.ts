@@ -25,13 +25,18 @@ export async function shareMemory(
         const isAvailable = await Sharing.isAvailableAsync();
         if (isAvailable) {
           // Download image to local cache
-          const fileUri = `${FileSystem.cacheDirectory}memory_${Date.now()}.jpg`;
+          const fileUri = `${
+            FileSystem.cacheDirectory
+          }memory_${Date.now()}.jpg`;
           console.log("📥 Downloading image for sharing...");
-          const downloadResult = await FileSystem.downloadAsync(imageURL, fileUri);
+          const downloadResult = await FileSystem.downloadAsync(
+            imageURL,
+            fileUri
+          );
 
           if (downloadResult.status === 200) {
             console.log("✅ Image downloaded, sharing image file directly...");
-            
+
             // Share the image file directly using expo-sharing
             // This will show the actual image in apps like Messenger, not a link
             await Sharing.shareAsync(downloadResult.uri, {
@@ -42,7 +47,9 @@ export async function shareMemory(
             console.log("✅ Image file shared successfully");
             return;
           } else {
-            throw new Error(`Download failed with status: ${downloadResult.status}`);
+            throw new Error(
+              `Download failed with status: ${downloadResult.status}`
+            );
           }
         }
       } catch (imageError: any) {
@@ -76,31 +83,59 @@ export async function saveImageToGallery(imageURL: string): Promise<void> {
       return;
     }
 
-    if (!Sharing) {
-      Alert.alert("Not Available", "Sharing is not available on this device.");
+    // Use expo-media-library for direct gallery save
+    let MediaLibrary: any = null;
+    try {
+      MediaLibrary = require("expo-media-library");
+    } catch (e) {
+      console.log("expo-media-library not available");
+      Alert.alert(
+        "Error",
+        "Media library is not available. Please install expo-media-library."
+      );
       return;
     }
 
-    const isAvailable = await Sharing.isAvailableAsync();
-    if (!isAvailable) {
-      Alert.alert("Not Available", "Sharing is not available on this device.");
+    // Request permissions
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Required",
+        "Please grant photo library access to save images to your gallery."
+      );
       return;
     }
 
+    // Download image to local cache
     const fileUri = `${FileSystem.cacheDirectory}memory_${Date.now()}.jpg`;
+    console.log("📥 Downloading image for saving...");
     const downloadResult = await FileSystem.downloadAsync(imageURL, fileUri);
 
     if (downloadResult.status === 200) {
-      await Sharing.shareAsync(downloadResult.uri, {
-        mimeType: "image/jpeg",
-        dialogTitle: "Save Image",
-        UTI: "public.jpeg",
-      });
+      console.log("✅ Image downloaded, saving to gallery...");
+
+      // Save directly to gallery
+      const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
+
+      // Try to get existing album, or create new one
+      let album = await MediaLibrary.getAlbumAsync("Memories");
+      if (!album) {
+        album = await MediaLibrary.createAlbumAsync("Memories", asset, false);
+      } else {
+        // Add asset to existing album
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      }
+
+      console.log("✅ Image saved to gallery successfully");
+      Alert.alert("Success", "Image saved to your gallery!");
+    } else {
+      throw new Error(`Download failed with status: ${downloadResult.status}`);
     }
   } catch (error: any) {
     console.error("Error saving image:", error);
-    Alert.alert("Error", "Failed to save image. Please try again.");
+    Alert.alert(
+      "Error",
+      error.message || "Failed to save image. Please try again."
+    );
   }
 }
-
-

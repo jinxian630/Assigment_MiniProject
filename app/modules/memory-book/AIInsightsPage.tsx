@@ -34,7 +34,7 @@ type TimeRange = "7D" | "30D" | "90D";
 
 export default function AIInsightsPage() {
   const router = useRouter();
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, toggleTheme } = useTheme();
   const { user } = useAuth();
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -330,7 +330,22 @@ export default function AIInsightsPage() {
                   AI Insights
                 </Text>
               </View>
-              <View style={{ width: 40 }} />
+              <InteractiveButton
+                onPress={toggleTheme}
+                icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+                description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+                variant="ghost"
+                size="sm"
+                isDarkMode={isDarkMode}
+                iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+                iconSize={Platform.OS === "ios" ? 24 : 22}
+                noBorder={true}
+                style={styles.themeToggle}
+                accessibilityLabel="Toggle theme"
+                accessibilityHint={`Changes to ${
+                  isDarkMode ? "light" : "dark"
+                } mode`}
+              />
             </View>
             <View style={styles.center}>
               <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
@@ -408,7 +423,22 @@ export default function AIInsightsPage() {
                 AI Insights
               </Text>
             </View>
-            <View style={{ width: 40 }} />
+            <InteractiveButton
+              onPress={toggleTheme}
+              icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+              description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
+              noBorder={true}
+              style={styles.themeToggle}
+              accessibilityLabel="Toggle theme"
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
+            />
           </View>
 
           {filteredMemories.length === 0 ? (
@@ -486,7 +516,13 @@ export default function AIInsightsPage() {
                   ]}
                 >
                   <Text style={[styles.heroTitle, { color: colors.text }]}>
-                    This {timeRange} in 10 seconds
+                    This{" "}
+                    {timeRange === "7D"
+                      ? "Week"
+                      : timeRange === "30D"
+                      ? "Month"
+                      : "Quarter"}{" "}
+                    in 10 seconds
                   </Text>
                   <Text
                     style={[
@@ -1005,6 +1041,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
+  },
+  themeToggle: {
+    minWidth: Platform.OS === "ios" ? 40 : 38,
+    minHeight: Platform.OS === "ios" ? 40 : 38,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerCenter: {
     flexDirection: "row",

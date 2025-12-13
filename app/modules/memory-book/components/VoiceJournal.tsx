@@ -8,11 +8,13 @@ import {
   Alert,
   ActivityIndicator,
   Animated,
+  AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import { useTheme } from "@/hooks/useTheme";
+import { useRouter } from "expo-router";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -135,8 +137,11 @@ export default function VoiceJournal({
   const [selectedMoodTag, setSelectedMoodTag] = useState<string | null>(null);
   const [mode, setMode] = useState<"emoji" | "mood" | "recording">("emoji");
   const [loading, setLoading] = useState(false);
+  const [playbackSound, setPlaybackSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const durationInterval = useRef<NodeJS.Timeout | null>(null);
+  const durationCounter = useRef<number>(0);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const colors = {
@@ -150,14 +155,31 @@ export default function VoiceJournal({
 
   useEffect(() => {
     return () => {
+      // Cleanup: stop recording and clear interval
       if (recording) {
-        stopRecording();
+        recording
+          .getStatusAsync()
+          .then((status) => {
+            if (!status.isDoneRecording) {
+              // Only stop if still recording
+              recording.stopAndUnloadAsync().catch((err: any) => {
+                // Silently ignore if already unloaded
+                if (!err.message?.includes("already been unloaded")) {
+                  console.error("Error cleaning up recording:", err);
+                }
+              });
+            }
+          })
+          .catch(() => {
+            // If getStatusAsync fails, recording is likely already unloaded
+          });
       }
       if (durationInterval.current) {
         clearInterval(durationInterval.current);
+        durationInterval.current = null;
       }
     };
-  }, []);
+  }, [recording]);
 
   useEffect(() => {
     if (isRecording) {
@@ -201,6 +223,28 @@ export default function VoiceJournal({
 
   const startRecording = async () => {
     try {
+      // Stop any playback before starting new recording
+      if (playbackSound) {
+        await stopPlayback();
+      }
+
+      // Clean up any existing recording first
+      if (recording) {
+        try {
+          const status = await recording.getStatusAsync();
+          if (!status.isDoneRecording) {
+            await recording.stopAndUnloadAsync();
+          }
+        } catch (cleanupError: any) {
+          // Ignore cleanup errors - recording might already be unloaded
+          console.log(
+            "Cleanup warning (expected if already unloaded):",
+            cleanupError.message
+          );
+        }
+        setRecording(null);
+      }
+
       // Request permissions
       const { status } = await Audio.requestPermissionsAsync();
       if (status !== "granted") {
@@ -211,11 +255,15 @@ export default function VoiceJournal({
         return;
       }
 
-      // Configure audio mode
+      // Configure audio mode - ensure recording is enabled
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
       });
+
+      // Small delay to ensure previous recording is fully cleaned up
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Start recording
       const { recording: newRecording } = await Audio.Recording.createAsync(
@@ -225,55 +273,185 @@ export default function VoiceJournal({
       setRecording(newRecording);
       setIsRecording(true);
       setRecordingDuration(0);
+      durationCounter.current = 0;
 
-      // Start duration counter
+      // Start duration counter - use ref to persist counter value
       durationInterval.current = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
-      }, 1000);
+        durationCounter.current += 1;
+        setRecordingDuration(durationCounter.current);
+        console.log("⏱️ Duration:", durationCounter.current, "seconds");
+
+        // Max duration: 5 minutes (300 seconds)
+        if (durationCounter.current >= 300) {
+          Alert.alert(
+            "Maximum Duration Reached",
+            "You've reached the 5-minute recording limit. The recording will be saved automatically.",
+            [{ text: "OK" }]
+          );
+          stopRecording();
+        }
+      }, 1000) as any; // Update every second
     } catch (error: any) {
       console.error("Failed to start recording:", error);
-      Alert.alert("Error", "Failed to start recording. Please try again.");
+
+      // Clear recording state on error
+      setRecording(null);
+      setIsRecording(false);
+
+      let errorMessage = "Failed to start recording. Please try again.";
+      if (error.message?.includes("Only one Recording object")) {
+        errorMessage =
+          "Please wait a moment and try again. Another recording is being cleaned up.";
+      }
+
+      Alert.alert("Error", errorMessage);
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
+    if (!recording) {
+      console.log("❌ No recording to stop");
+      return;
+    }
 
     try {
+      console.log("🛑 Stopping recording...");
       setIsRecording(false);
+
+      // Stop the interval first to prevent further updates
       if (durationInterval.current) {
         clearInterval(durationInterval.current);
         durationInterval.current = null;
       }
 
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecordingURI(uri || null);
+      // Get status to get actual duration from recording (more accurate)
+      const status = await recording.getStatusAsync();
+      let actualDuration = durationCounter.current;
+
+      // Get actual duration from recording status if available
+      // RecordingStatus has canRecord, isDoneRecording, durationMillis
+      if (
+        status.durationMillis !== undefined &&
+        status.durationMillis !== null
+      ) {
+        actualDuration = Math.floor(status.durationMillis / 1000);
+        console.log(
+          "⏱️ Actual duration from status:",
+          actualDuration,
+          "seconds"
+        );
+        setRecordingDuration(actualDuration);
+        durationCounter.current = actualDuration;
+      } else {
+        console.log("⏱️ Using counter duration:", actualDuration, "seconds");
+      }
+
+      // Stop the recording first - URI is available after stopping
+      let uri: string | null = null;
+      if (!status.isDoneRecording) {
+        console.log("🛑 Stopping and unloading recording...");
+        await recording.stopAndUnloadAsync();
+        // Get URI AFTER stopping - this is when it becomes available
+        uri = recording.getURI();
+        console.log("📁 Recording URI after stop:", uri);
+      } else {
+        console.log("🛑 Recording already stopped");
+        uri = recording.getURI();
+        console.log("📁 Recording URI:", uri);
+      }
+
+      setRecordingURI(uri);
       setRecording(null);
 
+      console.log(
+        "✅ Recording stopped. URI:",
+        uri,
+        "Duration:",
+        actualDuration
+      );
+
       if (uri && onRecordingComplete) {
+        console.log("📤 Calling onRecordingComplete with:", {
+          audioURI: uri,
+          duration: actualDuration,
+          emoji: selectedEmoji,
+          feeling: selectedFeeling,
+        });
         onRecordingComplete({
           emoji: selectedEmoji || undefined,
           feeling: selectedFeeling || undefined,
           prompt: prompt || undefined,
           audioURI: uri,
-          duration: recordingDuration,
+          duration: actualDuration,
           moodTag: selectedMoodTag || undefined,
           timestamp: Date.now(),
+        });
+      } else {
+        console.warn("⚠️ No URI or callback:", {
+          uri,
+          hasCallback: !!onRecordingComplete,
         });
       }
     } catch (error: any) {
       console.error("Failed to stop recording:", error);
-      Alert.alert("Error", "Failed to stop recording.");
+      // If recording is already unloaded, that's okay - just get the URI if we can
+      if (recording) {
+        try {
+          const uri = recording.getURI();
+          if (uri) {
+            setRecordingURI(uri);
+            setRecording(null);
+            if (onRecordingComplete) {
+              onRecordingComplete({
+                emoji: selectedEmoji || undefined,
+                feeling: selectedFeeling || undefined,
+                prompt: prompt || undefined,
+                audioURI: uri,
+                duration: recordingDuration,
+                moodTag: selectedMoodTag || undefined,
+                timestamp: Date.now(),
+              });
+            }
+          }
+        } catch {
+          // If we can't get URI either, just clear the recording
+          setRecording(null);
+        }
+      }
+      if (!error.message?.includes("already been unloaded")) {
+        Alert.alert("Error", "Failed to stop recording.");
+      }
     }
   };
 
-  const reset = () => {
+  const reset = async () => {
+    // Stop and clean up any active recording
+    if (recording) {
+      try {
+        const status = await recording.getStatusAsync();
+        if (!status.isDoneRecording) {
+          await recording.stopAndUnloadAsync();
+        }
+      } catch (error: any) {
+        // Ignore errors - recording might already be unloaded
+        console.log("Reset cleanup warning:", error.message);
+      }
+      setRecording(null);
+    }
+
+    // Clear interval
+    if (durationInterval.current) {
+      clearInterval(durationInterval.current);
+      durationInterval.current = null;
+    }
+
+    // Reset state
     setSelectedEmoji(null);
     setSelectedFeeling(null);
     setPrompt(null);
     setRecordingURI(null);
     setSelectedMoodTag(null);
+    setIsRecording(false);
     setMode("emoji");
     setRecordingDuration(0);
   };
@@ -283,6 +461,69 @@ export default function VoiceJournal({
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  const playRecording = async () => {
+    if (!recordingURI) return;
+
+    try {
+      // Stop any existing playback
+      if (playbackSound) {
+        await playbackSound.unloadAsync();
+        setPlaybackSound(null);
+        setIsPlaying(false);
+      }
+
+      // Configure audio mode for playback
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
+      // Load and play the recording
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: recordingURI },
+        { shouldPlay: true }
+      );
+
+      setPlaybackSound(sound);
+
+      // Set up status listener
+      // Note: setOnPlaybackStatusUpdate doesn't return a subscription object
+      // We'll handle cleanup by unsetting the callback when needed
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded) {
+          setIsPlaying(status.isPlaying);
+          if (status.didJustFinish) {
+            setIsPlaying(false);
+            sound.unloadAsync();
+            setPlaybackSound(null);
+          }
+        }
+      });
+    } catch (error: any) {
+      console.error("Error playing recording:", error);
+      Alert.alert("Error", "Could not play recording. Please try again.");
+    }
+  };
+
+  const stopPlayback = async () => {
+    if (playbackSound) {
+      await playbackSound.unloadAsync();
+      setPlaybackSound(null);
+      setIsPlaying(false);
+    }
+  };
+
+  // Cleanup playback on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackSound) {
+        // Unset status update listener before unloading
+        playbackSound.setOnPlaybackStatusUpdate(null);
+        playbackSound.unloadAsync().catch(console.error);
+      }
+    };
+  }, [playbackSound]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surface }]}>
@@ -352,7 +593,14 @@ export default function VoiceJournal({
       {mode === "recording" && (
         <View>
           {prompt && (
-            <View style={styles.promptContainer}>
+            <View
+              style={[
+                styles.promptContainer,
+                {
+                  backgroundColor: isDarkMode ? "#1E293B" : "#F3F4F6",
+                },
+              ]}
+            >
               <Text style={[styles.promptLabel, { color: colors.textSoft }]}>
                 Question:
               </Text>
@@ -417,6 +665,26 @@ export default function VoiceJournal({
               <Text style={[styles.durationText, { color: colors.textSoft }]}>
                 Duration: {formatDuration(recordingDuration)}
               </Text>
+
+              {/* Playback Controls */}
+              <TouchableOpacity
+                onPress={isPlaying ? stopPlayback : playRecording}
+                style={[
+                  styles.playbackButton,
+                  {
+                    backgroundColor: isPlaying ? "#EF4444" : PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={isPlaying ? "stop" : "play"}
+                  size={24}
+                  color="#fff"
+                />
+                <Text style={styles.playbackButtonText}>
+                  {isPlaying ? "Stop Playback" : "Play Recording"}
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -437,19 +705,42 @@ export default function VoiceJournal({
             </TouchableOpacity>
             {recordingURI && (
               <TouchableOpacity
-                onPress={() => {
+                onPress={async () => {
+                  // Get actual duration - use the saved recordingDuration state
+                  // (it should already be set correctly from stopRecording)
+                  let finalDuration = recordingDuration;
+
+                  // If duration is still 0, try to get it from the recording if still available
+                  if (finalDuration === 0 && recording) {
+                    try {
+                      const status = await recording.getStatusAsync();
+                      if (
+                        status.durationMillis !== undefined &&
+                        status.durationMillis !== null
+                      ) {
+                        finalDuration = Math.floor(
+                          status.durationMillis / 1000
+                        );
+                      }
+                    } catch (error) {
+                      // Use current recordingDuration if we can't get status
+                      console.log("Could not get recording duration:", error);
+                    }
+                  }
+
                   if (onRecordingComplete) {
                     onRecordingComplete({
                       emoji: selectedEmoji || undefined,
                       feeling: selectedFeeling || undefined,
                       prompt: prompt || undefined,
                       audioURI: recordingURI,
-                      duration: recordingDuration,
+                      duration:
+                        finalDuration > 0 ? finalDuration : recordingDuration,
                       moodTag: selectedMoodTag || undefined,
                       timestamp: Date.now(),
                     });
                   }
-                  reset();
+                  await reset();
                 }}
                 style={[
                   styles.actionButton,
@@ -458,7 +749,9 @@ export default function VoiceJournal({
                   },
                 ]}
               >
-                <Text style={styles.actionButtonTextWhite}>Save & Continue</Text>
+                <Text style={styles.actionButtonTextWhite}>
+                  Save & Continue
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -537,7 +830,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: "#1E293B",
+    // backgroundColor is set dynamically based on theme
   },
   promptLabel: {
     fontSize: 12,
@@ -647,5 +940,23 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
   },
+  playbackButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    gap: 8,
+    marginTop: 16,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  playbackButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 });
-

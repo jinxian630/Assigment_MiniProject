@@ -64,6 +64,7 @@ export default function UserSearch() {
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
 
   // Animation refs
@@ -136,7 +137,8 @@ export default function UserSearch() {
   }, []);
 
   useEffect(() => {
-    const usersRef = collection(db, "Users");
+    // Use lowercase "users" (correct collection name per firestore service and rules)
+    const usersRef = collection(db, "users");
 
     const unsub = onSnapshot(
       usersRef,
@@ -145,12 +147,16 @@ export default function UserSearch() {
         snapshot.forEach((doc) => {
           list.push({ id: doc.id, ...(doc.data() as any) });
         });
+        console.log("UserSearch: Loaded", list.length, "users");
         setUsers(list);
         setLoading(false);
       },
       (err) => {
-        console.log("UserSearch error:", err);
+        console.error("UserSearch error:", err);
         setLoading(false);
+        setError(
+          err.message || "Failed to load users. Please check your connection."
+        );
       }
     );
 
@@ -251,11 +257,13 @@ export default function UserSearch() {
             size="sm"
             isDarkMode={isDarkMode}
             iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
-            iconSize={Platform.OS === "ios" ? 24 : 22}
+            iconSize={Platform.OS === "ios" ? 28 : 26}
             style={styles.themeButton}
             noBorder={true}
             accessibilityLabel="Toggle theme"
-            accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
+            accessibilityHint={`Changes to ${
+              isDarkMode ? "light" : "dark"
+            } mode`}
           />
         </View>
 
@@ -321,6 +329,22 @@ export default function UserSearch() {
             <ActivityIndicator size="large" color={colors.accent} />
             <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
               Loading users...
+            </Text>
+          </View>
+        ) : error ? (
+          <View style={styles.centerContainer}>
+            <Ionicons
+              name="alert-circle"
+              size={48}
+              color={colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.loadingText,
+                { color: colors.textSecondary, marginTop: 16 },
+              ]}
+            >
+              {error}
             </Text>
           </View>
         ) : (
@@ -447,23 +471,19 @@ export default function UserSearch() {
                           }),
                           {
                             backgroundColor: colors.card,
-                            shadowOpacity: cardGlow.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: isDarkMode
-                                ? [0.7, 0.95]
-                                : [0.4, 0.6],
-                            }),
-                            shadowRadius: cardGlow.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [20, 30],
-                            }),
+                            // Removed shadow animations to avoid conflict with native driver
+                            // Using static shadow values instead
+                            shadowOpacity: isDarkMode ? 0.8 : 0.5,
+                            shadowRadius: 25,
                             transform: [{ scale: scaleAnim }],
                           },
                         ]}
                       >
                         <View style={styles.userCardContent}>
                           {/* Avatar */}
-                          {user.photoURL ? (
+                          {user.photoURL &&
+                          user.photoURL !== "-" &&
+                          user.photoURL.trim() !== "" ? (
                             <Image
                               source={{ uri: user.photoURL }}
                               style={[
@@ -568,8 +588,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   themeButton: {
-    width: 40,
-    height: 40,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
     alignItems: "center",
     justifyContent: "center",
   },

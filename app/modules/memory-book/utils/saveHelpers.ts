@@ -59,6 +59,9 @@ export function subscribeToSavedPosts(
   });
 }
 
+// Track ongoing save operations to prevent duplicates
+const savingOperations = new Set<string>();
+
 /**
  * Save a memory post
  */
@@ -69,36 +72,62 @@ export async function saveMemory(memoryId: string): Promise<void> {
     throw new Error("User must be logged in to save posts");
   }
 
-  const savesRef = collection(db, "SavedPosts");
+  // Create a unique key for this save operation
+  const operationKey = `${user.uid}_${memoryId}`;
 
-  // Check if already saved using a query
-  const checkQuery = query(
-    savesRef,
-    where("memoryId", "==", memoryId),
-    where("userId", "==", user.uid)
-  );
-
-  // Use getDocs to check if already saved
-  const existingDocs = await getDocs(checkQuery);
-
-  if (!existingDocs.empty) {
-    // Already saved
+  // Prevent duplicate simultaneous saves
+  if (savingOperations.has(operationKey)) {
+    console.log("Save operation already in progress for this memory");
     return;
   }
 
-  // Add to SavedPosts collection
-  await addDoc(savesRef, {
-    userId: user.uid,
-    memoryId: memoryId,
-    savedAt: Date.now(),
-  });
+  savingOperations.add(operationKey);
 
-  // Increment save count on the memory post
-  const memoryRef = doc(db, "MemoryPosts", memoryId);
-  await updateDoc(memoryRef, {
-    saves: increment(1),
-    savesCount: increment(1),
-  });
+  try {
+    const savesRef = collection(db, "SavedPosts");
+
+    // Check if already saved using a query
+    const checkQuery = query(
+      savesRef,
+      where("memoryId", "==", memoryId),
+      where("userId", "==", user.uid)
+    );
+
+    // Use getDocs to check if already saved
+    const existingDocs = await getDocs(checkQuery);
+
+    if (!existingDocs.empty) {
+      // Already saved - remove duplicates if any exist
+      if (existingDocs.docs.length > 1) {
+        console.log(
+          `Found ${existingDocs.docs.length} duplicate saves, cleaning up...`
+        );
+        // Keep the first one, delete the rest
+        const deletePromises = existingDocs.docs
+          .slice(1)
+          .map((docSnap) => deleteDoc(docSnap.ref));
+        await Promise.all(deletePromises);
+      }
+      return;
+    }
+
+    // Add to SavedPosts collection
+    await addDoc(savesRef, {
+      userId: user.uid,
+      memoryId: memoryId,
+      savedAt: Date.now(),
+    });
+
+    // Increment save count on the memory post
+    const memoryRef = doc(db, "MemoryPosts", memoryId);
+    await updateDoc(memoryRef, {
+      saves: increment(1),
+      savesCount: increment(1),
+    });
+  } finally {
+    // Remove from ongoing operations
+    savingOperations.delete(operationKey);
+  }
 }
 
 /**

@@ -222,7 +222,9 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
             accessibilityRole="button"
             accessibilityHint="Opens memory creation screen"
           >
-            <Ionicons name="add" size={Platform.OS === "ios" ? 28 : 26} color="#FFFFFF" />
+            <View style={{ width: "100%", height: "100%", justifyContent: "center", alignItems: "center" }}>
+              <Ionicons name="add" size={Platform.OS === "ios" ? 28 : 26} color="#FFFFFF" />
+            </View>
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -296,11 +298,12 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: Platform.OS === "ios" ? -30 : -28,
     left: "50%",
-    marginLeft: -28, // Half of the width (56/2) for perfect centering
+    transform: [{ translateX: -18 }], // Adjusted to move button more to the right (less negative = more right)
     zIndex: 10,
     elevation: 10,
     width: 56,
     alignItems: "center",
+    justifyContent: "center",
   },
   floatingAddOuter: {
     width: 56,
@@ -326,6 +329,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 20,
     zIndex: 400,
+    // Ensure icon is perfectly centered
+    padding: 0,
+    margin: 0,
   },
   bottomBarItem: {
     flex: 1,

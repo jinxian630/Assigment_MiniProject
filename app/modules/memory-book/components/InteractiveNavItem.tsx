@@ -148,9 +148,7 @@ export default function InteractiveNavItem({
             style={[
               styles.iconWrapper,
               {
-                backgroundColor: isActive
-                  ? activeColor + "22"
-                  : "transparent",
+                backgroundColor: isActive ? activeColor + "22" : "transparent",
                 shadowColor: activeColor,
                 shadowOpacity: glowOpacity,
                 shadowRadius: glowRadius,
@@ -180,40 +178,46 @@ export default function InteractiveNavItem({
       </Animated.View>
 
       {/* Tooltip */}
-      {description && typeof description === "string" && showTooltip && Platform.OS === "web" && (
-        <View style={styles.tooltip} pointerEvents="none">
-          <Animated.View
-            style={[
-              {
-                opacity: tooltipOpacity,
-                backgroundColor: isDarkMode ? "#1F2937" : "#0F172A",
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 8,
-                minWidth: 120,
-                maxWidth: 200,
-              },
-            ]}
-          >
-            <Text
+      {description &&
+        typeof description === "string" &&
+        showTooltip &&
+        Platform.OS === "web" && (
+          <View style={styles.tooltip} pointerEvents="none">
+            <Animated.View
               style={[
-                styles.tooltipText,
-                { color: isDarkMode ? "#E5E7EB" : "#FFFFFF" },
+                {
+                  opacity: tooltipOpacity,
+                  backgroundColor: isDarkMode ? "#1F2937" : "#0F172A",
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  minWidth: 120,
+                  maxWidth: 200,
+                },
               ]}
+              // Ensure no layout properties are animated
+              collapsable={false}
             >
-              {description}
-            </Text>
-          </Animated.View>
-          <View
-            style={[
-              styles.tooltipArrow,
-              {
-                borderTopColor: isDarkMode ? "#1F2937" : "#0F172A",
-              },
-            ]}
-          />
-        </View>
-      )}
+              <Text
+                style={[
+                  styles.tooltipText,
+                  { color: isDarkMode ? "#E5E7EB" : "#FFFFFF" },
+                ]}
+              >
+                {description}
+              </Text>
+            </Animated.View>
+            <View
+              style={[
+                styles.tooltipArrow,
+                {
+                  borderTopColor: isDarkMode ? "#1F2937" : "#0F172A",
+                },
+              ]}
+              pointerEvents="none"
+            />
+          </View>
+        )}
     </View>
   );
 }
@@ -252,8 +256,7 @@ const styles = StyleSheet.create({
   tooltip: {
     position: "absolute",
     bottom: "100%",
-    left: 0,
-    right: 0,
+    alignSelf: "center",
     marginBottom: 4,
     zIndex: 1000,
     shadowColor: "#000",
@@ -282,4 +285,3 @@ const styles = StyleSheet.create({
     borderRightColor: "transparent",
   },
 });
-

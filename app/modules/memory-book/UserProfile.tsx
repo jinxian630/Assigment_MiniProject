@@ -124,19 +124,22 @@ export default function UserProfile() {
 
   const [user, setUser] = useState<User | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
-  const [postsWithComments, setPostsWithComments] = useState<PostWithComments[]>([]);
+  const [postsWithComments, setPostsWithComments] = useState<
+    PostWithComments[]
+  >([]);
   const [loadingUser, setLoadingUser] = useState(true);
   const [loadingMemories, setLoadingMemories] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("posts");
   const [tabAnim] = useState(new Animated.Value(0));
-  
+
   // Edit profile modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editBio, setEditBio] = useState("");
   const [editPhotoURI, setEditPhotoURI] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   // 🎨 Light purple glowing boxes with dark text
   const colors = {
@@ -144,30 +147,30 @@ export default function UserProfile() {
     bg: isDarkMode ? "#020617" : "#FAF5FF",
     card: isDarkMode ? "#1E293B" : "#E9D5FF", // Darker purple in light mode
     cardElevated: isDarkMode ? "#334155" : "#DDD6FE", // Darker purple for elevated cards
-    
+
     // Text colors - Dark for visibility on light purple
     textMain: isDarkMode ? "#F1F5F9" : "#1E1B4B", // Dark purple/indigo on light purple
     textSecondary: isDarkMode ? "#CBD5E1" : "#4C1D95", // Dark purple on light purple
     textMuted: isDarkMode ? "#94A3B8" : "#6B21A8", // Darker purple for muted text
-    
+
     // Borders and dividers - Purple tint
     border: isDarkMode ? "#334155" : "#C4B5FD", // Light purple border
     borderSoft: isDarkMode ? "#1E293B" : "#DDD6FE", // Softer purple border
-    
+
     // Accent colors
     accent: PRIMARY_PURPLE,
     accentLight: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(168,85,247,0.25)", // Darker purple in light mode
     accentMedium: isDarkMode ? "rgba(168,85,247,0.2)" : "rgba(168,85,247,0.35)", // Darker purple in light mode
-    
+
     // Interactive elements
     tabActive: PRIMARY_PURPLE,
     tabInactive: isDarkMode ? "#64748B" : "#7C3AED", // Purple tint for inactive
     tabBg: isDarkMode ? "rgba(168,85,247,0.1)" : "rgba(168,85,247,0.25)", // Darker purple in light mode
-    
+
     // Stats cards - Darker purple in light mode
     statBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(168,85,247,0.25)", // Darker purple in light mode
     statBorder: isDarkMode ? "rgba(168,85,247,0.4)" : "rgba(168,85,247,0.5)", // Stronger border in light mode
-    
+
     // Button colors - Darker purple in light mode
     buttonBg: isDarkMode ? "rgba(168,85,247,0.2)" : "rgba(168,85,247,0.3)", // Darker purple in light mode
     buttonBorder: isDarkMode ? PRIMARY_PURPLE : "rgba(168,85,247,0.7)", // Stronger purple border in light mode
@@ -200,12 +203,12 @@ export default function UserProfile() {
       try {
         let ref = doc(db, "users", userId);
         let snap = await getDoc(ref);
-        
+
         if (!snap.exists()) {
           ref = doc(db, "Users", userId);
           snap = await getDoc(ref);
         }
-        
+
         if (snap.exists()) {
           setUser({ id: snap.id, ...(snap.data() as any) });
         } else {
@@ -418,7 +421,7 @@ export default function UserProfile() {
       });
 
       setEditModalVisible(false);
-      Alert.alert("Success", "Profile updated successfully!");
+      setShowSuccess(true);
     } catch (error: any) {
       console.error("Error updating profile:", error);
       Alert.alert(
@@ -440,11 +443,7 @@ export default function UserProfile() {
     [memories]
   );
   const totalComments = useMemo(
-    () =>
-      postsWithComments.reduce(
-        (acc, p) => acc + p.totalComments,
-        0
-      ),
+    () => postsWithComments.reduce((acc, p) => acc + p.totalComments, 0),
     [postsWithComments]
   );
 
@@ -501,6 +500,67 @@ export default function UserProfile() {
   return (
     <GradientBackground>
       <SafeAreaView style={styles.safeArea}>
+        {/* SUCCESS OVERLAY */}
+        {showSuccess && (
+          <View
+            style={[
+              styles.successOverlay,
+              {
+                backgroundColor: isDarkMode
+                  ? "rgba(15,23,42,0.95)"
+                  : "rgba(255,255,255,0.95)",
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.successCard,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 24,
+                }),
+                {
+                  backgroundColor: colors.card,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.successIcon,
+                  {
+                    backgroundColor: PRIMARY_PURPLE + "20",
+                    borderColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="checkmark-circle"
+                  size={64}
+                  color={PRIMARY_PURPLE}
+                />
+              </View>
+              <Text style={[styles.successTitle, glowText]}>
+                Profile Updated!
+              </Text>
+              <Text style={[styles.successSubtitle, softText]}>
+                Your profile has been updated successfully
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowSuccess(false);
+                }}
+                style={[
+                  styles.successButton,
+                  {
+                    backgroundColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Text style={styles.successButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Header */}
         <View
           style={[
@@ -547,7 +607,9 @@ export default function UserProfile() {
               iconSize={Platform.OS === "ios" ? 24 : 22}
               style={styles.themeButton}
               accessibilityLabel="Toggle theme"
-              accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
               tooltipPosition="top"
               noBorder={true}
             />
@@ -590,7 +652,9 @@ export default function UserProfile() {
             <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
               User not found
             </Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            <Text
+              style={[styles.emptySubtitle, { color: colors.textSecondary }]}
+            >
               This profile may have been removed or is unavailable.
             </Text>
           </View>
@@ -630,7 +694,8 @@ export default function UserProfile() {
                       style={[
                         styles.avatarRing,
                         {
-                          borderColor: PRIMARY_PURPLE + (isDarkMode ? "80" : "AA"),
+                          borderColor:
+                            PRIMARY_PURPLE + (isDarkMode ? "80" : "AA"),
                         },
                       ]}
                     />
@@ -642,34 +707,48 @@ export default function UserProfile() {
                       styles.avatarPlaceholder,
                       {
                         backgroundColor: colors.accentLight,
-                        borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
+                        borderColor:
+                          PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
                       },
                     ]}
                   >
-                    <Ionicons
-                      name="person"
-                      size={48}
-                      color={PRIMARY_PURPLE}
-                    />
+                    <Ionicons name="person" size={48} color={PRIMARY_PURPLE} />
                   </View>
                 )}
 
                 <View style={styles.profileInfo}>
-                  <Text style={[styles.profileName, { color: colors.textMain }]}>
+                  <Text
+                    style={[styles.profileName, { color: colors.textMain }]}
+                  >
                     {user.displayName || "Unnamed user"}
                   </Text>
                   {user.email && (
-                    <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.profileEmail,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       {user.email}
                     </Text>
                   )}
                   {user.bio && (
-                    <Text style={[styles.profileBio, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.profileBio,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       {user.bio}
                     </Text>
                   )}
                   {!user.bio && isOwnProfile && (
-                    <Text style={[styles.profileBio, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.profileBio,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       Preserving moments, crafting memories
                     </Text>
                   )}
@@ -693,7 +772,9 @@ export default function UserProfile() {
                   <Text style={[styles.statValue, { color: colors.textMain }]}>
                     {memoriesCount}
                   </Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  <Text
+                    style={[styles.statLabel, { color: colors.textSecondary }]}
+                  >
                     Memories
                   </Text>
                 </TouchableOpacity>
@@ -711,7 +792,9 @@ export default function UserProfile() {
                   <Text style={[styles.statValue, { color: colors.textMain }]}>
                     {totalLikes}
                   </Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  <Text
+                    style={[styles.statLabel, { color: colors.textSecondary }]}
+                  >
                     Likes
                   </Text>
                 </TouchableOpacity>
@@ -730,7 +813,9 @@ export default function UserProfile() {
                   <Text style={[styles.statValue, { color: colors.textMain }]}>
                     {totalComments}
                   </Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  <Text
+                    style={[styles.statLabel, { color: colors.textSecondary }]}
+                  >
                     Comments
                   </Text>
                 </TouchableOpacity>
@@ -832,7 +917,8 @@ export default function UserProfile() {
                         styles.emptyIconCircle,
                         {
                           backgroundColor: colors.accentLight,
-                          borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
+                          borderColor:
+                            PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
                         },
                       ]}
                     >
@@ -842,10 +928,17 @@ export default function UserProfile() {
                         color={PRIMARY_PURPLE}
                       />
                     </View>
-                    <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
+                    <Text
+                      style={[styles.emptyTitle, { color: colors.textMain }]}
+                    >
                       No memories yet
                     </Text>
-                    <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.emptySubtitle,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       {isOwnProfile
                         ? "Start creating your first memory!"
                         : "When this user posts a memory, it will appear here."}
@@ -883,14 +976,20 @@ export default function UserProfile() {
                           <View style={{ flex: 1 }}>
                             <Text
                               numberOfLines={2}
-                              style={[styles.postTitle, { color: colors.textMain }]}
+                              style={[
+                                styles.postTitle,
+                                { color: colors.textMain },
+                              ]}
                             >
                               {memory.title}
                             </Text>
                             {memory.description && (
                               <Text
                                 numberOfLines={2}
-                                style={[styles.postDescription, { color: colors.textSecondary }]}
+                                style={[
+                                  styles.postDescription,
+                                  { color: colors.textSecondary },
+                                ]}
                               >
                                 {memory.description}
                               </Text>
@@ -907,11 +1006,16 @@ export default function UserProfile() {
                           />
                         </View>
                         <View style={styles.postFooter}>
-                          <Text style={[styles.postDate, { color: colors.textMuted }]}>
+                          <Text
+                            style={[
+                              styles.postDate,
+                              { color: colors.textMuted },
+                            ]}
+                          >
                             {formatDate(memory.startDate)}
                           </Text>
                           <View style={styles.postStats}>
-                            {memory.likesCount > 0 && (
+                            {(memory.likesCount ?? 0) > 0 && (
                               <View style={styles.postStatItem}>
                                 <Ionicons
                                   name="heart"
@@ -919,13 +1023,16 @@ export default function UserProfile() {
                                   color={PRIMARY_PURPLE}
                                 />
                                 <Text
-                                  style={[styles.postStatText, { color: colors.textSecondary }]}
+                                  style={[
+                                    styles.postStatText,
+                                    { color: colors.textSecondary },
+                                  ]}
                                 >
-                                  {memory.likesCount}
+                                  {memory.likesCount ?? 0}
                                 </Text>
                               </View>
                             )}
-                            {memory.commentsCount > 0 && (
+                            {(memory.commentsCount ?? 0) > 0 && (
                               <View style={styles.postStatItem}>
                                 <Ionicons
                                   name="chatbubble"
@@ -933,9 +1040,12 @@ export default function UserProfile() {
                                   color={PRIMARY_PURPLE}
                                 />
                                 <Text
-                                  style={[styles.postStatText, { color: colors.textSecondary }]}
+                                  style={[
+                                    styles.postStatText,
+                                    { color: colors.textSecondary },
+                                  ]}
                                 >
-                                  {memory.commentsCount}
+                                  {memory.commentsCount ?? 0}
                                 </Text>
                               </View>
                             )}
@@ -957,7 +1067,8 @@ export default function UserProfile() {
                         styles.emptyIconCircle,
                         {
                           backgroundColor: colors.accentLight,
-                          borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
+                          borderColor:
+                            PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
                         },
                       ]}
                     >
@@ -967,10 +1078,17 @@ export default function UserProfile() {
                         color={PRIMARY_PURPLE}
                       />
                     </View>
-                    <Text style={[styles.emptyTitle, { color: colors.textMain }]}>
+                    <Text
+                      style={[styles.emptyTitle, { color: colors.textMain }]}
+                    >
                       No comments yet
                     </Text>
-                    <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.emptySubtitle,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       {isOwnProfile
                         ? "Comments on your posts will appear here."
                         : "This user hasn't received any comments yet."}
@@ -1005,7 +1123,8 @@ export default function UserProfile() {
                               styles.commentAvatarPlaceholder,
                               {
                                 backgroundColor: colors.accentLight,
-                                borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
+                                borderColor:
+                                  PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
                               },
                             ]}
                           >
@@ -1017,18 +1136,38 @@ export default function UserProfile() {
                           </View>
                         )}
                         <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={[styles.commentAuthor, { color: colors.textMain }]}>
+                          <Text
+                            style={[
+                              styles.commentAuthor,
+                              { color: colors.textMain },
+                            ]}
+                          >
                             {comment.userName}
                           </Text>
-                          <Text style={[styles.commentPost, { color: colors.textMuted }]}>
+                          <Text
+                            style={[
+                              styles.commentPost,
+                              { color: colors.textMuted },
+                            ]}
+                          >
                             on "{comment.postTitle}"
                           </Text>
                         </View>
-                        <Text style={[styles.commentDate, { color: colors.textMuted }]}>
+                        <Text
+                          style={[
+                            styles.commentDate,
+                            { color: colors.textMuted },
+                          ]}
+                        >
                           {formatCommentDate(comment.createdAt || 0)}
                         </Text>
                       </View>
-                      <Text style={[styles.commentText, { color: colors.textSecondary }]}>
+                      <Text
+                        style={[
+                          styles.commentText,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         {comment.text}
                       </Text>
                     </TouchableOpacity>
@@ -1050,7 +1189,12 @@ export default function UserProfile() {
                     },
                   ]}
                 >
-                  <Text style={[styles.statsSectionTitle, { color: colors.textMain }]}>
+                  <Text
+                    style={[
+                      styles.statsSectionTitle,
+                      { color: colors.textMain },
+                    ]}
+                  >
                     Activity Overview
                   </Text>
                   <View style={styles.statsGrid}>
@@ -1065,10 +1209,20 @@ export default function UserProfile() {
                         size={24}
                         color={PRIMARY_PURPLE}
                       />
-                      <Text style={[styles.statsItemValue, { color: colors.textMain }]}>
+                      <Text
+                        style={[
+                          styles.statsItemValue,
+                          { color: colors.textMain },
+                        ]}
+                      >
                         {memoriesCount}
                       </Text>
-                      <Text style={[styles.statsItemLabel, { color: colors.textSecondary }]}>
+                      <Text
+                        style={[
+                          styles.statsItemLabel,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         Total Posts
                       </Text>
                     </View>
@@ -1078,15 +1232,21 @@ export default function UserProfile() {
                         { backgroundColor: colors.accentLight },
                       ]}
                     >
-                      <Ionicons
-                        name="heart"
-                        size={24}
-                        color={PRIMARY_PURPLE}
-                      />
-                      <Text style={[styles.statsItemValue, { color: colors.textMain }]}>
+                      <Ionicons name="heart" size={24} color={PRIMARY_PURPLE} />
+                      <Text
+                        style={[
+                          styles.statsItemValue,
+                          { color: colors.textMain },
+                        ]}
+                      >
                         {totalLikes}
                       </Text>
-                      <Text style={[styles.statsItemLabel, { color: colors.textSecondary }]}>
+                      <Text
+                        style={[
+                          styles.statsItemLabel,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         Total Likes
                       </Text>
                     </View>
@@ -1101,10 +1261,20 @@ export default function UserProfile() {
                         size={24}
                         color={PRIMARY_PURPLE}
                       />
-                      <Text style={[styles.statsItemValue, { color: colors.textMain }]}>
+                      <Text
+                        style={[
+                          styles.statsItemValue,
+                          { color: colors.textMain },
+                        ]}
+                      >
                         {totalComments}
                       </Text>
-                      <Text style={[styles.statsItemLabel, { color: colors.textSecondary }]}>
+                      <Text
+                        style={[
+                          styles.statsItemLabel,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         Total Comments
                       </Text>
                     </View>
@@ -1119,12 +1289,22 @@ export default function UserProfile() {
                         size={24}
                         color={PRIMARY_PURPLE}
                       />
-                      <Text style={[styles.statsItemValue, { color: colors.textMain }]}>
+                      <Text
+                        style={[
+                          styles.statsItemValue,
+                          { color: colors.textMain },
+                        ]}
+                      >
                         {memoriesCount > 0
                           ? Math.round((totalLikes / memoriesCount) * 10) / 10
                           : 0}
                       </Text>
-                      <Text style={[styles.statsItemLabel, { color: colors.textSecondary }]}>
+                      <Text
+                        style={[
+                          styles.statsItemLabel,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         Avg Likes/Post
                       </Text>
                     </View>
@@ -1142,10 +1322,20 @@ export default function UserProfile() {
                       },
                     ]}
                   >
-                    <Text style={[styles.statsSectionTitle, { color: colors.textMain }]}>
+                    <Text
+                      style={[
+                        styles.statsSectionTitle,
+                        { color: colors.textMain },
+                      ]}
+                    >
                       Recent Activity
                     </Text>
-                    <Text style={[styles.statsDescription, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.statsDescription,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       Your most recent memory was posted{" "}
                       {formatDate(memories[0]?.startDate)}
                     </Text>
@@ -1183,20 +1373,14 @@ export default function UserProfile() {
                   { borderBottomColor: colors.border },
                 ]}
               >
-                <Text
-                  style={[styles.modalTitle, { color: colors.textMain }]}
-                >
+                <Text style={[styles.modalTitle, { color: colors.textMain }]}>
                   Edit Profile
                 </Text>
                 <TouchableOpacity
                   onPress={() => setEditModalVisible(false)}
                   style={styles.modalCloseButton}
                 >
-                  <Ionicons
-                    name="close"
-                    size={24}
-                    color={colors.textMain}
-                  />
+                  <Ionicons name="close" size={24} color={colors.textMain} />
                 </TouchableOpacity>
               </View>
 
@@ -1311,9 +1495,7 @@ export default function UserProfile() {
                     maxLength={200}
                     textAlignVertical="top"
                   />
-                  <Text
-                    style={[styles.charCount, { color: colors.textMuted }]}
-                  >
+                  <Text style={[styles.charCount, { color: colors.textMuted }]}>
                     {editBio.length}/200
                   </Text>
                 </View>
@@ -1321,10 +1503,7 @@ export default function UserProfile() {
 
               {/* Save Button */}
               <View
-                style={[
-                  styles.modalFooter,
-                  { borderTopColor: colors.border },
-                ]}
+                style={[styles.modalFooter, { borderTopColor: colors.border }]}
               >
                 <TouchableOpacity
                   onPress={handleSaveProfile}
@@ -1800,5 +1979,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.5,
+  },
+  successOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  successCard: {
+    alignItems: "center",
+    maxWidth: 320,
+    width: "100%",
+  },
+  successIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  successSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  successButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 999,
+    minWidth: 160,
+  },
+  successButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

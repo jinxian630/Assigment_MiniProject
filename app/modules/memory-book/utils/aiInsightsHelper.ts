@@ -88,7 +88,7 @@ export function comparePeriods(
   if (Math.abs(currentCount - previousCount) > 0) {
     const change = currentCount - previousCount;
     changes.push({
-      message: `${change > 0 ? "+" : ""}${change} memory${Math.abs(change) === 1 ? "" : "ies"} vs previous period`,
+      message: `${change > 0 ? "+" : ""}${change} ${Math.abs(change) === 1 ? "memory" : "memories"} vs previous period`,
       trend: change > 0 ? "up" : "down",
     });
   }

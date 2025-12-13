@@ -3,15 +3,14 @@ import { getAuth, Auth } from "firebase/auth";
 import { getFirestore, Firestore } from "firebase/firestore";
 import { getStorage, FirebaseStorage } from "firebase/storage";
 
-// Firebase configuration - MyMiniProjectNkk
+// Firebase configuration - Friend's project
 const firebaseConfig = {
-  apiKey: "AIzaSyBtKSx58Xkzop03XGtw-XH48clS43kxDhA",
-  authDomain: "myminiprojectnkk.firebaseapp.com",
-  projectId: "myminiprojectnkk",
-  storageBucket: "myminiprojectnkk.firebasestorage.app",
-  messagingSenderId: "414225611161",
-  appId: "1:414225611161:web:8c153238a43426ef7f3b08",
-  measurementId: "G-ZVQ3S2G8V7",
+  apiKey: "AIzaSyDaXlRP4lPsW566s41jfeoo1UpsJSBOvCw",
+  authDomain: "myminiproject-f6d7e.firebaseapp.com",
+  projectId: "myminiproject-f6d7e",
+  storageBucket: "myminiproject-f6d7e.firebasestorage.app",
+  messagingSenderId: "586003701721",
+  appId: "1:586003701721:web:6fd82962bc46f98fcb83c8",
 };
 
 // Validate configuration

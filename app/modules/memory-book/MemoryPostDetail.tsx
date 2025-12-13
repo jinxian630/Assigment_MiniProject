@@ -33,8 +33,40 @@ import {
   Comment,
 } from "./utils/commentHelpers";
 import { saveMemory, unsaveMemory, isMemorySaved } from "./utils/saveHelpers";
+import VoicePlayer from "./components/VoicePlayer";
 
 const PRIMARY_PURPLE = "#a855f7";
+
+/** 🎨 Cyberpunk neon card shell helper */
+const createNeonCardShell = (
+  accentColor: string,
+  isDark: boolean,
+  extra: any = {}
+) => {
+  return {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: accentColor + (isDark ? "66" : "CC"),
+    shadowColor: accentColor,
+    shadowOpacity: isDark ? 0.9 : 0.75,
+    shadowRadius: isDark ? 30 : 25,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: isDark ? 18 : 15,
+    ...extra,
+  };
+};
+
+/** 🎨 Glow text styles */
+const getGlowText = (accentColor: string, isDark: boolean) => ({
+  color: isDark ? "#E0F2FE" : "#6B21A8",
+  textShadowColor: accentColor + (isDark ? "CC" : "88"),
+  textShadowOffset: { width: 0, height: 0 },
+  textShadowRadius: isDark ? 8 : 6,
+});
+
+const getSoftText = (isDark: boolean) => ({
+  color: isDark ? "#CBD5E1" : "#9333EA",
+});
 
 type PostData = {
   id?: string;
@@ -64,7 +96,7 @@ export default function MemoryPostDetail() {
     postId?: string;
     id?: string;
   }>();
-  const { theme, isDarkMode } = useTheme();
+  const { theme, isDarkMode, toggleTheme } = useTheme();
   const { user: authUser } = useAuth();
 
   // Support multiple parameter names for compatibility
@@ -77,6 +109,7 @@ export default function MemoryPostDetail() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const bookmarkScale = useRef(new Animated.Value(1)).current;
 
   const colors = {
@@ -90,6 +123,9 @@ export default function MemoryPostDetail() {
     inputBorder: isDarkMode ? "#1F2937" : "#C4B5FD",
   };
 
+  const glowText = getGlowText(PRIMARY_PURPLE, isDarkMode);
+  const softText = getSoftText(isDarkMode);
+
   useEffect(() => {
     const loadPost = async () => {
       try {
@@ -102,7 +138,7 @@ export default function MemoryPostDetail() {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           setPost({ id: snap.id, ...(snap.data() as PostData) });
-          
+
           // Check if post is saved
           const userId = authUser?.id || (authUser as any)?.uid;
           if (userId) {
@@ -161,7 +197,11 @@ export default function MemoryPostDetail() {
   };
 
   const handleAddComment = async () => {
-    if (!memoryId || !commentText.trim()) return;
+    const trimmedText = commentText.trim();
+    if (!memoryId || !trimmedText) {
+      Alert.alert("Empty Comment", "Please enter a comment before submitting.");
+      return;
+    }
 
     const user = auth.currentUser;
     if (!user) {
@@ -171,7 +211,7 @@ export default function MemoryPostDetail() {
 
     setSubmittingComment(true);
     try {
-      await addComment(memoryId, commentText);
+      await addComment(memoryId, trimmedText);
       setCommentText("");
     } catch (error: any) {
       Alert.alert("Error", error.message || "Failed to add comment");
@@ -238,10 +278,10 @@ export default function MemoryPostDetail() {
     try {
       if (newSaved) {
         await saveMemory(memoryId);
-        Alert.alert("✅ Saved", "Memory saved to your collection!");
+        setShowSaveSuccess(true);
       } else {
         await unsaveMemory(memoryId);
-        Alert.alert("Removed", "Memory removed from saved posts");
+        setShowSaveSuccess(true);
       }
       setIsSaved(newSaved);
     } catch (error: any) {
@@ -257,6 +297,69 @@ export default function MemoryPostDetail() {
   return (
     <GradientBackground>
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        {/* SAVE SUCCESS OVERLAY */}
+        {showSaveSuccess && (
+          <View
+            style={[
+              styles.successOverlay,
+              {
+                backgroundColor: isDarkMode
+                  ? "rgba(15,23,42,0.95)"
+                  : "rgba(255,255,255,0.95)",
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.successCard,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 24,
+                }),
+                {
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.successIcon,
+                  {
+                    backgroundColor: PRIMARY_PURPLE + "20",
+                    borderColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={isSaved ? "bookmark" : "bookmark-outline"}
+                  size={64}
+                  color={PRIMARY_PURPLE}
+                />
+              </View>
+              <Text style={[styles.successTitle, glowText]}>
+                {isSaved ? "Saved!" : "Removed"}
+              </Text>
+              <Text style={[styles.successSubtitle, softText]}>
+                {isSaved
+                  ? "Memory saved to your collection!"
+                  : "Memory removed from saved posts"}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowSaveSuccess(false);
+                }}
+                style={[
+                  styles.successButton,
+                  {
+                    backgroundColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Text style={styles.successButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Header */}
         <View
           style={[
@@ -275,25 +378,43 @@ export default function MemoryPostDetail() {
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             Memory Detail
           </Text>
-          <TouchableOpacity
-            onPress={handleSave}
-            disabled={saving || !memoryId}
-            style={styles.saveButton}
-            activeOpacity={0.7}
-          >
-            <Animated.View
-              style={[
-                { transform: [{ scale: bookmarkScale }] },
-                saving && { opacity: 0.5 },
-              ]}
+          <View style={styles.headerRight}>
+            <InteractiveButton
+              onPress={toggleTheme}
+              icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+              description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
+              noBorder={true}
+              style={styles.themeToggle}
+              accessibilityLabel="Toggle theme"
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
+            />
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={saving || !memoryId}
+              style={styles.saveButton}
+              activeOpacity={0.7}
             >
-              <Ionicons
-                name={isSaved ? "bookmark" : "bookmark-outline"}
-                size={24}
-                color={isSaved ? PRIMARY_PURPLE : colors.text}
-              />
-            </Animated.View>
-          </TouchableOpacity>
+              <Animated.View
+                style={[
+                  { transform: [{ scale: bookmarkScale }] },
+                  saving && { opacity: 0.5 },
+                ]}
+              >
+                <Ionicons
+                  name={isSaved ? "bookmark" : "bookmark-outline"}
+                  size={24}
+                  color={isSaved ? PRIMARY_PURPLE : colors.text}
+                />
+              </Animated.View>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loading ? (
@@ -327,7 +448,13 @@ export default function MemoryPostDetail() {
             >
               {/* Image header */}
               {post.imageURL && (
-                <Image source={{ uri: post.imageURL }} style={styles.image} />
+                <Image
+                  source={{ uri: post.imageURL }}
+                  style={styles.image}
+                  onError={() => {
+                    console.warn("Failed to load post image:", post.imageURL);
+                  }}
+                />
               )}
 
               <View
@@ -365,6 +492,12 @@ export default function MemoryPostDetail() {
                         <Image
                           source={{ uri: post.CreatedUser.CreatedUserPhoto }}
                           style={styles.avatar}
+                          onError={() => {
+                            console.warn(
+                              "Failed to load user avatar:",
+                              post.CreatedUser?.CreatedUserPhoto
+                            );
+                          }}
                         />
                       ) : (
                         <View
@@ -397,6 +530,19 @@ export default function MemoryPostDetail() {
                   {post.description}
                 </Text>
 
+                {/* Voice Journal Player */}
+                {(post as any).voiceJournal?.audioURL && (
+                  <VoicePlayer
+                    audioURL={(post as any).voiceJournal.audioURL}
+                    duration={(post as any).voiceJournal.duration}
+                    emoji={(post as any).voiceJournal.emoji}
+                    feeling={(post as any).voiceJournal.feeling}
+                    moodTag={(post as any).voiceJournal.moodTag}
+                    prompt={(post as any).voiceJournal.prompt}
+                    isDarkMode={isDarkMode}
+                  />
+                )}
+
                 {/* Comment Input - Moved here between description and comments */}
                 <View
                   style={[
@@ -424,7 +570,11 @@ export default function MemoryPostDetail() {
                     maxLength={500}
                     editable={!submittingComment}
                     returnKeyType="send"
-                    onSubmitEditing={commentText.trim() && !submittingComment ? handleAddComment : undefined}
+                    onSubmitEditing={
+                      commentText.trim() && !submittingComment
+                        ? handleAddComment
+                        : undefined
+                    }
                   />
                   <TouchableOpacity
                     onPress={handleAddComment}
@@ -433,10 +583,16 @@ export default function MemoryPostDetail() {
                     style={[
                       styles.sendButton,
                       {
-                        backgroundColor: commentText.trim() && !submittingComment
-                          ? (isDarkMode ? "#374151" : "#E5E7EB")
-                          : (isDarkMode ? "#1F2937" : "#F3F4F6"),
-                        opacity: (!commentText.trim() || submittingComment) ? 0.5 : 1,
+                        backgroundColor:
+                          commentText.trim() && !submittingComment
+                            ? isDarkMode
+                              ? "#374151"
+                              : "#E5E7EB"
+                            : isDarkMode
+                            ? "#1F2937"
+                            : "#F3F4F6",
+                        opacity:
+                          !commentText.trim() || submittingComment ? 0.5 : 1,
                       },
                     ]}
                     accessibilityLabel="Send comment"
@@ -444,7 +600,10 @@ export default function MemoryPostDetail() {
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     {submittingComment ? (
-                      <ActivityIndicator size="small" color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+                      <ActivityIndicator
+                        size="small"
+                        color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                      />
                     ) : (
                       <Ionicons
                         name="send"
@@ -503,6 +662,12 @@ export default function MemoryPostDetail() {
                             <Image
                               source={{ uri: comment.userPhoto }}
                               style={styles.commentAvatar}
+                              onError={() => {
+                                console.warn(
+                                  "Failed to load comment avatar:",
+                                  comment.userPhoto
+                                );
+                              }}
                             />
                           ) : (
                             <View
@@ -544,7 +709,12 @@ export default function MemoryPostDetail() {
                                 handleDeleteComment(comment.id);
                               }}
                               style={styles.deleteCommentBtn}
-                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                              hitSlop={{
+                                top: 10,
+                                bottom: 10,
+                                left: 10,
+                                right: 10,
+                              }}
                             >
                               <Ionicons
                                 name="trash-outline"
@@ -593,6 +763,17 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  themeToggle: {
+    minWidth: Platform.OS === "ios" ? 40 : 38,
+    minHeight: Platform.OS === "ios" ? 40 : 38,
+    alignItems: "center",
+    justifyContent: "center",
   },
   saveButton: {
     width: 40,
@@ -778,5 +959,53 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 4,
+  },
+  successOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  successCard: {
+    alignItems: "center",
+    maxWidth: 320,
+    width: "100%",
+  },
+  successIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  successSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  successButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 999,
+    minWidth: 160,
+  },
+  successButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

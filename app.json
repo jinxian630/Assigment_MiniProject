@@ -36,6 +36,12 @@
         {
           "photosPermission": "The app accesses your photos to let you share them with your profile."
         }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "The app needs access to your microphone to record voice journals for your memories."
+        }
       ]
     ],
     "experiments": {

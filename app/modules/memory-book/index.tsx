@@ -90,13 +90,13 @@ export default function MemoryBookScreen() {
         // Try users collection first
         let userRef = doc(db, "users", currentUserId);
         let userSnap = await getDoc(userRef);
-        
+
         // If not found, try Users collection (capitalized)
         if (!userSnap.exists()) {
           userRef = doc(db, "Users", currentUserId);
           userSnap = await getDoc(userRef);
         }
-        
+
         if (userSnap.exists()) {
           const userData = userSnap.data();
           setUser({
@@ -140,7 +140,10 @@ export default function MemoryBookScreen() {
     console.log("🔄 Setting up memory subscription...");
     const unsubscribe = subscribeToLatestMemories(20, (memoriesList) => {
       console.log("📦 Memory feed: Received", memoriesList.length, "memories");
-      console.log("📋 Memory IDs:", memoriesList.map(m => m.id));
+      console.log(
+        "📋 Memory IDs:",
+        memoriesList.map((m) => m.id)
+      );
       setMemories(memoriesList);
     });
 
@@ -305,7 +308,9 @@ export default function MemoryBookScreen() {
               style={styles.headerIcon}
               noBorder={true}
               accessibilityLabel="Toggle theme"
-              accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
             />
             <TouchableOpacity
               onPress={handleProfilePress}
@@ -355,7 +360,9 @@ export default function MemoryBookScreen() {
             style={[
               styles.profileSection,
               {
-                backgroundColor: isDarkMode ? "rgba(30, 41, 59, 0.85)" : "rgba(255, 255, 255, 0.98)",
+                backgroundColor: isDarkMode
+                  ? "rgba(30, 41, 59, 0.85)"
+                  : "rgba(255, 255, 255, 0.98)",
                 borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "CC"),
                 shadowColor: PRIMARY_PURPLE,
                 shadowOpacity: profileCardGlow.interpolate({
