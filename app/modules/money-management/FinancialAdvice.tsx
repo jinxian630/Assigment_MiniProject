@@ -14,8 +14,8 @@ import { useRouter } from "expo-router";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
-import { Theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
+import { getMoneyColors, toggleThemeSafe } from "./MoneyUI";
 
 import { getAuth } from "firebase/auth";
 import {
@@ -37,30 +37,61 @@ type Tx = {
   dateTime?: number;
 };
 
-const MODULE_ACCENT = "#FFD93D"; // match Money Management vibe in index.tsx :contentReference[oaicite:4]{index=4}
+const MODULE_ACCENT = "#FFD93D";
+
+function neonGlowStyle(opts: {
+  isDarkmode: boolean;
+  accent: string;
+  backgroundColor: string;
+  borderColor: string;
+  heavy?: boolean;
+}) {
+  const { isDarkmode, accent, backgroundColor, borderColor, heavy } = opts;
+  const bg = isDarkmode ? "rgba(2,6,23,0.92)" : backgroundColor;
+  const glowA = isDarkmode ? 0.55 : 0.22;
+  const glowB = isDarkmode ? 0.35 : 0.14;
+
+  return {
+    backgroundColor: bg,
+    borderWidth: 1,
+    borderColor: isDarkmode ? `${accent}AA` : borderColor,
+    shadowColor: accent,
+    shadowOpacity: heavy ? glowA : glowB,
+    shadowRadius: heavy ? 16 : 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: heavy ? 10 : 6,
+  } as const;
+}
 
 export default function FinancialAdviceScreen({ navigation }: any) {
   const router = useRouter();
   const nav = navigation ?? { goBack: () => router.back() };
 
-  const theme = useTheme() as any;
-  const isDarkmode: boolean = !!theme?.isDarkmode;
+  const themeCtx = useTheme() as any;
+  const theme = themeCtx?.theme ?? themeCtx;
+  const isDarkmode = !!themeCtx?.isDarkMode;
+
+  const moneyThemeCtx = useMemo(
+    () => ({
+      ...themeCtx,
+      theme: {
+        ...(themeCtx?.theme ?? {}),
+        isDarkmode,
+        colors: theme?.colors ?? themeCtx?.theme?.colors,
+      },
+    }),
+    [themeCtx, theme, isDarkmode]
+  );
+
+  const ui = getMoneyColors(moneyThemeCtx);
+  const { textPrimary, textMuted, textSecondary, cardBorder, cardBg, chipBg } = ui;
+  const onToggleTheme = () => toggleThemeSafe(moneyThemeCtx);
 
   const auth = getAuth();
   const db = getFirestore();
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<Tx[]>([]);
-
-  const textPrimary = isDarkmode ? "#F9FAFB" : Theme.colors.textPrimary;
-  const mutedText = isDarkmode ? "#9CA3AF" : "#6B7280";
-  const cardBorder = isDarkmode ? "#1F2937" : Theme.colors.border;
-
-  const handleToggleTheme = () => {
-    if (typeof theme?.toggleTheme === "function") theme.toggleTheme();
-    else if (typeof theme?.setTheme === "function")
-      theme.setTheme(isDarkmode ? "light" : "dark");
-  };
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -107,17 +138,10 @@ export default function FinancialAdviceScreen({ navigation }: any) {
     const now = Date.now();
     const DAY = 24 * 60 * 60 * 1000;
 
-    const last30 = items.filter(
-      (t) => (t.dateTime || 0) >= now - 30 * DAY
-    );
+    const last30 = items.filter((t) => (t.dateTime || 0) >= now - 30 * DAY);
 
-    const income30 = last30
-      .filter((t) => t.type === "Income")
-      .reduce((s, t) => s + t.amount, 0);
-
-    const expense30 = last30
-      .filter((t) => t.type === "Expense")
-      .reduce((s, t) => s + t.amount, 0);
+    const income30 = last30.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
+    const expense30 = last30.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
 
     const byCat: Record<string, number> = {};
     for (const t of last30) {
@@ -146,13 +170,12 @@ export default function FinancialAdviceScreen({ navigation }: any) {
   const adviceList = useMemo(() => {
     const tips: { title: string; desc: string; icon: any }[] = [];
 
-    // Rule 1: cashflow
     if (analysis.cashflow < 0) {
       tips.push({
         title: "You are overspending this month",
-        desc: `Your last 30 days expenses exceed income by RM ${Math.abs(
-          analysis.cashflow
-        ).toFixed(2)}. Try reducing non-essentials or set a spending cap.`,
+        desc: `Your last 30 days expenses exceed income by RM ${Math.abs(analysis.cashflow).toFixed(
+          2
+        )}. Try reducing non-essentials or set a spending cap.`,
         icon: "warning-outline",
       });
     } else {
@@ -165,7 +188,6 @@ export default function FinancialAdviceScreen({ navigation }: any) {
       });
     }
 
-    // Rule 2: top category
     if (analysis.topCat) {
       tips.push({
         title: `Top spending category: ${analysis.topCat}`,
@@ -176,10 +198,10 @@ export default function FinancialAdviceScreen({ navigation }: any) {
       });
     }
 
-    // Rule 3: too many small transactions (simple behavior insight)
     const smallExpenseCount = items.filter(
       (t) => t.type === "Expense" && t.amount > 0 && t.amount <= 10
     ).length;
+
     if (smallExpenseCount >= 10) {
       tips.push({
         title: "Many small purchases detected",
@@ -188,7 +210,6 @@ export default function FinancialAdviceScreen({ navigation }: any) {
       });
     }
 
-    // Rule 4: missing income record (common student scenario)
     const hasIncome = items.some((t) => t.type === "Income");
     if (!hasIncome) {
       tips.push({
@@ -201,32 +222,30 @@ export default function FinancialAdviceScreen({ navigation }: any) {
     return tips;
   }, [analysis.cashflow, analysis.topCat, analysis.topCatValue, items]);
 
-  const renderThemeToggle = () => (
-    <TouchableOpacity
-      onPress={handleToggleTheme}
-      style={styles.themeToggle}
-      activeOpacity={0.8}
-    >
-      <Ionicons
-        name={isDarkmode ? "sunny-outline" : "moon-outline"}
-        size={20}
-        color={isDarkmode ? "#FDE68A" : "#0F172A"}
-      />
-    </TouchableOpacity>
-  );
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const header = (
     <View style={styles.header}>
-      <IconButton
-        icon="arrow-back"
-        variant="secondary"
-        size="medium"
-        onPress={() => nav.goBack()}
-      />
-      <RNText style={[styles.headerTitle, { color: textPrimary }]}>
-        Financial Advice
-      </RNText>
-      {renderThemeToggle()}
+      <IconButton icon="arrow-back" variant="secondary" size="medium" onPress={() => nav.goBack()} />
+      <RNText style={[styles.headerTitle, { color: textPrimary }]}>Financial Advice</RNText>
+
+      <TouchableOpacity
+        onPress={onToggleTheme}
+        style={[
+          styles.themeToggle,
+          {
+            borderColor: MODULE_ACCENT,
+            backgroundColor: isDarkmode ? "rgba(15,23,42,0.65)" : "rgba(255,255,255,0.75)",
+          },
+        ]}
+        activeOpacity={0.85}
+      >
+        <Ionicons
+          name={isDarkmode ? "sunny-outline" : "moon-outline"}
+          size={18}
+          color={isDarkmode ? "#FDE68A" : "#0F172A"}
+        />
+      </TouchableOpacity>
     </View>
   );
 
@@ -245,26 +264,31 @@ export default function FinancialAdviceScreen({ navigation }: any) {
   return (
     <GradientBackground>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <ScrollView
-          contentContainerStyle={styles.container}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           {header}
 
-          <Card style={[styles.summaryCard, { borderColor: cardBorder }]}>
-            <RNText style={[styles.cardTitle, { color: textPrimary }]}>
-              Last 30 Days Summary
-            </RNText>
-            <RNText style={{ color: mutedText, marginTop: 4 }}>
+          <Card
+            style={[
+              neonGlowStyle({
+                isDarkmode,
+                accent: "#38BDF8",
+                backgroundColor: cardBg,
+                borderColor: cardBorder,
+                heavy: true,
+              }),
+            ]}
+          >
+            <RNText style={[styles.cardTitle, { color: textPrimary }]}>Last 30 Days Summary</RNText>
+            <RNText style={{ color: textMuted, marginTop: 4 }}>
               Income: RM {analysis.income30.toFixed(2)}
             </RNText>
-            <RNText style={{ color: mutedText, marginTop: 4 }}>
+            <RNText style={{ color: textMuted, marginTop: 4 }}>
               Expenses: RM {analysis.expense30.toFixed(2)}
             </RNText>
             <RNText
               style={{
                 marginTop: 10,
-                fontWeight: "800",
+                fontWeight: "900",
                 color: analysis.cashflow >= 0 ? "#22C55E" : "#F97316",
               }}
             >
@@ -272,34 +296,28 @@ export default function FinancialAdviceScreen({ navigation }: any) {
             </RNText>
           </Card>
 
-          <View style={{ marginTop: Theme.spacing.md }}>
-            <RNText style={[styles.sectionTitle, { color: textPrimary }]}>
-              Personalized Tips
-            </RNText>
+          <View style={{ marginTop: theme.spacing.md }}>
+            <RNText style={[styles.sectionTitle, { color: textPrimary }]}>Personalized Tips</RNText>
 
             {adviceList.map((a, idx) => (
               <Card
                 key={idx}
                 style={[
-                  styles.tipCard,
-                  { borderColor: cardBorder, borderWidth: 1 },
+                  neonGlowStyle({
+                    isDarkmode,
+                    accent: MODULE_ACCENT,
+                    backgroundColor: cardBg,
+                    borderColor: cardBorder,
+                  }),
                 ]}
               >
                 <View style={styles.tipRow}>
-                  <View style={styles.tipIcon}>
-                    <Ionicons
-                      name={a.icon}
-                      size={18}
-                      color={MODULE_ACCENT}
-                    />
+                  <View style={[styles.tipIcon, { backgroundColor: chipBg }]}>
+                    <Ionicons name={a.icon} size={18} color={MODULE_ACCENT} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <RNText style={[styles.tipTitle, { color: textPrimary }]}>
-                      {a.title}
-                    </RNText>
-                    <RNText style={[styles.tipDesc, { color: mutedText }]}>
-                      {a.desc}
-                    </RNText>
+                    <RNText style={[styles.tipTitle, { color: textPrimary }]}>{a.title}</RNText>
+                    <RNText style={[styles.tipDesc, { color: textMuted }]}>{a.desc}</RNText>
                   </View>
                 </View>
               </Card>
@@ -308,90 +326,63 @@ export default function FinancialAdviceScreen({ navigation }: any) {
 
           <Card
             style={[
-              styles.bottomNote,
-              { borderColor: cardBorder, borderWidth: 1 },
+              neonGlowStyle({
+                isDarkmode,
+                accent: "#A855F7",
+                backgroundColor: cardBg,
+                borderColor: cardBorder,
+              }),
             ]}
           >
-            <RNText style={{ color: mutedText, fontSize: 12 }}>
-              These insights are generated from your transaction history using
-              simple rule-based analysis. Add more records to improve accuracy.
+            <RNText style={{ color: textMuted, fontSize: 12 }}>
+              These insights are generated from your transaction history using simple rule-based analysis.
+              Add more records to improve accuracy.
             </RNText>
           </Card>
+
+          <View style={{ height: 8 }} />
         </ScrollView>
       </SafeAreaView>
     </GradientBackground>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: Theme.spacing.screenPadding,
-    paddingTop: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xxl,
-  },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: Theme.spacing.lg,
-  },
-  headerTitle: {
-    fontSize: Theme.typography.fontSizes.xl,
-    fontWeight: Theme.typography.fontWeights.bold,
-  },
-  themeToggle: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#38BDF8",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(15,23,42,0.7)",
-  },
-  summaryCard: {
-    borderWidth: 1,
-  },
-  cardTitle: {
-    fontSize: Theme.typography.fontSizes.lg,
-    fontWeight: "800",
-  },
-  sectionTitle: {
-    fontSize: Theme.typography.fontSizes.lg,
-    fontWeight: "800",
-    marginBottom: Theme.spacing.sm,
-  },
-  tipCard: {
-    marginBottom: 10,
-  },
-  tipRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  tipIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-    backgroundColor: "rgba(255,217,61,0.14)",
-  },
-  tipTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  tipDesc: {
-    marginTop: 4,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  bottomNote: {
-    marginTop: Theme.spacing.md,
-  },
-});
+function makeStyles(theme: any) {
+  return StyleSheet.create({
+    container: {
+      paddingHorizontal: theme.spacing.screenPadding,
+      paddingTop: theme.spacing.md,
+      paddingBottom: theme.spacing.xxl,
+    },
+    center: { flex: 1, justifyContent: "center", alignItems: "center" },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: theme.spacing.md,
+      gap: theme.spacing.sm,
+    },
+    headerTitle: { fontSize: 18, fontWeight: "900" },
+    themeToggle: {
+      width: 36,
+      height: 36,
+      borderRadius: 999,
+      borderWidth: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    cardTitle: { fontSize: 15, fontWeight: "900" },
+    sectionTitle: { fontSize: 15, fontWeight: "900", marginBottom: theme.spacing.sm },
+    tipRow: { flexDirection: "row", alignItems: "flex-start" },
+    tipIcon: {
+      width: 30,
+      height: 30,
+      borderRadius: 999,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 10,
+    },
+    tipTitle: { fontSize: 14, fontWeight: "800" },
+    tipDesc: { marginTop: 4, fontSize: 12, lineHeight: 16 },
+  });
+}
