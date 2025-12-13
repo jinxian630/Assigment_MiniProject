@@ -23,17 +23,19 @@ import {
   onSnapshot,
   orderBy,
   query,
+  where,
   doc,
   deleteDoc,
   getDoc,
 } from "firebase/firestore";
 import { ref, deleteObject } from "firebase/storage";
-import { db, storage } from "@/config/firebase";
+import { db, storage, auth } from "@/config/firebase";
 import { extractStoragePathFromURL } from "./utils/storageHelpers";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/hooks/useAuth";
 import BottomNavBar from "./components/BottomNavBar";
 import VoicePlayer from "./components/VoicePlayer";
 
@@ -101,6 +103,7 @@ const getSoftText = (isDark: boolean) => ({
 export default function MemoryTimeline() {
   const router = useRouter();
   const { theme, isDarkMode, toggleTheme } = useTheme();
+  const { user: authUser } = useAuth();
 
   const [memories, setMemories] = useState<MemoryPost[]>([]);
   const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
@@ -147,11 +150,23 @@ export default function MemoryTimeline() {
   const softText = getSoftText(isDarkMode);
 
   useEffect(() => {
-    console.log("🔄 MemoryTimeline: Setting up subscription...");
+    const currentUserId = auth.currentUser?.uid || authUser?.id;
+    if (!currentUserId) {
+      console.log("⚠️ No user ID available, skipping memory subscription");
+      setMemories([]);
+      return;
+    }
+
+    console.log("🔄 MemoryTimeline: Setting up subscription for user:", currentUserId);
     const postsRef = collection(db, "MemoryPosts");
 
-    // Try query with orderBy first
-    const q = query(postsRef, orderBy("startDate", "desc"));
+    // Filter by current user's ID
+    // Use query without orderBy first (to avoid index requirement), then sort manually
+    // This is more reliable and doesn't require creating a composite index
+    const q = query(
+      postsRef,
+      where("userId", "==", currentUserId)
+    );
 
     const unsubscribe = onSnapshot(
       q,
@@ -160,52 +175,19 @@ export default function MemoryTimeline() {
         const list: MemoryPost[] = [];
         snapshot.forEach((d) => {
           const data = d.data();
-          console.log("📄 Timeline doc:", d.id, "startDate:", data.startDate);
+          console.log("📄 Timeline doc:", d.id, "startDate:", data.startDate, "userId:", data.userId);
           list.push({ id: d.id, ...(data as any) });
         });
+        // Sort manually by startDate descending (newest first)
+        list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
         console.log("✅ MemoryTimeline: Total memories:", list.length);
         setMemories(list);
       },
       (error: any) => {
         console.error("❌ MemoryTimeline query error:", error);
         console.error("❌ Error code:", error.code);
-
-        // Fallback: query without orderBy if index is missing
-        if (error.code === "failed-precondition" || error.code === 9) {
-          console.log("⚠️ Index missing, trying fallback query...");
-          const fallbackQ = query(postsRef);
-
-          return onSnapshot(
-            fallbackQ,
-            (snapshot) => {
-              console.log(
-                "📖 MemoryTimeline fallback: Received",
-                snapshot.size,
-                "documents"
-              );
-              const list: MemoryPost[] = [];
-              snapshot.forEach((d) => {
-                list.push({ id: d.id, ...(d.data() as any) });
-              });
-              // Sort manually
-              list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
-              console.log(
-                "✅ MemoryTimeline fallback: Total memories:",
-                list.length
-              );
-              setMemories(list);
-            },
-            (fallbackError: any) => {
-              console.error(
-                "❌ MemoryTimeline fallback also failed:",
-                fallbackError
-              );
-              setMemories([]);
-            }
-          );
-        } else {
-          setMemories([]);
-        }
+        console.error("❌ Error message:", error.message);
+        setMemories([]);
       }
     );
 

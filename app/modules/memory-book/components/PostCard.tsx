@@ -14,7 +14,7 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { saveMemory, unsaveMemory, isMemorySaved } from "../utils/saveHelpers";
 import { isMemoryLiked, likeMemory, unlikeMemory } from "../utils/likeHelpers";
-import { shareMemory, saveImageToGallery } from "../utils/shareHelpers";
+import { shareMemory } from "../utils/shareHelpers";
 import { getSmartDate } from "../utils/dateHelpers";
 import type { Memory } from "../utils/memoryHelpers";
 import { auth } from "@/config/firebase";
@@ -196,9 +196,13 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
     }
   };
 
-  const handleSaveImage = async () => {
+  const handleShareImage = async () => {
     if (memory.imageURL) {
-      await saveImageToGallery(memory.imageURL);
+      await shareMemory(
+        memory.title || "Memory",
+        memory.description || "",
+        memory.imageURL
+      );
     }
   };
 
@@ -453,7 +457,7 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
         visible={showImageZoom}
         imageURL={memory.imageURL || ""}
         onClose={() => setShowImageZoom(false)}
-        onSave={handleSaveImage}
+        onShare={handleShareImage}
       />
     </Animated.View>
   );

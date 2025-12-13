@@ -189,8 +189,6 @@ export default function ProfileScreen() {
 
             <Card noPadding>
               <ThemeToggleItem
-                icon={isDarkMode ? "moon" : "sunny"}
-                title={isDarkMode ? "Dark Mode" : "Light Mode"}
                 isDarkMode={isDarkMode}
                 onToggle={toggleTheme}
                 theme={theme}
@@ -249,31 +247,35 @@ export default function ProfileScreen() {
 }
 
 interface ThemeToggleItemProps {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
   isDarkMode: boolean;
   onToggle: () => void;
   theme: any;
   styles: any;
 }
 
-const ThemeToggleItem: React.FC<ThemeToggleItemProps> = ({ icon, title, isDarkMode, onToggle, theme, styles }) => (
-  <Card noPadding variant="flat" style={styles.settingItem}>
-    <View style={styles.settingContent}>
-      <View style={styles.settingLeft}>
-        <Ionicons name={icon} size={22} color={theme.colors.primary} />
-        <Text style={styles.settingTitle}>{title}</Text>
+const ThemeToggleItem: React.FC<ThemeToggleItemProps> = ({ isDarkMode, onToggle, theme, styles }) => {
+  // Calculate icon and title based on current mode (ensures it updates when isDarkMode changes)
+  const icon = isDarkMode ? "sunny-outline" : "moon-outline";
+  const title = isDarkMode ? "Dark Mode" : "Light Mode";
+  
+  return (
+    <Card noPadding variant="flat" style={styles.settingItem}>
+      <View style={styles.settingContent}>
+        <View style={styles.settingLeft}>
+          <Ionicons name={icon as any} size={22} color={theme.colors.primary} />
+          <Text style={styles.settingTitle}>{title}</Text>
+        </View>
+        <Switch
+          value={isDarkMode}
+          onValueChange={onToggle}
+          trackColor={{ false: '#D1D5DB', true: theme.colors.primary }}
+          thumbColor={isDarkMode ? '#FFFFFF' : '#F3F4F6'}
+          ios_backgroundColor="#D1D5DB"
+        />
       </View>
-      <Switch
-        value={isDarkMode}
-        onValueChange={onToggle}
-        trackColor={{ false: '#D1D5DB', true: theme.colors.primary }}
-        thumbColor={isDarkMode ? '#FFFFFF' : '#F3F4F6'}
-        ios_backgroundColor="#D1D5DB"
-      />
-    </View>
-  </Card>
-);
+    </Card>
+  );
+};
 
 interface SettingItemProps {
   icon: keyof typeof Ionicons.glyphMap;

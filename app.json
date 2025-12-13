@@ -21,7 +21,14 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#EDE6FF"
       },
-      "package": "com.group1.taskmanagement"
+      "package": "com.group1.taskmanagement",
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -41,6 +48,15 @@
         "expo-av",
         {
           "microphonePermission": "The app needs access to your microphone to record voice journals for your memories."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "The app needs access to your photos to save images to your gallery.",
+          "savePhotosPermission": "The app needs permission to save photos to your gallery.",
+          "isAccessMediaLocationEnabled": false,
+          "audioPermission": "The app needs access to audio files for media library operations."
         }
       ]
     ],

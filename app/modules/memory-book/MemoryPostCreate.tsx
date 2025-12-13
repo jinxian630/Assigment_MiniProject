@@ -365,47 +365,41 @@ export default function MemoryPostCreate() {
             fileData = await response.blob();
             console.log("✅ Fetched audio blob, size:", fileData.size, "bytes");
           } else {
-            // Mobile: use expo-file-system
-            console.log("📱 Using expo-file-system for mobile platform");
-            const FileSystem = require("expo-file-system");
-
-            // Check if file exists
-            const fileInfo = await FileSystem.getInfoAsync(fileUri);
-            console.log("📄 File info:", fileInfo);
-
-            if (!fileInfo.exists) {
-              throw new Error(`Audio file does not exist at: ${fileUri}`);
-            }
-
+            // Mobile: use XMLHttpRequest to create Blob (same approach as images)
+            console.log("📱 Using XMLHttpRequest for mobile platform");
+            
+            // Use XMLHttpRequest to load the file as a Blob (works with file:// URIs)
+            fileData = await new Promise<Blob>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.onload = () => {
+                if (xhr.status === 200 || xhr.status === 0) {
+                  // Status 0 is for file:// URIs
+                  resolve(xhr.response);
+                } else {
+                  reject(new Error(`Failed to load audio: ${xhr.status} ${xhr.statusText}`));
+                }
+              };
+              xhr.onerror = () => {
+                reject(new Error("Failed to load audio file"));
+              };
+              xhr.responseType = "blob";
+              xhr.open("GET", fileUri, true);
+              xhr.send();
+            });
+            
+            console.log("✅ Loaded audio blob, size:", fileData.size, "bytes");
+            
             // Validate file size (max 10MB)
             const maxSizeBytes = 10 * 1024 * 1024; // 10MB
-            if (fileInfo.size && fileInfo.size > maxSizeBytes) {
+            if (fileData.size > maxSizeBytes) {
               throw new Error(
                 `Audio file is too large (${(
-                  fileInfo.size /
+                  fileData.size /
                   1024 /
                   1024
                 ).toFixed(2)}MB). Maximum size is 10MB.`
               );
             }
-
-            const base64 = await FileSystem.readAsStringAsync(fileUri, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
-            console.log("✅ Read base64, length:", base64.length);
-
-            // Convert base64 to Uint8Array for Firebase Storage
-            const byteCharacters = atob(base64);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            fileData = new Uint8Array(byteNumbers);
-            console.log(
-              "✅ Converted to Uint8Array, size:",
-              fileData.length,
-              "bytes"
-            );
           }
 
           const uniqueId =

@@ -86,16 +86,32 @@ export const RegistrationProvider: React.FC<RegistrationProviderProps> = ({ chil
   const submitRegistration = async () => {
     setIsLoading(true);
     try {
-      // Validate all required data is present
-      if (
-        !data.displayName ||
-        !data.email ||
-        !data.password ||
-        !data.birthDate ||
-        !data.gender ||
-        !data.phoneNumber
-      ) {
-        throw new Error('Missing required registration data');
+      // Validate all required data is present with detailed error messages
+      const missingFields: string[] = [];
+      
+      if (!data.displayName || data.displayName.trim().length === 0) {
+        missingFields.push('Display Name');
+      }
+      if (!data.email || data.email.trim().length === 0) {
+        missingFields.push('Email');
+      }
+      if (!data.password || data.password.trim().length === 0) {
+        missingFields.push('Password');
+      }
+      if (!data.birthDate || data.birthDate.trim().length === 0) {
+        missingFields.push('Birth Date');
+      }
+      if (!data.gender) {
+        missingFields.push('Gender');
+      }
+      if (!data.phoneNumber || data.phoneNumber.trim().length === 0) {
+        missingFields.push('Phone Number');
+      }
+
+      if (missingFields.length > 0) {
+        throw new Error(
+          `Missing required registration data: ${missingFields.join(', ')}. Please go back and complete all steps.`
+        );
       }
 
       // Step 1: Create Firebase Auth user and Firestore document (without photo first)
@@ -139,6 +155,11 @@ export const RegistrationProvider: React.FC<RegistrationProviderProps> = ({ chil
       // Navigation to dashboard will be handled by AuthContext's auth state listener
     } catch (error: any) {
       console.error('❌ Registration error:', error);
+      console.error('❌ Error code:', error?.code);
+      console.error('❌ Error message:', error?.message);
+      
+      // Re-throw the error so it can be handled by the calling component
+      // The calling component will show user-friendly error messages
       throw error;
     } finally {
       setIsLoading(false);

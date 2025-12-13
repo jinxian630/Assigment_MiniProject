@@ -21,7 +21,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { auth, db } from "@/config/firebase";
 import { doc, getDoc } from "firebase/firestore";
-import { subscribeToLatestMemories } from "./utils/firebaseHelpers";
+import { subscribeToUserMemories } from "./utils/firebaseHelpers";
 import type { Memory } from "./utils/memoryHelpers";
 import PostCard from "./components/PostCard";
 import BottomNavBar from "./components/BottomNavBar";
@@ -137,9 +137,16 @@ export default function MemoryBookScreen() {
   }, [authUser]);
 
   useEffect(() => {
-    console.log("🔄 Setting up memory subscription...");
-    const unsubscribe = subscribeToLatestMemories(20, (memoriesList) => {
-      console.log("📦 Memory feed: Received", memoriesList.length, "memories");
+    const currentUserId = user?.id || authUser?.id || auth.currentUser?.uid;
+    if (!currentUserId) {
+      console.log("⚠️ No user ID available, skipping memory subscription");
+      setMemories([]);
+      return;
+    }
+
+    console.log("🔄 Setting up memory subscription for user:", currentUserId);
+    const unsubscribe = subscribeToUserMemories(currentUserId, (memoriesList) => {
+      console.log("📦 Memory feed: Received", memoriesList.length, "memories for user", currentUserId);
       console.log(
         "📋 Memory IDs:",
         memoriesList.map((m) => m.id)
@@ -151,7 +158,7 @@ export default function MemoryBookScreen() {
       console.log("🛑 Unsubscribing from memories");
       unsubscribe();
     };
-  }, []);
+  }, [user?.id, authUser?.id]);
 
   // Pulsing glow animation for profile card
   useEffect(() => {

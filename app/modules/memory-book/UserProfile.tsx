@@ -112,8 +112,7 @@ type TabType = "posts" | "comments" | "stats";
 export default function UserProfile() {
   const router = useRouter();
   const params = useLocalSearchParams<{ userId?: string }>();
-  const { theme, toggleTheme } = useTheme();
-  const isDarkMode = theme === "dark";
+  const { theme, isDarkMode, toggleTheme } = useTheme();
   const { user: authUser } = useAuth();
 
   // Use provided userId or fall back to current user's ID
@@ -593,6 +592,7 @@ export default function UserProfile() {
           <View style={styles.headerRight}>
             {/* Theme Toggle Button - Always visible */}
             <InteractiveButton
+              key={`theme-toggle-${isDarkMode}`}
               onPress={() => {
                 if (Platform.OS === "ios") {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

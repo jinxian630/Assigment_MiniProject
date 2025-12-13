@@ -30,6 +30,7 @@ export default function RegisterStep2() {
   const [gender, setGender] = useState<'male' | 'female'>(
     (data.gender as 'male' | 'female') || 'male'
   );
+  const [showGenderPicker, setShowGenderPicker] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState(data.phoneNumber || '');
   const [errors, setErrors] = useState<{
     birthDate?: string;
@@ -111,10 +112,10 @@ export default function RegisterStep2() {
                 }}
                 style={styles.monthYearPicker}
                 itemStyle={styles.pickerItemStyle}
-                dropdownIconColor="#000000"
+                dropdownIconColor={Theme.colors.textSecondary}
               >
                 {months.map((month, index) => (
-                  <Picker.Item key={month} label={month} value={index} color="#000000" />
+                  <Picker.Item key={month} label={month} value={index} color="#FFFFFF" />
                 ))}
               </Picker>
             </View>
@@ -132,10 +133,10 @@ export default function RegisterStep2() {
                 }}
                 style={styles.monthYearPicker}
                 itemStyle={styles.pickerItemStyle}
-                dropdownIconColor="#000000"
+                dropdownIconColor={Theme.colors.textSecondary}
               >
                 {years.map((year) => (
-                  <Picker.Item key={year} label={year.toString()} value={year} color="#000000" />
+                  <Picker.Item key={year} label={year.toString()} value={year} color="#FFFFFF" />
                 ))}
               </Picker>
             </View>
@@ -240,20 +241,80 @@ export default function RegisterStep2() {
               {/* Gender */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Gender</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={gender}
-                    onValueChange={(value) => setGender(value)}
-                    style={styles.picker}
-                    dropdownIconColor="#000000"
-                    accessibilityLabel="Gender selection"
-                    accessibilityHint="Select your gender from the dropdown"
-                  >
-                    <Picker.Item label="Male" value="male" color="#000000" />
-                    <Picker.Item label="Female" value="female" color="#000000" />
-                  </Picker>
-                </View>
+                <TouchableOpacity
+                  style={styles.genderButton}
+                  activeOpacity={0.7}
+                  onPress={() => setShowGenderPicker(true)}
+                >
+                  <Text style={styles.genderButtonText}>
+                    {gender === 'male' ? 'Male' : 'Female'}
+                  </Text>
+                  <Ionicons name="chevron-down-outline" size={20} color={Theme.colors.textSecondary} style={styles.chevronIcon} />
+                </TouchableOpacity>
               </View>
+
+              {/* Gender Picker Modal */}
+              <Modal
+                visible={showGenderPicker}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowGenderPicker(false)}
+              >
+                <View style={styles.modalOverlay}>
+                  <View style={styles.genderModalContent}>
+                    <View style={styles.modalHeader}>
+                      <Text style={styles.modalTitle}>Select Gender</Text>
+                      <TouchableOpacity onPress={() => setShowGenderPicker(false)}>
+                        <Ionicons name="close" size={24} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.genderOption,
+                        gender === 'male' && styles.genderOptionSelected,
+                      ]}
+                      onPress={() => {
+                        setGender('male');
+                        setShowGenderPicker(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.genderOptionText,
+                          gender === 'male' && styles.genderOptionTextSelected,
+                        ]}
+                      >
+                        Male
+                      </Text>
+                      {gender === 'male' && (
+                        <Ionicons name="checkmark" size={20} color={Theme.colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.genderOption,
+                        gender === 'female' && styles.genderOptionSelected,
+                      ]}
+                      onPress={() => {
+                        setGender('female');
+                        setShowGenderPicker(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.genderOptionText,
+                          gender === 'female' && styles.genderOptionTextSelected,
+                        ]}
+                      >
+                        Female
+                      </Text>
+                      {gender === 'female' && (
+                        <Ionicons name="checkmark" size={20} color={Theme.colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </Modal>
 
               {/* Phone Number */}
               <View style={styles.inputGroup}>
@@ -355,18 +416,57 @@ const styles = StyleSheet.create({
     fontSize: Theme.typography.fontSizes.md,
     color: '#FFFFFF',
   },
-  pickerContainer: {
-    backgroundColor: '#FFFFFF',
+  genderButton: {
+    backgroundColor: '#1A1A1A',
     borderRadius: Theme.borderRadius.lg,
+    padding: Theme.spacing.md,
     borderWidth: 1,
     borderColor: '#333333',
-    overflow: 'hidden',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     height: 56,
-    justifyContent: 'center',
   },
-  picker: {
-    color: '#000000',
-    marginLeft: -8, // Adjust for default picker padding
+  genderButtonText: {
+    fontSize: Theme.typography.fontSizes.md,
+    color: '#FFFFFF',
+    flex: 1,
+  },
+  chevronIcon: {
+    marginRight: 4,
+  },
+  genderModalContent: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: Theme.borderRadius.lg,
+    padding: Theme.spacing.lg,
+    width: '85%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#333333',
+  },
+  genderOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.md,
+    marginBottom: Theme.spacing.sm,
+    backgroundColor: '#000000',
+    borderWidth: 1,
+    borderColor: '#333333',
+  },
+  genderOptionSelected: {
+    backgroundColor: '#1A1A1A',
+    borderColor: Theme.colors.primary,
+  },
+  genderOptionText: {
+    fontSize: Theme.typography.fontSizes.md,
+    color: '#FFFFFF',
+    fontWeight: Theme.typography.fontWeights.medium,
+  },
+  genderOptionTextSelected: {
+    color: Theme.colors.primary,
+    fontWeight: Theme.typography.fontWeights.bold,
   },
   inputStyle: {
     backgroundColor: '#1A1A1A',
@@ -461,12 +561,12 @@ const styles = StyleSheet.create({
     borderColor: '#333333',
     borderRadius: Theme.borderRadius.md,
     overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#1A1A1A',
     height: 48,
     justifyContent: 'center',
   },
   monthYearPicker: {
-    color: '#000000',
+    color: '#FFFFFF',
     ...Platform.select({
       ios: {
         height: 150,
@@ -479,8 +579,8 @@ const styles = StyleSheet.create({
     }),
   },
   pickerItemStyle: {
-    color: '#000000',
-    backgroundColor: '#FFFFFF',
+    color: '#FFFFFF',
+    backgroundColor: '#1A1A1A',
     fontSize: 14,
   },
   customCalendarWrapper: {
