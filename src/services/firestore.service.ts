@@ -45,6 +45,37 @@ class FirestoreService {
       if (userSnap.exists()) {
         const data = userSnap.data() as FirestoreUser;
 
+        // Safely convert Firestore Timestamp to Date
+        let createdAt: Date = new Date();
+        if (data.createdAt) {
+          if (data.createdAt instanceof Timestamp) {
+            createdAt = data.createdAt.toDate();
+          } else if (typeof data.createdAt === 'object' && 'toDate' in data.createdAt && typeof (data.createdAt as any).toDate === 'function') {
+            createdAt = (data.createdAt as Timestamp).toDate();
+          } else if (data.createdAt instanceof Date) {
+            createdAt = data.createdAt;
+          } else if (typeof data.createdAt === 'number') {
+            createdAt = new Date(data.createdAt);
+          } else if (typeof data.createdAt === 'string') {
+            createdAt = new Date(data.createdAt);
+          }
+        }
+
+        let updatedAt: Date | undefined = undefined;
+        if (data.updatedAt) {
+          if (data.updatedAt instanceof Timestamp) {
+            updatedAt = data.updatedAt.toDate();
+          } else if (typeof data.updatedAt === 'object' && 'toDate' in data.updatedAt && typeof (data.updatedAt as any).toDate === 'function') {
+            updatedAt = (data.updatedAt as Timestamp).toDate();
+          } else if (data.updatedAt instanceof Date) {
+            updatedAt = data.updatedAt;
+          } else if (typeof data.updatedAt === 'number') {
+            updatedAt = new Date(data.updatedAt);
+          } else if (typeof data.updatedAt === 'string') {
+            updatedAt = new Date(data.updatedAt);
+          }
+        }
+
         // Convert Firestore document to User interface
         return {
           id: uid,
@@ -54,10 +85,8 @@ class FirestoreService {
           gender: data.gender,
           phoneNumber: data.phoneNumber,
           photoURL: data.photoURL,
-          createdAt: (data.createdAt as Timestamp)?.toDate() || new Date(),
-          updatedAt: data.updatedAt
-            ? (data.updatedAt as Timestamp).toDate()
-            : undefined,
+          createdAt,
+          updatedAt,
         };
       }
 

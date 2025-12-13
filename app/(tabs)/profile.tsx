@@ -10,7 +10,6 @@ import { Divider } from '@/components/common/Divider';
 import { useAuth } from '@/hooks/useAuth';
 import { useRegistration } from '@/contexts/RegistrationContext';
 import { useTheme } from '@/hooks/useTheme';
-import { Theme } from '@/constants/theme';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -26,9 +25,11 @@ export default function ProfileScreen() {
       flex: 1,
     },
     scrollContent: {
+      flexGrow: 1,
       paddingHorizontal: theme.spacing.screenPadding,
       paddingTop: theme.spacing.lg,
-      paddingBottom: theme.spacing.xxl,
+      paddingBottom: Platform.OS === "ios" ? 140 : 120,
+      minHeight: '100%',
     },
     header: {
       marginBottom: theme.spacing.xl,
@@ -98,6 +99,7 @@ export default function ProfileScreen() {
     },
     logoutSection: {
       marginTop: theme.spacing.lg,
+      marginBottom: Platform.OS === "ios" ? 20 : 16,
     },
   }), [theme]);
 
@@ -160,7 +162,10 @@ export default function ProfileScreen() {
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={true}
+          bounces={true}
+          alwaysBounceVertical={false}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Header */}
           <View style={styles.header}>

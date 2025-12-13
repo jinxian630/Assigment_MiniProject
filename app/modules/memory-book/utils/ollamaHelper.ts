@@ -4,7 +4,7 @@
  */
 
 const OLLAMA_BASE_URL = "http://localhost:11434/api/generate";
-const MODEL_NAME = "deepseek"; // Change to your model name if different
+const MODEL_NAME = "deepseek-r1:1.5b"; // Using the installed DeepSeek model
 
 export interface MoodInsight {
   message: string;
@@ -47,26 +47,40 @@ Date: ${new Date(memoryData.date).toLocaleDateString()}
 
 Generate a brief, encouraging reflection prompt (1-2 sentences) that helps the user think about this memory. Be warm and supportive.`;
 
-    const response = await fetch(OLLAMA_BASE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL_NAME,
-        prompt: prompt,
-        stream: false,
-      }),
-    });
+      // Use AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(OLLAMA_BASE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MODEL_NAME,
+          prompt: prompt,
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.statusText}`);
-    }
+      clearTimeout(timeoutId);
 
-    const data = await response.json();
-    return data.response || "Take a moment to reflect on this memory.";
-  } catch (error) {
-    console.error("Error generating reflection prompt:", error);
+      if (!response.ok) {
+        throw new Error(`Ollama API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.response || "Take a moment to reflect on this memory.";
+    } catch (error: any) {
+      // Silently handle network errors (Ollama may not be available on mobile)
+      if (error.name === 'AbortError') {
+        console.log("Ollama reflection prompt timeout");
+      } else if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+        console.log("Ollama not available for reflection (network error)");
+      } else {
+        console.log("Error generating reflection prompt:", error.message || error);
+      }
     // Fallback prompts
     const fallbacks = [
       "It's been a while since this memory. How do you feel about it now?",
@@ -151,6 +165,10 @@ Average Warmth: ${avgWarmth.toFixed(1)}%
 Generate 2-3 brief, supportive insights about the user's emotional patterns. Be encouraging and specific. Format as JSON array with {message, trend, period} objects.`;
 
     try {
+      // Use AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
       const response = await fetch(OLLAMA_BASE_URL, {
         method: "POST",
         headers: {
@@ -161,7 +179,10 @@ Generate 2-3 brief, supportive insights about the user's emotional patterns. Be 
           prompt: prompt,
           stream: false,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
@@ -173,8 +194,15 @@ Generate 2-3 brief, supportive insights about the user's emotional patterns. Be 
           return parsed;
         }
       }
-    } catch (error) {
-      console.error("Error getting AI insights:", error);
+    } catch (error: any) {
+      // Silently handle network errors (Ollama may not be available on mobile)
+      if (error.name === 'AbortError') {
+        console.log("Ollama request timeout");
+      } else if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+        console.log("Ollama not available (network error)");
+      } else {
+        console.log("Error getting AI insights:", error.message || error);
+      }
     }
 
     // Fallback insights based on data
@@ -222,12 +250,35 @@ Generate 2-3 brief, supportive insights about the user's emotional patterns. Be 
  */
 export async function checkOllamaConnection(): Promise<boolean> {
   try {
+    // Use AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
     const response = await fetch("http://localhost:11434/api/tags", {
       method: "GET",
-      timeout: 2000,
-    } as any);
-    return response.ok;
-  } catch (error) {
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const data = await response.json();
+      // Check if deepseek-r1:1.5b model is available
+      const models = data.models || [];
+      const hasDeepSeek = models.some((m: any) => 
+        m.name?.toLowerCase().includes("deepseek")
+      );
+      console.log("Ollama connected. Available models:", models.map((m: any) => m.name));
+      console.log("DeepSeek model available:", hasDeepSeek);
+      return hasDeepSeek;
+    }
+    return false;
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.log("Ollama connection timeout");
+    } else {
+      console.log("Ollama not available:", error.message);
+    }
     return false;
   }
 }

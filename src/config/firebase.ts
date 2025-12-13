@@ -5,10 +5,10 @@ import { getStorage, FirebaseStorage } from "firebase/storage";
 
 // Firebase configuration - MyMiniProjectNkk
 const firebaseConfig = {
-  apiKey: "AIzaSyBtKSx58Xkzop03XGtw-XH48clS43kxDhA123",
-  authDomain: "myminiprojectnkk.firebaseapp.com123",
+  apiKey: "AIzaSyBtKSx58Xkzop03XGtw-XH48clS43kxDhA",
+  authDomain: "myminiprojectnkk.firebaseapp.com",
   projectId: "myminiprojectnkk",
-  storageBucket: "myminiprojectnkk.firebasestorage.app123",
+  storageBucket: "myminiprojectnkk.firebasestorage.app",
   messagingSenderId: "414225611161",
   appId: "1:414225611161:web:8c153238a43426ef7f3b08",
   measurementId: "G-ZVQ3S2G8V7",

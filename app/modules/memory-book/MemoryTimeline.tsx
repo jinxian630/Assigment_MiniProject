@@ -33,6 +33,7 @@ import { extractStoragePathFromURL } from "./utils/storageHelpers";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import BottomNavBar from "./components/BottomNavBar";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -598,8 +599,8 @@ export default function MemoryTimeline() {
               </Text>
             )}
           </View>
-          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-            <View style={{ position: "relative" }}>
+          <View style={styles.headerRight}>
+            <View style={{ position: "relative", marginRight: 8 }}>
               <InteractiveButton
                 onPress={() => {
                   setShowFilterModal(true);
@@ -610,11 +611,12 @@ export default function MemoryTimeline() {
                     ? "Filter active - tap to adjust filters"
                     : "Filter memories by mood, color, feeling, or keyword"
                 }
-                variant={hasActiveFilters ? "primary" : "secondary"}
+                variant={hasActiveFilters ? "primary" : "ghost"}
                 size="sm"
                 isDarkMode={isDarkMode}
-                iconColor={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
-                iconSize={20}
+                iconColor={hasActiveFilters ? "#FFFFFF" : (isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE)}
+                iconSize={Platform.OS === "ios" ? 26 : 24}
+                noBorder={true}
                 style={styles.filterButton}
                 accessibilityLabel="Filter memories"
                 accessibilityHint="Opens filter options"
@@ -632,9 +634,9 @@ export default function MemoryTimeline() {
               variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
-              iconColor={colors.text}
-              iconSize={20}
-              style={styles.themeToggle}
+              iconColor={PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
+              noBorder={true}
               accessibilityLabel="Toggle theme"
               accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
             />
@@ -813,45 +815,38 @@ export default function MemoryTimeline() {
                                 ]}
                               >
                                 {/* Delete Button - Wrapped in View to prevent parent TouchableOpacity from blocking */}
-                                <View 
-                                  style={{ 
-                                    position: "absolute", 
-                                    top: 12, 
-                                    right: 12, 
-                                    zIndex: 9999,
-                                    pointerEvents: "box-only"
+                                <TouchableOpacity
+                                  onPress={(e) => {
+                                    e.stopPropagation();
+                                    console.log("🗑️ Delete button pressed for:", memory.id);
+                                    if (Platform.OS === "ios") {
+                                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                    }
+                                    confirmDelete(memory.id, memory.title, memory.imageURL);
                                   }}
-                                  onStartShouldSetResponder={() => true}
-                                  onResponderTerminationRequest={() => false}
+                                  disabled={isDeleting}
+                                  activeOpacity={0.7}
+                                  hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                  style={[
+                                    styles.deleteBtn,
+                                    {
+                                      position: "absolute",
+                                      top: 12,
+                                      right: 12,
+                                      zIndex: 9999,
+                                      backgroundColor: isDeleting
+                                        ? "rgba(168, 85, 247, 0.5)"
+                                        : "rgba(239, 68, 68, 0.95)",
+                                      opacity: isDeleting ? 0.6 : 1,
+                                    },
+                                  ]}
                                 >
-                                  <TouchableOpacity
-                                    onPress={() => {
-                                      console.log("🗑️ Delete button pressed for:", memory.id);
-                                      if (Platform.OS === "ios") {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                      }
-                                      confirmDelete(memory.id, memory.title, memory.imageURL);
-                                    }}
-                                    disabled={isDeleting}
-                                    activeOpacity={0.7}
-                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                    style={[
-                                      styles.deleteBtn,
-                                      {
-                                        backgroundColor: isDeleting
-                                          ? "rgba(168, 85, 247, 0.5)"
-                                          : "rgba(239, 68, 68, 0.95)",
-                                        opacity: isDeleting ? 0.6 : 1,
-                                      },
-                                    ]}
-                                  >
-                                    {isDeleting ? (
-                                      <Ionicons name="hourglass-outline" size={18} color="#fff" />
-                                    ) : (
-                                      <Ionicons name="trash-outline" size={18} color="#fff" />
-                                    )}
-                                  </TouchableOpacity>
-                                </View>
+                                  {isDeleting ? (
+                                    <Ionicons name="hourglass-outline" size={18} color="#fff" />
+                                  ) : (
+                                    <Ionicons name="trash-outline" size={18} color="#fff" />
+                                  )}
+                                </TouchableOpacity>
 
                                 {/* Card Content - Touchable for expand/collapse */}
                                 <TouchableOpacity
@@ -1207,6 +1202,9 @@ export default function MemoryTimeline() {
           isDarkMode={isDarkMode}
           memories={memories as any[]}
         />
+
+        {/* Bottom Navigation */}
+        <BottomNavBar isDarkMode={isDarkMode} />
       </SafeAreaView>
     </GradientBackground>
   );
@@ -1219,35 +1217,36 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 6,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    paddingTop: Platform.OS === "ios" ? 6 : 4,
+    paddingBottom: Platform.OS === "ios" ? 8 : 6,
+    minHeight: Platform.OS === "ios" ? 50 : 48,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === "ios" ? 17 : 16,
     fontWeight: "600",
+    flexShrink: 1,
   },
   headerSubtitle: {
-    fontSize: 11,
+    fontSize: Platform.OS === "ios" ? 10 : 9,
     marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Platform.OS === "ios" ? 10 : 12,
+    flexShrink: 0,
   },
   themeToggle: {
     width: 40,
     alignItems: "flex-end",
   },
   filterButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
-    position: "relative",
-    shadowColor: PRIMARY_PURPLE,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    backgroundColor: "transparent",
   },
   filterBadge: {
     position: "absolute",
@@ -1259,9 +1258,9 @@ const styles = StyleSheet.create({
   },
 
   scrollContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: Platform.OS === "ios" ? 12 : 16,
     paddingTop: 8,
-    paddingBottom: 40,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
 
   /* Empty State */

@@ -252,6 +252,7 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
               isDarkMode={isDarkMode}
               iconColor={colors.textSoft}
               style={styles.editButton}
+              noBorder={true}
               accessibilityLabel="Edit memory"
               accessibilityHint="Opens edit screen for this memory"
             />
@@ -265,6 +266,7 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
             isDarkMode={isDarkMode}
             iconColor={colors.textSoft}
             style={styles.shareButton}
+            noBorder={true}
             accessibilityLabel="Share memory"
             accessibilityHint="Shares this memory with other apps"
           />
@@ -295,8 +297,9 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
             size="sm"
             isDarkMode={isDarkMode}
             iconColor={isLiked ? "#ef4444" : colors.text}
-            iconSize={26}
+            iconSize={Platform.OS === "ios" ? 24 : 22}
             style={{ minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }}
+            noBorder={true}
             accessibilityLabel={isLiked ? "Unlike memory" : "Like memory"}
             accessibilityHint={isLiked ? "Remove your like" : "Like this memory"}
           />
@@ -309,8 +312,9 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
               size="sm"
               isDarkMode={isDarkMode}
               iconColor={colors.text}
-              iconSize={24}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
               style={[styles.actionButton, { minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }]}
+              noBorder={true}
               accessibilityLabel="View comments"
               accessibilityHint={`${memory.comments || 0} comments on this memory`}
             />
@@ -324,14 +328,15 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
         <InteractiveButton
           onPress={handleSave}
           icon={isSaved ? "bookmark" : "bookmark-outline"}
-          description={isSaved ? "Remove from saved memories" : "Save to your saved memories"}
+          description={isSaved ? "Unsave" : "Save"}
           variant="ghost"
           size="sm"
           isDarkMode={isDarkMode}
           disabled={saving}
           iconColor={isSaved ? PRIMARY_PURPLE : colors.text}
-          iconSize={24}
+          iconSize={Platform.OS === "ios" ? 24 : 22}
           style={{ minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }}
+          noBorder={true}
           accessibilityLabel={isSaved ? "Remove from saved" : "Save memory"}
           accessibilityHint={isSaved ? "Unsave this memory" : "Save this memory for later"}
         />
@@ -434,7 +439,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 12,
+    padding: Platform.OS === "ios" ? 14 : 12,
   },
   headerActions: {
     flexDirection: "row",
@@ -472,24 +477,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   username: {
-    fontSize: 14,
+    fontSize: Platform.OS === "ios" ? 15 : 14,
     fontWeight: "600",
   },
   timestamp: {
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: Platform.OS === "ios" ? 12 : 11,
+    marginTop: Platform.OS === "ios" ? 3 : 2,
   },
   image: {
     width: "100%",
-    height: 400,
+    height: Platform.OS === "ios" ? 350 : 400,
     backgroundColor: "#1F2937",
   },
   actions: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
   },
   actionLeft: {
     flexDirection: "row",
@@ -500,30 +505,32 @@ const styles = StyleSheet.create({
     marginLeft: 0,
   },
   likes: {
-    fontSize: 14,
+    fontSize: Platform.OS === "ios" ? 15 : 14,
     fontWeight: "600",
-    paddingHorizontal: 12,
-    marginBottom: 4,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    marginBottom: Platform.OS === "ios" ? 6 : 4,
   },
   caption: {
-    paddingHorizontal: 12,
-    marginBottom: 4,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    marginBottom: Platform.OS === "ios" ? 6 : 4,
   },
   captionText: {
-    fontSize: 14,
+    fontSize: Platform.OS === "ios" ? 15 : 14,
+    lineHeight: Platform.OS === "ios" ? 22 : 20,
   },
   captionUsername: {
     fontWeight: "700",
   },
   description: {
-    fontSize: 13,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    fontSize: Platform.OS === "ios" ? 14 : 13,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    marginBottom: Platform.OS === "ios" ? 10 : 8,
+    lineHeight: Platform.OS === "ios" ? 20 : 18,
   },
   viewComments: {
-    fontSize: 13,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    fontSize: Platform.OS === "ios" ? 14 : 13,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    marginBottom: Platform.OS === "ios" ? 10 : 8,
   },
   emotionPreview: {
     marginHorizontal: 12,

@@ -6,6 +6,7 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  getDoc,
   increment,
   updateDoc,
   Unsubscribe,
@@ -91,7 +92,7 @@ export async function deleteComment(
   const commentRef = doc(db, "MemoryPosts", memoryId, "Comments", commentId);
 
   // Get comment to check ownership
-  const commentDoc = await commentRef.get();
+  const commentDoc = await getDoc(commentRef);
   const commentData = commentDoc.data();
 
   if (commentData?.userId !== user.uid) {

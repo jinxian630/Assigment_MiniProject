@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: Theme.spacing.screenPadding,
     paddingTop: Theme.spacing.xl,
-    paddingBottom: Theme.spacing.xxl,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
 
   header: {

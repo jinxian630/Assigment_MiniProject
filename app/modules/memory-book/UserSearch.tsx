@@ -24,8 +24,11 @@ import { db } from "@/config/firebase";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import BottomNavBar from "./components/BottomNavBar";
+import InteractiveButton from "./components/InteractiveButton";
 
 const MODULE_PURPLE = "#a855f7";
+const PRIMARY_PURPLE = "#a855f7";
 
 /** 🎨 Neon card shell helper */
 const createNeonCardShell = (
@@ -236,21 +239,24 @@ export default function UserSearch() {
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             Search Users
           </Text>
-          <TouchableOpacity
+          <InteractiveButton
             onPress={() => {
               toggleTheme();
               if (Platform.OS === "ios") {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }
             }}
+            icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+            variant="ghost"
+            size="sm"
+            isDarkMode={isDarkMode}
+            iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+            iconSize={Platform.OS === "ios" ? 24 : 22}
             style={styles.themeButton}
-          >
-            <Ionicons
-              name={isDarkMode ? "sunny" : "moon"}
-              size={22}
-              color={colors.text}
-            />
-          </TouchableOpacity>
+            noBorder={true}
+            accessibilityLabel="Toggle theme"
+            accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
+          />
         </View>
 
         {/* Search Bar */}
@@ -258,15 +264,16 @@ export default function UserSearch() {
           <Animated.View
             style={[
               styles.searchContainer,
-              createNeonCardShell(MODULE_PURPLE, isDarkMode, {
+              {
                 paddingHorizontal: 16,
                 paddingVertical: 14,
-              }),
-              {
+                borderRadius: 14,
+                borderWidth: 1.5,
                 backgroundColor: colors.inputBg,
                 borderColor: borderColor,
-                shadowOpacity: searchShadowOpacity,
-                shadowRadius: searchShadowRadius,
+                shadowOpacity: 0,
+                shadowRadius: 0,
+                elevation: 0,
               },
             ]}
           >
@@ -331,17 +338,10 @@ export default function UserSearch() {
                     {
                       backgroundColor: colors.chipBg,
                       borderColor: MODULE_PURPLE + (isDarkMode ? "66" : "80"),
-                      shadowColor: MODULE_PURPLE,
-                      shadowOpacity: searchGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.5, 0.9],
-                      }),
-                      shadowRadius: searchGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [15, 30],
-                      }),
+                      shadowOpacity: 0,
+                      shadowRadius: 0,
                       shadowOffset: { width: 0, height: 0 },
-                      elevation: 8,
+                      elevation: 0,
                     },
                   ]}
                 >
@@ -371,17 +371,10 @@ export default function UserSearch() {
                     {
                       backgroundColor: colors.chipBg,
                       borderColor: MODULE_PURPLE + (isDarkMode ? "66" : "80"),
-                      shadowColor: MODULE_PURPLE,
-                      shadowOpacity: searchGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.5, 0.9],
-                      }),
-                      shadowRadius: searchGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [15, 30],
-                      }),
+                      shadowOpacity: 0,
+                      shadowRadius: 0,
                       shadowOffset: { width: 0, height: 0 },
-                      elevation: 8,
+                      elevation: 0,
                     },
                   ]}
                 >
@@ -547,6 +540,9 @@ export default function UserSearch() {
             )}
           </ScrollView>
         )}
+
+        {/* Bottom Navigation */}
+        <BottomNavBar isDarkMode={isDarkMode} />
       </SafeAreaView>
     </GradientBackground>
   );

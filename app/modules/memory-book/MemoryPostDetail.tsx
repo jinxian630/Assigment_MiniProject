@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -11,24 +11,28 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/config/firebase";
+import * as Haptics from "expo-haptics";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import InteractiveButton from "./components/InteractiveButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
+import BottomNavBar from "./components/BottomNavBar";
 import {
   subscribeToComments,
   addComment,
   deleteComment,
   Comment,
 } from "./utils/commentHelpers";
+import { saveMemory, unsaveMemory, isMemorySaved } from "./utils/saveHelpers";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -71,6 +75,9 @@ export default function MemoryPostDetail() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const bookmarkScale = useRef(new Animated.Value(1)).current;
 
   const colors = {
     background: isDarkMode ? "#020617" : "#FAF5FF",
@@ -95,6 +102,13 @@ export default function MemoryPostDetail() {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           setPost({ id: snap.id, ...(snap.data() as PostData) });
+          
+          // Check if post is saved
+          const userId = authUser?.id || (authUser as any)?.uid;
+          if (userId) {
+            const saved = await isMemorySaved(memoryId, userId);
+            setIsSaved(saved);
+          }
         } else {
           setPost(null);
         }
@@ -107,7 +121,7 @@ export default function MemoryPostDetail() {
     };
 
     loadPost();
-  }, [memoryId]);
+  }, [memoryId, authUser]);
 
   // Subscribe to comments
   useEffect(() => {
@@ -189,6 +203,55 @@ export default function MemoryPostDetail() {
     );
   };
 
+  const handleSave = async () => {
+    if (!memoryId) return;
+
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert("Not logged in", "Please log in to save posts");
+      return;
+    }
+
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    setSaving(true);
+    const newSaved = !isSaved;
+
+    // Animate bookmark
+    Animated.sequence([
+      Animated.spring(bookmarkScale, {
+        toValue: 1.2,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 3,
+      }),
+      Animated.spring(bookmarkScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 3,
+      }),
+    ]).start();
+
+    try {
+      if (newSaved) {
+        await saveMemory(memoryId);
+        Alert.alert("✅ Saved", "Memory saved to your collection!");
+      } else {
+        await unsaveMemory(memoryId);
+        Alert.alert("Removed", "Memory removed from saved posts");
+      }
+      setIsSaved(newSaved);
+    } catch (error: any) {
+      console.error("Error saving/unsaving post:", error);
+      Alert.alert("Error", error.message || "Failed to save post");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const accent = post?.emotionColor || PRIMARY_PURPLE;
 
   return (
@@ -212,7 +275,25 @@ export default function MemoryPostDetail() {
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             Memory Detail
           </Text>
-          <View style={{ width: 40 }} />
+          <TouchableOpacity
+            onPress={handleSave}
+            disabled={saving || !memoryId}
+            style={styles.saveButton}
+            activeOpacity={0.7}
+          >
+            <Animated.View
+              style={[
+                { transform: [{ scale: bookmarkScale }] },
+                saving && { opacity: 0.5 },
+              ]}
+            >
+              <Ionicons
+                name={isSaved ? "bookmark" : "bookmark-outline"}
+                size={24}
+                color={isSaved ? PRIMARY_PURPLE : colors.text}
+              />
+            </Animated.View>
+          </TouchableOpacity>
         </View>
 
         {loading ? (
@@ -236,8 +317,8 @@ export default function MemoryPostDetail() {
         ) : (
           <KeyboardAvoidingView
             style={styles.flex}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            keyboardVerticalOffset={90}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 80}
           >
             <ScrollView
               style={styles.scrollView}
@@ -315,6 +396,64 @@ export default function MemoryPostDetail() {
                 <Text style={[styles.description, { color: colors.text }]}>
                   {post.description}
                 </Text>
+
+                {/* Comment Input - Moved here between description and comments */}
+                <View
+                  style={[
+                    styles.commentInputContainer,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <TextInput
+                    style={[
+                      styles.commentInput,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.inputBorder,
+                        color: colors.text,
+                      },
+                    ]}
+                    placeholder="Add a comment..."
+                    placeholderTextColor={colors.textSoft}
+                    value={commentText}
+                    onChangeText={setCommentText}
+                    multiline
+                    maxLength={500}
+                    editable={!submittingComment}
+                    returnKeyType="send"
+                    onSubmitEditing={commentText.trim() && !submittingComment ? handleAddComment : undefined}
+                  />
+                  <TouchableOpacity
+                    onPress={handleAddComment}
+                    disabled={!commentText.trim() || submittingComment}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.sendButton,
+                      {
+                        backgroundColor: commentText.trim() && !submittingComment
+                          ? (isDarkMode ? "#374151" : "#E5E7EB")
+                          : (isDarkMode ? "#1F2937" : "#F3F4F6"),
+                        opacity: (!commentText.trim() || submittingComment) ? 0.5 : 1,
+                      },
+                    ]}
+                    accessibilityLabel="Send comment"
+                    accessibilityHint="Posts your comment"
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    {submittingComment ? (
+                      <ActivityIndicator size="small" color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+                    ) : (
+                      <Ionicons
+                        name="send"
+                        size={Platform.OS === "ios" ? 20 : 18}
+                        color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                      />
+                    )}
+                  </TouchableOpacity>
+                </View>
 
                 {/* Comments Section */}
                 <View style={styles.commentsSection}>
@@ -399,19 +538,20 @@ export default function MemoryPostDetail() {
                             </Text>
                           </View>
                           {auth.currentUser?.uid === comment.userId && (
-                            <InteractiveButton
-                              onPress={() => handleDeleteComment(comment.id)}
-                              icon="trash-outline"
-                              description="Delete this comment"
-                              variant="ghost"
-                              size="sm"
-                              isDarkMode={isDarkMode}
-                              iconColor={colors.textSoft}
-                              iconSize={16}
+                            <TouchableOpacity
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                handleDeleteComment(comment.id);
+                              }}
                               style={styles.deleteCommentBtn}
-                              accessibilityLabel="Delete comment"
-                              accessibilityHint="Permanently deletes this comment"
-                            />
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                              <Ionicons
+                                name="trash-outline"
+                                size={18}
+                                color={colors.textSoft}
+                              />
+                            </TouchableOpacity>
                           )}
                         </View>
                         <Text
@@ -425,58 +565,11 @@ export default function MemoryPostDetail() {
                 </View>
               </View>
             </ScrollView>
-
-            {/* Comment Input */}
-            <View
-              style={[
-                styles.commentInputContainer,
-                {
-                  backgroundColor: colors.surface,
-                  borderTopColor: colors.border,
-                },
-              ]}
-            >
-              <TextInput
-                style={[
-                  styles.commentInput,
-                  {
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.inputBorder,
-                    color: colors.text,
-                  },
-                ]}
-                placeholder="Add a comment..."
-                placeholderTextColor={colors.textSoft}
-                value={commentText}
-                onChangeText={setCommentText}
-                multiline
-                maxLength={500}
-              />
-              <InteractiveButton
-                onPress={handleAddComment}
-                disabled={!commentText.trim() || submittingComment}
-                icon={submittingComment ? undefined : "send"}
-                label={submittingComment ? "Sending..." : undefined}
-                description="Post your comment"
-                variant={commentText.trim() && !submittingComment ? "primary" : "secondary"}
-                size="sm"
-                isDarkMode={isDarkMode}
-                iconColor="#fff"
-                iconSize={20}
-                style={styles.sendButton}
-                accessibilityLabel="Send comment"
-                accessibilityHint="Posts your comment"
-              />
-              {submittingComment && (
-                <ActivityIndicator
-                  size="small"
-                  color="#fff"
-                  style={{ position: "absolute" }}
-                />
-              )}
-            </View>
           </KeyboardAvoidingView>
         )}
+
+        {/* Bottom Navigation */}
+        <BottomNavBar isDarkMode={isDarkMode} />
       </SafeAreaView>
     </GradientBackground>
   );
@@ -501,11 +594,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
   },
+  saveButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: Platform.OS === "ios" ? 100 : 80,
   },
   center: {
     flex: 1,
@@ -638,7 +737,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   deleteCommentBtn: {
-    padding: 4,
+    padding: 8,
+    minWidth: 36,
+    minHeight: 36,
+    alignItems: "center",
+    justifyContent: "center",
   },
   commentText: {
     fontSize: 14,
@@ -647,25 +750,33 @@ const styles = StyleSheet.create({
   commentInputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    borderTopWidth: 1,
+    marginTop: 20,
+    marginBottom: 20,
     gap: 8,
+    borderWidth: 1,
+    borderRadius: 16,
+    borderStyle: "solid",
   },
   commentInput: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
+    borderWidth: 0,
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingVertical: Platform.OS === "ios" ? 12 : 10,
+    fontSize: Platform.OS === "ios" ? 15 : 14,
     maxHeight: 100,
+    minHeight: Platform.OS === "ios" ? 44 : 42,
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: Platform.OS === "ios" ? 44 : 40,
+    height: Platform.OS === "ios" ? 44 : 40,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+    marginLeft: 4,
   },
 });

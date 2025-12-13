@@ -1,5 +1,5 @@
 import { Share, Platform, Alert } from "react-native";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 // Conditionally import expo-sharing (not available on web)
 let Sharing: any = null;
@@ -19,43 +19,52 @@ export async function shareMemory(
   try {
     const message = `${title}\n\n${description}`;
 
-    // For email and text sharing, use React Native Share API
-    // This works better with email apps
-    const shareOptions: any = {
-      message,
-      title: title, // Subject for email apps
-    };
-
-    // Try to share with image if available (not on web)
+    // For mobile: Share image file directly (not URL) to show actual image
     if (imageURL && Platform.OS !== "web" && Sharing) {
       try {
         const isAvailable = await Sharing.isAvailableAsync();
         if (isAvailable) {
+          // Download image to local cache
           const fileUri = `${FileSystem.cacheDirectory}memory_${Date.now()}.jpg`;
+          console.log("📥 Downloading image for sharing...");
           const downloadResult = await FileSystem.downloadAsync(imageURL, fileUri);
 
           if (downloadResult.status === 200) {
-            // Share image - this will allow email apps to attach the image
+            console.log("✅ Image downloaded, sharing image file directly...");
+            
+            // Share the image file directly using expo-sharing
+            // This will show the actual image in apps like Messenger, not a link
             await Sharing.shareAsync(downloadResult.uri, {
               mimeType: "image/jpeg",
-              dialogTitle: "Share Memory",
+              dialogTitle: `Share Memory: ${title}`,
+              UTI: "public.jpeg",
             });
+            console.log("✅ Image file shared successfully");
             return;
+          } else {
+            throw new Error(`Download failed with status: ${downloadResult.status}`);
           }
         }
-      } catch (imageError) {
-        console.log("Could not share image, falling back to text:", imageError);
+      } catch (imageError: any) {
+        console.error("❌ Error sharing image file:", imageError);
+        // Fall through to text-only sharing (without URL to avoid showing link)
       }
     }
 
-    // Text sharing (works with email apps - they'll use title as subject)
+    // Text-only sharing (fallback, web, or when image sharing fails)
+    // IMPORTANT: Don't include imageURL in message to avoid showing link
+    const shareOptions: any = {
+      message: message, // Only text, no URL
+      title: title, // Subject for email apps
+    };
+
     const result = await Share.share(shareOptions);
 
     if (result.action === Share.sharedAction) {
-      console.log("Memory shared successfully");
+      console.log("✅ Memory shared successfully");
     }
   } catch (error: any) {
-    console.error("Error sharing memory:", error);
+    console.error("❌ Error sharing memory:", error);
     Alert.alert("Error", "Failed to share memory. Please try again.");
   }
 }
@@ -93,4 +102,5 @@ export async function saveImageToGallery(imageURL: string): Promise<void> {
     Alert.alert("Error", "Failed to save image. Please try again.");
   }
 }
+
 

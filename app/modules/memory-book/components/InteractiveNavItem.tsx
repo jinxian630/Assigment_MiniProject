@@ -161,7 +161,7 @@ export default function InteractiveNavItem({
           >
             <Ionicons
               name={(isActive ? activeIcon || icon : icon) as any}
-              size={20}
+              size={Platform.OS === "ios" ? 20 : 18}
               color={isActive ? activeColor : inactive}
             />
           </Animated.View>
@@ -180,24 +180,30 @@ export default function InteractiveNavItem({
       </Animated.View>
 
       {/* Tooltip */}
-      {description && showTooltip && Platform.OS === "web" && (
-        <Animated.View
-          style={[
-            styles.tooltip,
-            {
-              opacity: tooltipOpacity,
-              backgroundColor: isDarkMode ? "#1F2937" : "#0F172A",
-            },
-          ]}
-        >
-          <Text
+      {description && typeof description === "string" && showTooltip && Platform.OS === "web" && (
+        <View style={styles.tooltip} pointerEvents="none">
+          <Animated.View
             style={[
-              styles.tooltipText,
-              { color: isDarkMode ? "#E5E7EB" : "#FFFFFF" },
+              {
+                opacity: tooltipOpacity,
+                backgroundColor: isDarkMode ? "#1F2937" : "#0F172A",
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 8,
+                minWidth: 120,
+                maxWidth: 200,
+              },
             ]}
           >
-            {description}
-          </Text>
+            <Text
+              style={[
+                styles.tooltipText,
+                { color: isDarkMode ? "#E5E7EB" : "#FFFFFF" },
+              ]}
+            >
+              {description}
+            </Text>
+          </Animated.View>
           <View
             style={[
               styles.tooltipArrow,
@@ -206,7 +212,7 @@ export default function InteractiveNavItem({
               },
             ]}
           />
-        </Animated.View>
+        </View>
       )}
     </View>
   );
@@ -218,36 +224,45 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+    minWidth: Platform.OS === "ios" ? 48 : 44,
+    maxWidth: Platform.OS === "ios" ? 70 : 65,
   },
   navItem: {
     alignItems: "center",
     justifyContent: "center",
+    minWidth: Platform.OS === "ios" ? 40 : 38,
+    minHeight: Platform.OS === "ios" ? 40 : 38,
+    paddingVertical: Platform.OS === "ios" ? 3 : 2,
+    paddingHorizontal: Platform.OS === "ios" ? 6 : 4,
   },
   iconWrapper: {
-    padding: 6,
+    padding: Platform.OS === "ios" ? 6 : 5,
     borderRadius: 999,
+    minWidth: Platform.OS === "ios" ? 32 : 30,
+    minHeight: Platform.OS === "ios" ? 32 : 30,
+    alignItems: "center",
+    justifyContent: "center",
   },
   label: {
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: Platform.OS === "ios" ? 10 : 9,
+    marginTop: Platform.OS === "ios" ? 3 : 2,
+    fontWeight: "500",
+    textAlign: "center",
   },
   tooltip: {
     position: "absolute",
     bottom: "100%",
-    left: "50%",
-    transform: [{ translateX: -50 }, { translateY: -8 }],
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    left: 0,
+    right: 0,
     marginBottom: 4,
-    minWidth: 120,
-    maxWidth: 200,
     zIndex: 1000,
     shadowColor: "#000",
     shadowOpacity: 0.3,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
   tooltipText: {
     fontSize: 12,
@@ -257,8 +272,7 @@ const styles = StyleSheet.create({
   tooltipArrow: {
     position: "absolute",
     bottom: -6,
-    left: "50%",
-    transform: [{ translateX: -6 }],
+    alignSelf: "center",
     width: 0,
     height: 0,
     borderLeftWidth: 6,

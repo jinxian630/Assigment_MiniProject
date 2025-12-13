@@ -7,10 +7,13 @@ import {
   Platform,
   Animated,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, usePathname } from "expo-router";
 import * as Haptics from "expo-haptics";
 import InteractiveNavItem from "./InteractiveNavItem";
+import { useAuth } from "@/hooks/useAuth";
+import { auth } from "@/config/firebase";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -21,6 +24,8 @@ type BottomNavBarProps = {
 export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { user } = useAuth();
+  const currentUser = auth.currentUser;
 
   const colors = {
     background: isDarkMode ? "rgba(10,10,15,0.98)" : "rgba(15,23,42,0.95)",
@@ -28,9 +33,11 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
     active: PRIMARY_PURPLE,
     inactive: isDarkMode ? "#9CA3AF" : "#64748B",
     textSecondary: isDarkMode ? "#9CA3AF" : "#64748B",
+    chipBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(124,58,237,0.2)",
   };
 
-  const navItems = [
+  // Left side nav items (3 items)
+  const leftNavItems = [
     {
       id: "home",
       icon: "home-outline",
@@ -47,6 +54,19 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
       route: "/modules/memory-book/MemoryTimeline",
       description: "Browse all memories in chronological order",
     },
+    {
+      id: "profile",
+      icon: "person-outline",
+      activeIcon: "person",
+      label: "Profile",
+      route: "/modules/memory-book/UserProfile",
+      description: "View your profile and stats",
+      isProfile: true,
+    },
+  ];
+
+  // Right side nav items (3 items)
+  const rightNavItems = [
     {
       id: "saved",
       icon: "bookmark-outline",
@@ -75,12 +95,20 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
 
   const createButtonScale = useRef(new Animated.Value(1)).current;
 
-  const handlePress = (route: string) => {
+  const handlePress = (route: string, isProfile?: boolean) => {
     if (Platform.OS === "ios") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
 
-    if (route !== pathname) {
+    if (isProfile) {
+      // Navigate to profile with current user ID
+      const currentUserId = currentUser?.uid || user?.id;
+      if (currentUserId) {
+        router.push(`/modules/memory-book/UserProfile?userId=${currentUserId}` as any);
+      } else {
+        router.push("/modules/memory-book/UserProfile" as any);
+      }
+    } else if (route !== pathname) {
       router.push(route as any);
     }
   };
@@ -92,7 +120,10 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
     router.push("/modules/memory-book/MemoryPostCreate");
   };
 
-  const isActive = (route: string) => {
+  const isActive = (route: string, isProfile?: boolean) => {
+    if (isProfile) {
+      return pathname.includes("/modules/memory-book/UserProfile");
+    }
     if (route === "/modules/memory-book") {
       return pathname === route || pathname === "/modules/memory-book/";
     }
@@ -100,26 +131,44 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
   };
 
   return (
-    <View
-      style={[
-        styles.bottomBar,
-        {
-          backgroundColor: colors.background,
-          borderColor: colors.border,
-        },
-      ]}
-    >
+    <SafeAreaView edges={["bottom"]} style={styles.safeAreaContainer}>
+      <View
+        style={[
+          styles.bottomBar,
+          {
+            backgroundColor: colors.background,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+      {/* Left Navigation Items (3 items) */}
+      <View style={styles.leftNavSection}>
+        {leftNavItems.map((item) => (
+          <InteractiveNavItem
+            key={item.id}
+            icon={item.icon}
+            activeIcon={item.activeIcon}
+            label={item.label}
+            description={item.description}
+            isActive={isActive(item.route, item.isProfile)}
+            onPress={() => handlePress(item.route, item.isProfile)}
+            isDarkMode={isDarkMode}
+            activeColor={PRIMARY_PURPLE}
+            inactiveColor={colors.inactive}
+          />
+        ))}
+      </View>
+
       {/* Center Floating Create Button */}
       <View style={styles.floatingAdd}>
         <Animated.View
-          style={[
-            styles.floatingAddOuter,
-            {
-              borderColor: PRIMARY_PURPLE,
-              shadowColor: PRIMARY_PURPLE,
-              transform: [{ scale: createButtonScale }],
-            },
-          ]}
+            style={[
+              styles.floatingAddOuter,
+              {
+                shadowColor: PRIMARY_PURPLE,
+                transform: [{ scale: createButtonScale }],
+              },
+            ]}
           // @ts-ignore - web only
           onMouseEnter={() => {
             if (Platform.OS === "web") {
@@ -173,80 +222,109 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
             accessibilityRole="button"
             accessibilityHint="Opens memory creation screen"
           >
-            <Ionicons name="add" size={32} color="#FFFFFF" />
+            <Ionicons name="add" size={Platform.OS === "ios" ? 28 : 26} color="#FFFFFF" />
           </TouchableOpacity>
         </Animated.View>
       </View>
 
-      {/* Navigation Items */}
-      {navItems.map((item) => (
-        <InteractiveNavItem
-          key={item.id}
-          icon={item.icon}
-          activeIcon={item.activeIcon}
-          label={item.label}
-          description={item.description}
-          isActive={isActive(item.route)}
-          onPress={() => handlePress(item.route)}
-          isDarkMode={isDarkMode}
-          activeColor={PRIMARY_PURPLE}
-          inactiveColor={colors.inactive}
-        />
-      ))}
-    </View>
+      {/* Right Navigation Items (3 items) */}
+      <View style={styles.rightNavSection}>
+        {rightNavItems.map((item) => (
+          <InteractiveNavItem
+            key={item.id}
+            icon={item.icon}
+            activeIcon={item.activeIcon}
+            label={item.label}
+            description={item.description}
+            isActive={isActive(item.route)}
+            onPress={() => handlePress(item.route)}
+            isDarkMode={isDarkMode}
+            activeColor={PRIMARY_PURPLE}
+            inactiveColor={colors.inactive}
+          />
+        ))}
+      </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  bottomBar: {
+  safeAreaContainer: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: Platform.OS === "ios" ? 16 : 12,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    elevation: 10,
+  },
+  bottomBar: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 26,
+    paddingHorizontal: Platform.OS === "ios" ? 12 : 10,
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
+    paddingBottom: Platform.OS === "ios" ? 10 : 8,
+    marginHorizontal: 12,
+    marginBottom: Platform.OS === "ios" ? 8 : 4,
+    borderRadius: 24,
     borderWidth: 1,
     shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: -2 },
-    zIndex: 1,
-    elevation: 10,
+    minHeight: Platform.OS === "ios" ? 58 : 56,
+    maxHeight: Platform.OS === "ios" ? 58 : 56,
+  },
+  leftNavSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "flex-start",
+    gap: Platform.OS === "ios" ? 4 : 2,
+    paddingRight: Platform.OS === "ios" ? 32 : 28,
+  },
+  rightNavSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "flex-end",
+    gap: Platform.OS === "ios" ? 4 : 2,
+    paddingLeft: Platform.OS === "ios" ? 32 : 28,
   },
   floatingAdd: {
     position: "absolute",
-    top: -34,
-    alignSelf: "center",
+    top: Platform.OS === "ios" ? -30 : -28,
+    left: "50%",
+    marginLeft: -28, // Half of the width (56/2) for perfect centering
     zIndex: 10,
     elevation: 10,
+    width: 56,
+    alignItems: "center",
   },
   floatingAddOuter: {
-    width: 65,
-    height: 65,
-    borderRadius: 32.5,
-    borderWidth: 2,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 0, // Remove black border
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#000",
-    shadowOpacity: 1,
+    backgroundColor: "transparent", // Remove black background
+    shadowOpacity: 0.8,
     shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
+    shadowOffset: { width: 0, height: 2 },
   },
   floatingAddButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 3,
-    shadowOpacity: 0.9,
+    borderWidth: 2.5,
+    shadowOpacity: 0.7,
     shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 25,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 20,
     zIndex: 400,
   },
   bottomBarItem: {

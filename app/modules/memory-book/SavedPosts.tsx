@@ -160,11 +160,12 @@ export default function SavedPosts() {
                   ? "Filter active - tap to adjust filters"
                   : "Filter saved memories by mood, color, feeling, or keyword"
               }
-              variant={hasActiveFilters ? "primary" : "secondary"}
+              variant={hasActiveFilters ? "primary" : "ghost"}
               size="sm"
               isDarkMode={isDarkMode}
-              iconColor={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
-              iconSize={20}
+              iconColor={hasActiveFilters ? "#FFFFFF" : (isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE)}
+              iconSize={Platform.OS === "ios" ? 26 : 24}
+              noBorder={true}
               style={styles.filterButton}
               accessibilityLabel="Filter saved memories"
               accessibilityHint="Opens filter options"
@@ -312,8 +313,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === "ios" ? 17 : 16,
     fontWeight: "700",
+    flexShrink: 1,
   },
   center: {
     flex: 1,
@@ -329,7 +331,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 80,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
   feedSection: {
     paddingHorizontal: 16,
@@ -371,18 +373,11 @@ const styles = StyleSheet.create({
     maxWidth: 280,
   },
   filterButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
-    position: "relative",
-    shadowColor: PRIMARY_PURPLE,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    backgroundColor: "transparent",
   },
   filterBadge: {
     position: "absolute",
