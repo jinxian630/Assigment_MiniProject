@@ -1,3 +1,4 @@
+// app/modules/money-management/index.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -17,7 +18,6 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
 import { Badge } from "@/components/common/Badge";
-import { Theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 
 import { getMoneyColors, toggleThemeSafe } from "./MoneyUI";
@@ -40,14 +40,6 @@ const MODULE_COLOR = "#FFD93D";
  * =========================
  * FIELD MAPPING (edit here if needed)
  * =========================
- * Expected doc example:
- * {
- *   userId: string,
- *   amount: number,
- *   type: "income" | "expense",
- *   createdAt: number | Timestamp | Date,
- *   category?: string
- * }
  */
 const TX_COLLECTION = "Transactions";
 const FIELD_USER_ID = "userId";
@@ -84,51 +76,48 @@ function monthKey(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}`;
 }
 
-function prevMonthKey(d: Date) {
-  const y = d.getFullYear();
-  const m = d.getMonth();
-  if (m === 0) return `${y - 1}-11`;
-  return `${y}-${m - 1}`;
-}
-
-function pctChange(current: number, prev: number) {
-  if (!Number.isFinite(current) || !Number.isFinite(prev)) return 0;
-  if (prev === 0) return current === 0 ? 0 : 100; // "new activity"
-  return ((current - prev) / Math.abs(prev)) * 100;
-}
-
 export default function MoneyManagementScreen() {
   const router = useRouter();
 
-  // ✅ Your useTheme() returns ThemeContext object (contains { theme, toggleTheme })
+  // ✅ Your app theme context (ThemeContext.tsx)
   const themeCtx = useTheme() as any;
-  const theme = themeCtx.theme;
+  const theme = themeCtx?.theme ?? themeCtx;
 
-  // ✅ Money UI tokens (cardBg becomes dark in dark mode)
-  const ui = getMoneyColors(themeCtx);
+  // ✅ Your ThemeContext uses isDarkMode (camel case)
+  const isDarkmode = !!themeCtx?.isDarkMode;
+
+  // ✅ Map into MoneyUI expected shape (it expects theme.isDarkmode)
+  const moneyThemeCtx = useMemo(
+    () => ({
+      ...themeCtx,
+      theme: {
+        ...(themeCtx?.theme ?? {}),
+        // important mapping:
+        isDarkmode,
+        colors: theme?.colors ?? themeCtx?.theme?.colors,
+      },
+    }),
+    [themeCtx, theme, isDarkmode]
+  );
+
+  const ui = getMoneyColors(moneyThemeCtx);
   const {
-    isDarkmode,
-    cardBg,
-    cardBorder,
-    chipBg,
     textPrimary,
     textSecondary,
     textMuted,
+    cardBorder,
+    cardBg,
+    chipBg,
   } = ui;
 
-  const onToggleTheme = () => toggleThemeSafe(themeCtx);
+  const onToggleTheme = () => toggleThemeSafe(moneyThemeCtx);
 
   // -------------------------
-  // Totals
+  // Firestore: totals
   // -------------------------
   const [balance, setBalance] = useState(0);
   const [monthIncome, setMonthIncome] = useState(0);
   const [monthExpense, setMonthExpense] = useState(0);
-
-  // Trend baseline (previous month)
-  const [prevIncome, setPrevIncome] = useState(0);
-  const [prevExpense, setPrevExpense] = useState(0);
-
   const [topCategories, setTopCategories] = useState<string[]>([
     "Food",
     "Transport",
@@ -139,7 +128,6 @@ export default function MoneyManagementScreen() {
     "Education",
     "Others",
   ]);
-
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -154,7 +142,7 @@ export default function MoneyManagementScreen() {
       collection(db, TX_COLLECTION),
       where(FIELD_USER_ID as any, "==", uid),
       orderBy(FIELD_CREATED_AT as any, "desc"),
-      limit(500)
+      limit(300)
     );
 
     const unsub = onSnapshot(
@@ -166,48 +154,45 @@ export default function MoneyManagementScreen() {
         }));
 
         let bal = 0;
-        let curIncome = 0;
-        let curExpense = 0;
-
-        let lastIncome = 0;
-        let lastExpense = 0;
+        let mIncome = 0;
+        let mExpense = 0;
 
         const now = new Date();
-        const curKey = monthKey(now);
-        const lastKey = prevMonthKey(now);
+        const currentMonth = monthKey(now);
 
         const catCount = new Map<string, number>();
 
         for (const r of rows) {
           const amount = Number((r as any)?.[FIELD_AMOUNT]);
-          if (!Number.isFinite(amount)) continue;
-
           const type = String((r as any)?.[FIELD_TYPE] ?? "").toLowerCase();
           const createdAt = (r as any)?.[FIELD_CREATED_AT];
           const t = toMillis(createdAt);
           const d = t ? new Date(t) : null;
 
-          const isIncomeTx = type === "income";
-          const isExpenseTx = type === "expense";
+          const isIncome = type === "income";
+          const isExpense = type === "expense";
 
-          // balance (overall)
-          if (isIncomeTx) bal += amount;
-          else if (isExpenseTx) bal -= amount;
+          if (!Number.isFinite(amount)) continue;
+
+          if (isIncome) bal += amount;
+          else if (isExpense) bal -= amount;
           else bal += amount;
 
-          if (!d) continue;
-          const mk = monthKey(d);
-
-          if (mk === curKey) {
-            if (isIncomeTx) curIncome += amount;
-            else if (isExpenseTx) curExpense += amount;
-          } else if (mk === lastKey) {
-            if (isIncomeTx) lastIncome += amount;
-            else if (isExpenseTx) lastExpense += amount;
+          if (d && monthKey(d) === currentMonth) {
+            if (isIncome) mIncome += amount;
+            else if (isExpense) mExpense += amount;
+            else {
+              if (amount >= 0) mIncome += amount;
+              else mExpense += Math.abs(amount);
+            }
           }
 
-          // categories this month (expense only)
-          if (mk === curKey && (isExpenseTx || (!isIncomeTx && amount < 0))) {
+          // top categories for this month (expense)
+          if (
+            d &&
+            monthKey(d) === currentMonth &&
+            (isExpense || (!isIncome && amount < 0))
+          ) {
             const rawCat = String((r as any)?.category ?? "Others");
             const cat = rawCat.trim().length ? rawCat.trim() : "Others";
             catCount.set(cat, (catCount.get(cat) ?? 0) + 1);
@@ -215,10 +200,8 @@ export default function MoneyManagementScreen() {
         }
 
         setBalance(bal);
-        setMonthIncome(curIncome);
-        setMonthExpense(curExpense);
-        setPrevIncome(lastIncome);
-        setPrevExpense(lastExpense);
+        setMonthIncome(mIncome);
+        setMonthExpense(mExpense);
 
         const sortedCats = [...catCount.entries()]
           .sort((a, b) => b[1] - a[1])
@@ -226,7 +209,6 @@ export default function MoneyManagementScreen() {
           .map(([name]) => name);
 
         if (sortedCats.length >= 3) setTopCategories(sortedCats);
-
         setIsLoading(false);
       },
       () => setIsLoading(false)
@@ -235,41 +217,32 @@ export default function MoneyManagementScreen() {
     return () => unsub();
   }, []);
 
-  const monthNet = useMemo(
-    () => monthIncome - monthExpense,
-    [monthIncome, monthExpense]
-  );
-
   // -------------------------
-  // Count-up animation (premium feel)
+  // Animated counters
   // -------------------------
   const animBalance = useRef(new Animated.Value(0)).current;
   const animIncome = useRef(new Animated.Value(0)).current;
   const animExpense = useRef(new Animated.Value(0)).current;
-  const animNet = useRef(new Animated.Value(0)).current;
 
   const [balanceText, setBalanceText] = useState("RM 0");
   const [incomeText, setIncomeText] = useState("RM 0");
   const [expenseText, setExpenseText] = useState("RM 0");
-  const [netText, setNetText] = useState("RM 0");
 
   useEffect(() => {
-    const s1 = animBalance.addListener(({ value }) =>
+    const sub1 = animBalance.addListener(({ value }) =>
       setBalanceText(formatRM(value))
     );
-    const s2 = animIncome.addListener(({ value }) =>
+    const sub2 = animIncome.addListener(({ value }) =>
       setIncomeText(formatRM(value))
     );
-    const s3 = animExpense.addListener(({ value }) =>
+    const sub3 = animExpense.addListener(({ value }) =>
       setExpenseText(formatRM(value))
     );
-    const s4 = animNet.addListener(({ value }) => setNetText(formatRM(value)));
 
     return () => {
-      animBalance.removeListener(s1);
-      animIncome.removeListener(s2);
-      animExpense.removeListener(s3);
-      animNet.removeListener(s4);
+      animBalance.removeListener(sub1);
+      animIncome.removeListener(sub2);
+      animExpense.removeListener(sub3);
     };
   }, []);
 
@@ -293,18 +266,16 @@ export default function MoneyManagementScreen() {
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }),
-      Animated.timing(animNet, {
-        toValue: monthNet,
-        duration: 650,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
     ]).start();
-  }, [balance, monthIncome, monthExpense, monthNet]);
+  }, [balance, monthIncome, monthExpense]);
 
-  // -------------------------
-  // Smart tip
-  // -------------------------
+  const monthNet = useMemo(
+    () => monthIncome - monthExpense,
+    [monthIncome, monthExpense]
+  );
+  const monthNetLabel = monthNet >= 0 ? "Net Saving" : "Net Spend";
+  const monthNetColor = monthNet >= 0 ? "#22c55e" : "#ef4444";
+
   const smartTip = useMemo(() => {
     if (isLoading) return "Loading your snapshot…";
     if (monthExpense <= 0 && monthIncome <= 0)
@@ -316,29 +287,7 @@ export default function MoneyManagementScreen() {
     return "Great control. Keep logging daily for more accurate advice and forecasts.";
   }, [isLoading, monthExpense, monthIncome]);
 
-  // -------------------------
-  // Trends (this month vs last month)
-  // -------------------------
-  const incomeDelta = useMemo(
-    () => pctChange(monthIncome, prevIncome),
-    [monthIncome, prevIncome]
-  );
-  const expenseDelta = useMemo(
-    () => pctChange(monthExpense, prevExpense),
-    [monthExpense, prevExpense]
-  );
-
-  // net “delta” (derived)
-  const prevNet = useMemo(
-    () => prevIncome - prevExpense,
-    [prevIncome, prevExpense]
-  );
-  const netDelta = useMemo(
-    () => pctChange(monthNet, prevNet),
-    [monthNet, prevNet]
-  );
-
-  // Routes (keep yours)
+  // Routes (unchanged)
   const goToAddTransaction = () =>
     router.push("/modules/money-management/TransactionAdd");
   const goToTransactionList = () =>
@@ -352,6 +301,9 @@ export default function MoneyManagementScreen() {
   const goToPrint = () =>
     router.push("/modules/money-management/PrintTransactionList");
 
+  // ✅ styles based on theme (fixes “Theme.spacing.lg undefined” crash)
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+
   return (
     <GradientBackground>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
@@ -359,527 +311,385 @@ export default function MoneyManagementScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.pageContainer}>
-            {/* Header */}
-            <View style={styles.header}>
-              <IconButton
-                icon="arrow-back"
-                onPress={() => router.back()}
-                variant="secondary"
-                size="medium"
-              />
+          {/* Header */}
+          <View style={styles.header}>
+            <IconButton
+              icon="arrow-back"
+              onPress={() => router.back()}
+              variant="secondary"
+              size="medium"
+            />
 
-              <View style={{ flex: 1, alignItems: "center" }}>
-                <Text style={[styles.title, { color: textPrimary }]}>
-                  Money Management
-                </Text>
-                <Text style={[styles.subtitle, { color: textSecondary }]}>
-                  Control • Insight • Growth
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={onToggleTheme}
-                activeOpacity={0.85}
-                style={[
-                  styles.themeToggle,
-                  {
-                    borderColor: MODULE_COLOR,
-                    backgroundColor: isDarkmode
-                      ? "rgba(15,23,42,0.65)"
-                      : "rgba(255,255,255,0.75)",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={isDarkmode ? "sunny-outline" : "moon-outline"}
-                  size={18}
-                  color={isDarkmode ? "#FDE68A" : "#0F172A"}
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Snapshot */}
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: textPrimary }]}>
-                Financial Snapshot
+            <View style={{ flex: 1, alignItems: "center" }}>
+              <Text style={[styles.title, { color: textPrimary }]}>
+                Money Management
               </Text>
-
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-              >
-                <Ionicons
-                  name="pulse-outline"
-                  size={14}
-                  color={textSecondary}
-                />
-                <Text style={[styles.miniHint, { color: textSecondary }]}>
-                  {isLoading ? "Syncing…" : "Updated"}
-                </Text>
-              </View>
+              <Text style={[styles.subtitle, { color: textSecondary }]}>
+                Control • Insight • Growth
+              </Text>
             </View>
 
-            <View style={styles.snapshotGrid}>
-              <StatCard
-                label="Balance"
-                valueText={balanceText}
-                icon="wallet-outline"
-                accent="#38BDF8"
-                onPress={goToTransactionList}
-                trendText={"—"}
-                trendTone="neutral"
-                {...{
-                  cardBg,
-                  cardBorder,
-                  textPrimary,
-                  textSecondary,
-                  isDarkmode,
-                }}
-              />
-
-              <StatCard
-                label="Income (Month)"
-                valueText={incomeText}
-                icon="trending-up-outline"
-                accent="#22c55e"
-                onPress={goToChartDisplay}
-                trendText={formatTrend(incomeDelta)}
-                trendTone={incomeDelta >= 0 ? "good" : "bad"}
-                {...{
-                  cardBg,
-                  cardBorder,
-                  textPrimary,
-                  textSecondary,
-                  isDarkmode,
-                }}
-              />
-
-              <StatCard
-                label="Expense (Month)"
-                valueText={expenseText}
-                icon="trending-down-outline"
-                accent="#ef4444"
-                onPress={goToChartDisplay}
-                // For expenses: higher is “bad”, lower is “good”
-                trendText={formatTrend(expenseDelta)}
-                trendTone={expenseDelta <= 0 ? "good" : "bad"}
-                {...{
-                  cardBg,
-                  cardBorder,
-                  textPrimary,
-                  textSecondary,
-                  isDarkmode,
-                }}
-              />
-
-              <StatCard
-                label={monthNet >= 0 ? "Net Saving" : "Net Spend"}
-                valueText={netText}
-                icon="analytics-outline"
-                accent={monthNet >= 0 ? "#22c55e" : "#ef4444"}
-                onPress={goToBudgetForecast}
-                trendText={formatTrend(netDelta)}
-                trendTone={netDelta >= 0 ? "good" : "bad"}
-                {...{
-                  cardBg,
-                  cardBorder,
-                  textPrimary,
-                  textSecondary,
-                  isDarkmode,
-                }}
-              />
-            </View>
-
-            {/* Smart Tip */}
-            <Card
+            {/* theme toggle (kept) */}
+            <TouchableOpacity
+              onPress={onToggleTheme}
+              activeOpacity={0.85}
               style={[
-                styles.highlightCard,
-                neonGlowStyle({
-                  isDarkmode,
-                  accent: MODULE_COLOR,
-                  borderColor: cardBorder,
-                  backgroundColor: cardBg,
-                }),
+                styles.themeToggle,
+                {
+                  borderColor: MODULE_COLOR,
+                  backgroundColor: isDarkmode
+                    ? "rgba(15,23,42,0.65)"
+                    : "rgba(255,255,255,0.75)",
+                },
               ]}
             >
-              <View style={styles.highlightRow}>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-                >
-                  <View style={styles.dot} />
-                  <Text style={[styles.highlightTitle, { color: textPrimary }]}>
-                    Smart Tip
-                  </Text>
-                </View>
-                <Text
-                  style={{
-                    color: MODULE_COLOR,
-                    fontWeight: "900",
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  LIVE
+              <Ionicons
+                name={isDarkmode ? "sunny-outline" : "moon-outline"}
+                size={18}
+                color={isDarkmode ? "#FDE68A" : "#0F172A"}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Snapshot */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, { color: textPrimary }]}>
+              Financial Snapshot
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="pulse-outline" size={14} color={textSecondary} />
+              <Text style={[styles.miniHint, { color: textSecondary }]}>
+                {isLoading ? "Syncing…" : "Updated"}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.snapshotGrid}>
+            <SnapshotCard
+              label="Balance"
+              valueText={balanceText}
+              icon="wallet-outline"
+              accent="#38BDF8"
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+            />
+            <SnapshotCard
+              label="Income (Month)"
+              valueText={incomeText}
+              icon="trending-up-outline"
+              accent="#22c55e"
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+            />
+            <SnapshotCard
+              label="Expense (Month)"
+              valueText={expenseText}
+              icon="trending-down-outline"
+              accent="#ef4444"
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+            />
+            <SnapshotCard
+              label={monthNetLabel}
+              valueText={formatRM(monthNet)}
+              icon="analytics-outline"
+              accent={monthNetColor}
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+            />
+          </View>
+
+          {/* Smart Tip */}
+          <Card
+            style={[
+              styles.highlightCard,
+              neonGlowStyle({
+                isDarkmode,
+                accent: MODULE_COLOR,
+                backgroundColor: cardBg,
+                borderColor: cardBorder,
+                heavy: true,
+              }),
+            ]}
+          >
+            <View style={styles.highlightRow}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={styles.dot} />
+                <Text style={[styles.highlightTitle, { color: textPrimary }]}>
+                  Smart Tip
                 </Text>
               </View>
-              <Text style={[styles.highlightText, { color: textSecondary }]}>
-                {smartTip}
+              <Text style={{ color: MODULE_COLOR, fontWeight: "900", letterSpacing: 0.5 }}>
+                LIVE
               </Text>
-            </Card>
+            </View>
+            <Text style={[styles.highlightText, { color: textSecondary }]}>
+              {smartTip}
+            </Text>
+          </Card>
 
-            {/* Quick Actions */}
+          {/* Quick Actions */}
+          <Text style={[styles.sectionTitle, { color: textPrimary }]}>
+            Quick Actions
+          </Text>
+
+          <View style={styles.row}>
+            <QuickCard
+              icon="add-circle-outline"
+              iconColor="#ff7f50"
+              title="Add Transaction"
+              subtitle="Log income or expense"
+              onPress={goToAddTransaction}
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+              textMuted={textMuted}
+            />
+            <QuickCard
+              icon="list-outline"
+              iconColor="#4b7bec"
+              title="Transaction History"
+              subtitle="View & manage records"
+              onPress={goToTransactionList}
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+              textMuted={textMuted}
+            />
+          </View>
+
+          <View style={styles.row}>
+            <QuickCard
+              icon="pie-chart-outline"
+              iconColor="#20bf6b"
+              title="Spending Insights"
+              subtitle="Trends & breakdown"
+              onPress={goToChartDisplay}
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+              textMuted={textMuted}
+            />
+            <QuickCard
+              icon="bulb-outline"
+              iconColor="#FFD93D"
+              title="AI Financial Advice"
+              subtitle="Personalized tips"
+              onPress={goToFinancialAdvice}
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+              textMuted={textMuted}
+            />
+          </View>
+
+          <View style={styles.row}>
+            <QuickCard
+              icon="trending-up-outline"
+              iconColor="#38BDF8"
+              title="Budget Forecast"
+              subtitle="Predict savings"
+              onPress={goToBudgetForecast}
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+              textMuted={textMuted}
+            />
+            <QuickCard
+              icon="print-outline"
+              iconColor="#A855F7"
+              title="Reports & Export"
+              subtitle="Generate PDF report"
+              onPress={goToPrint}
+              isDarkmode={isDarkmode}
+              cardBg={cardBg}
+              cardBorder={cardBorder}
+              chipBg={chipBg}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+              textMuted={textMuted}
+            />
+          </View>
+
+          {/* Categories */}
+          <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: textPrimary }]}>
-              Quick Actions
+              Categories (This Month)
             </Text>
 
-            <View style={styles.row}>
-              <ActionCard
-                icon="add-circle-outline"
-                iconColor="#ff7f50"
-                title="Add Transaction"
-                subtitle="Log income or expense"
-                onPress={goToAddTransaction}
-                {...{
-                  textPrimary,
-                  textSecondary,
-                  textMuted,
-                  cardBorder,
-                  cardBg,
-                  chipBg,
-                  isDarkmode,
-                }}
-              />
-              <ActionCard
-                icon="list-outline"
-                iconColor="#4b7bec"
-                title="Transaction History"
-                subtitle="View & manage records"
-                onPress={goToTransactionList}
-                {...{
-                  textPrimary,
-                  textSecondary,
-                  textMuted,
-                  cardBorder,
-                  cardBg,
-                  chipBg,
-                  isDarkmode,
-                }}
-              />
-            </View>
-
-            <View style={styles.row}>
-              <ActionCard
-                icon="pie-chart-outline"
-                iconColor="#20bf6b"
-                title="Spending Insights"
-                subtitle="Trends & breakdown"
-                onPress={goToChartDisplay}
-                {...{
-                  textPrimary,
-                  textSecondary,
-                  textMuted,
-                  cardBorder,
-                  cardBg,
-                  chipBg,
-                  isDarkmode,
-                }}
-              />
-              <ActionCard
-                icon="bulb-outline"
-                iconColor="#FFD93D"
-                title="AI Financial Advice"
-                subtitle="Personalized tips"
-                onPress={goToFinancialAdvice}
-                {...{
-                  textPrimary,
-                  textSecondary,
-                  textMuted,
-                  cardBorder,
-                  cardBg,
-                  chipBg,
-                  isDarkmode,
-                }}
-              />
-            </View>
-
-            <View style={styles.row}>
-              <ActionCard
-                icon="trending-up-outline"
-                iconColor="#38BDF8"
-                title="Budget Forecast"
-                subtitle="Predict savings"
-                onPress={goToBudgetForecast}
-                {...{
-                  textPrimary,
-                  textSecondary,
-                  textMuted,
-                  cardBorder,
-                  cardBg,
-                  chipBg,
-                  isDarkmode,
-                }}
-              />
-              <ActionCard
-                icon="print-outline"
-                iconColor="#A855F7"
-                title="Reports & Export"
-                subtitle="Generate PDF report"
-                onPress={goToPrint}
-                {...{
-                  textPrimary,
-                  textSecondary,
-                  textMuted,
-                  cardBorder,
-                  cardBg,
-                  chipBg,
-                  isDarkmode,
-                }}
-              />
-            </View>
-
-            {/* Categories */}
-            <View style={styles.sectionHeaderRow}>
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  { color: textPrimary, marginTop: Theme.spacing.lg },
-                ]}
-              >
-                Categories (This Month)
-              </Text>
-              <TouchableOpacity
-                onPress={goToChartDisplay}
-                activeOpacity={0.85}
-                style={[
-                  styles.linkPill,
-                  {
-                    borderColor: cardBorder,
-                    backgroundColor: isDarkmode
-                      ? "rgba(255,255,255,0.06)"
-                      : "rgba(2,6,23,0.05)",
-                  },
-                ]}
-              >
-                <Text
-                  style={{
-                    color: textSecondary,
-                    fontSize: 12,
-                    fontWeight: "800",
-                  }}
-                >
-                  View Insights
-                </Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={14}
-                  color={textSecondary}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.badges}>
-              {topCategories.map((c) => (
-                <Badge key={c} variant="primary" style={{ marginRight: 0 }}>
-                  {c}
-                </Badge>
-              ))}
-            </View>
-
-            {/* Floating Add */}
-            <View
-              style={{ alignItems: "flex-end", marginTop: Theme.spacing.xl }}
+            <TouchableOpacity
+              onPress={goToChartDisplay}
+              activeOpacity={0.85}
+              style={[
+                styles.linkPill,
+                {
+                  borderColor: cardBorder,
+                  backgroundColor: isDarkmode
+                    ? "rgba(255,255,255,0.04)"
+                    : "rgba(2,6,23,0.03)",
+                },
+              ]}
             >
-              <IconButton
-                icon="add"
-                onPress={goToAddTransaction}
-                variant="primary"
-                size="large"
-              />
-            </View>
-
-            <View style={{ height: Platform.OS === "ios" ? 10 : 0 }} />
+              <Text style={{ color: textSecondary, fontSize: 12, fontWeight: "800" }}>
+                View Insights
+              </Text>
+              <Ionicons name="arrow-forward" size={14} color={textSecondary} />
+            </TouchableOpacity>
           </View>
+
+          <View style={styles.badges}>
+            {topCategories.map((c) => (
+              <Badge key={c} variant="primary" style={{ marginRight: 0 }}>
+                {c}
+              </Badge>
+            ))}
+          </View>
+
+          {/* Floating Add (kept) */}
+          <View style={{ alignItems: "flex-end", marginTop: theme.spacing.xl }}>
+            <IconButton
+              icon="add"
+              onPress={goToAddTransaction}
+              variant="primary"
+              size="large"
+            />
+          </View>
+
+          <View style={{ height: Platform.OS === "ios" ? 10 : 0 }} />
         </ScrollView>
       </SafeAreaView>
     </GradientBackground>
   );
 }
 
-/* ---------------- Helpers for trend ---------------- */
+/* ---------------- Neon Card Helpers (Task-style) ---------------- */
 
-function formatTrend(pct: number) {
-  if (!Number.isFinite(pct)) return "—";
-  const abs = Math.abs(pct);
-  if (abs < 0.05) return "0%";
-  const rounded = abs >= 100 ? Math.round(abs) : Math.round(abs * 10) / 10;
-  return `${pct >= 0 ? "+" : "-"}${rounded}%`;
-}
-
-/* ---------------- Neon style ---------------- */
-
-function neonGlowStyle(args: {
+function neonGlowStyle(opts: {
   isDarkmode: boolean;
   accent: string;
-  borderColor: string;
   backgroundColor: string;
+  borderColor: string;
+  heavy?: boolean;
 }) {
-  const { isDarkmode, accent, borderColor, backgroundColor } = args;
+  const { isDarkmode, accent, backgroundColor, borderColor, heavy } = opts;
+
+  // ✅ make sure dark mode becomes BLACK-ish (your request)
+  const bg = isDarkmode ? "rgba(2,6,23,0.92)" : backgroundColor;
+
+  const glowA = isDarkmode ? 0.55 : 0.22;
+  const glowB = isDarkmode ? 0.35 : 0.14;
 
   return {
-    backgroundColor,
-    borderColor: isDarkmode ? accent : borderColor,
+    backgroundColor: bg,
     borderWidth: 1,
+    borderColor: isDarkmode ? `${accent}AA` : borderColor,
+
     shadowColor: accent,
-    shadowOpacity: isDarkmode ? 0.22 : 0.08,
-    shadowRadius: isDarkmode ? 14 : 10,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: isDarkmode ? 10 : 4,
-  } as any;
+    shadowOpacity: heavy ? glowA : glowB,
+    shadowRadius: heavy ? 16 : 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: heavy ? 10 : 6,
+  };
 }
 
-/* ---------------- Components ---------------- */
+/* ---------------- Sub Components ---------------- */
 
-function StatCard(props: {
+function SnapshotCard(props: {
   label: string;
   valueText: string;
   icon: any;
   accent: string;
-  trendText: string;
-  trendTone: "good" | "bad" | "neutral";
-  onPress: () => void;
-
-  cardBorder: string;
-  cardBg: string;
+  isDarkmode: boolean;
   textPrimary: string;
   textSecondary: string;
-  isDarkmode: boolean;
+  cardBorder: string;
+  cardBg: string;
+  chipBg: string;
 }) {
-  const toneColor =
-    props.trendTone === "good"
-      ? "#22c55e"
-      : props.trendTone === "bad"
-      ? "#ef4444"
-      : "rgba(148,163,184,0.9)";
-
-  const trendIcon =
-    props.trendTone === "good"
-      ? "arrow-up-outline"
-      : props.trendTone === "bad"
-      ? "arrow-down-outline"
-      : "remove-outline";
-
   return (
-    <TouchableOpacity
-      onPress={props.onPress}
-      activeOpacity={0.9}
-      style={{ width: "48%" }}
+    <Card
+      style={[
+        snapshotStyles.snapshotCard,
+        neonGlowStyle({
+          isDarkmode: props.isDarkmode,
+          accent: props.accent,
+          backgroundColor: props.cardBg,
+          borderColor: props.cardBorder,
+        }),
+      ]}
     >
-      <Card
-        style={[
-          styles.statCard,
-          neonGlowStyle({
-            isDarkmode: props.isDarkmode,
-            accent: props.accent,
-            borderColor: props.cardBorder,
-            backgroundColor: props.cardBg,
-          }),
-        ]}
-      >
+      <View style={snapshotStyles.topRow}>
         <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
+          style={[
+            snapshotStyles.iconChipSmall,
+            { backgroundColor: props.chipBg },
+          ]}
         >
-          <View
-            style={[
-              styles.iconChipSmall,
-              {
-                backgroundColor: props.isDarkmode
-                  ? "rgba(255,255,255,0.10)"
-                  : "rgba(15,23,42,0.06)",
-              },
-            ]}
-          >
-            <Ionicons name={props.icon} size={18} color={props.accent} />
-          </View>
-
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <View
-              style={[styles.accentDot, { backgroundColor: props.accent }]}
-            />
-            <View
-              style={[
-                styles.trendPill,
-                {
-                  backgroundColor: props.isDarkmode
-                    ? "rgba(255,255,255,0.08)"
-                    : "rgba(2,6,23,0.06)",
-                },
-              ]}
-            >
-              <Ionicons name={trendIcon as any} size={14} color={toneColor} />
-              <Text
-                style={{ color: toneColor, fontSize: 11, fontWeight: "900" }}
-              >
-                {props.trendText}
-              </Text>
-            </View>
-          </View>
+          <Ionicons name={props.icon} size={18} color={props.accent} />
         </View>
+        <View style={[snapshotStyles.accentDot, { backgroundColor: props.accent }]} />
+      </View>
 
-        <Text
-          style={[styles.statValue, { color: props.textPrimary }]}
-          numberOfLines={1}
-        >
-          {props.valueText}
-        </Text>
-
-        <Text
-          style={[styles.statLabel, { color: props.textSecondary }]}
-          numberOfLines={1}
-        >
-          {props.label}
-        </Text>
-
-        <View style={{ alignItems: "flex-end", marginTop: 10 }}>
-          <Text
-            style={{
-              color: props.isDarkmode
-                ? "rgba(226,232,240,0.75)"
-                : "rgba(15,23,42,0.55)",
-              fontSize: 11,
-              fontWeight: "800",
-            }}
-          >
-            Tap to open
-          </Text>
-        </View>
-      </Card>
-    </TouchableOpacity>
+      <Text style={[snapshotStyles.value, { color: props.textPrimary }]} numberOfLines={1}>
+        {props.valueText}
+      </Text>
+      <Text style={[snapshotStyles.label, { color: props.textSecondary }]} numberOfLines={1}>
+        {props.label}
+      </Text>
+    </Card>
   );
 }
 
-function ActionCard(props: {
+function QuickCard(props: {
   icon: any;
   iconColor: string;
   title: string;
   subtitle: string;
   onPress: () => void;
-
+  isDarkmode: boolean;
   textPrimary: string;
   textSecondary: string;
   textMuted: string;
   cardBorder: string;
   cardBg: string;
   chipBg: string;
-  isDarkmode: boolean;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const pressIn = () =>
     Animated.timing(scale, {
-      toValue: 0.975,
+      toValue: 0.97,
       duration: 110,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
@@ -904,42 +714,28 @@ function ActionCard(props: {
       <Animated.View style={{ transform: [{ scale }] }}>
         <Card
           style={[
-            styles.actionCard,
+            quickStyles.card,
             neonGlowStyle({
               isDarkmode: props.isDarkmode,
               accent: props.iconColor,
-              borderColor: props.cardBorder,
               backgroundColor: props.cardBg,
+              borderColor: props.cardBorder,
             }),
           ]}
         >
-          <View style={[styles.iconChip, { backgroundColor: props.chipBg }]}>
+          <View style={[quickStyles.iconChip, { backgroundColor: props.chipBg }]}>
             <Ionicons name={props.icon} size={26} color={props.iconColor} />
           </View>
 
-          <Text
-            style={[styles.cardTitle, { color: props.textPrimary }]}
-            numberOfLines={1}
-          >
+          <Text style={[quickStyles.title, { color: props.textPrimary }]} numberOfLines={1}>
             {props.title}
           </Text>
-
-          <Text
-            style={[styles.cardSub, { color: props.textSecondary }]}
-            numberOfLines={2}
-          >
+          <Text style={[quickStyles.sub, { color: props.textSecondary }]} numberOfLines={2}>
             {props.subtitle}
           </Text>
 
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginTop: 10,
-            }}
-          >
-            <Text style={[styles.tapHint, { color: props.textMuted }]}>
+          <View style={quickStyles.bottomRow}>
+            <Text style={[quickStyles.tapHint, { color: props.textMuted }]}>
               Tap to open
             </Text>
             <Ionicons name="arrow-forward" size={18} color={props.iconColor} />
@@ -952,68 +748,110 @@ function ActionCard(props: {
 
 /* ---------------- Styles ---------------- */
 
-const RADIUS_LG = (Theme as any)?.radius?.lg ?? 18;
+function makeStyles(theme: any) {
+  return StyleSheet.create({
+    scrollContent: {
+      paddingHorizontal: theme.spacing.screenPadding,
+      paddingTop: theme.spacing.md,
+      paddingBottom: theme.spacing.xxl,
+    },
 
-const styles = StyleSheet.create({
-  scrollContent: {
-    paddingHorizontal: Theme.spacing.screenPadding,
-    paddingTop: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xxl,
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: theme.spacing.sm,
+      marginBottom: theme.spacing.md,
+    },
+    title: { fontSize: 18, fontWeight: "900" },
+    subtitle: { fontSize: 12, marginTop: 2, opacity: 0.95 },
+
+    themeToggle: {
+      width: 36,
+      height: 36,
+      borderRadius: 999,
+      borderWidth: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    sectionHeaderRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 10,
+    },
+
+    sectionTitle: {
+      fontSize: 15,
+      fontWeight: "900",
+      marginTop: theme.spacing.md,
+      marginBottom: theme.spacing.sm,
+    },
+
+    miniHint: { fontSize: 12, fontWeight: "800", opacity: 0.9 },
+
+    snapshotGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: theme.spacing.md,
+      marginBottom: theme.spacing.md,
+    },
+
+    highlightCard: {
+      borderRadius: theme.borderRadius?.lg ?? 12,
+      marginTop: theme.spacing.sm,
+    },
+    highlightRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: theme.spacing.sm,
+    },
+    dot: {
+      width: 10,
+      height: 10,
+      borderRadius: 999,
+      backgroundColor: MODULE_COLOR,
+    },
+    highlightTitle: { fontSize: 15, fontWeight: "900" },
+    highlightText: { fontSize: 13, lineHeight: 18 },
+
+    row: {
+      flexDirection: "row",
+      gap: theme.spacing.md,
+      marginBottom: theme.spacing.md,
+    },
+
+    badges: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: theme.spacing.sm,
+    },
+
+    linkPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+  });
+}
+
+const snapshotStyles = StyleSheet.create({
+  snapshotCard: {
+    width: "48%",
+    padding: 14,
+    borderRadius: 16,
   },
-
-  pageContainer: {
-    width: "100%",
-    maxWidth: 1180,
-    alignSelf: "center",
-  },
-
-  header: {
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: Theme.spacing.sm,
-    marginBottom: Theme.spacing.md,
   },
-  title: { fontSize: 18, fontWeight: "900" },
-  subtitle: { fontSize: 12, marginTop: 2, opacity: 0.95 },
-
-  themeToggle: {
-    width: 36,
-    height: 36,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  sectionHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-  },
-
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    marginTop: Theme.spacing.md,
-    marginBottom: Theme.spacing.sm,
-  },
-
-  miniHint: { fontSize: 12, fontWeight: "800", opacity: 0.9 },
-
-  snapshotGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Theme.spacing.md,
-    marginBottom: Theme.spacing.md,
-  },
-
-  statCard: {
-    padding: Theme.spacing.md,
-    borderRadius: RADIUS_LG, // ✅ fixed
-  },
-
   iconChipSmall: {
     width: 34,
     height: 34,
@@ -1021,71 +859,39 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   accentDot: { width: 10, height: 10, borderRadius: 999 },
 
-  trendPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 999,
+  value: {
+    fontSize: 18,
+    fontWeight: "900",
+    marginTop: 12,
   },
-
-  statValue: { fontSize: 18, fontWeight: "900", marginTop: 12 },
-  statLabel: { fontSize: 12, marginTop: 4, opacity: 0.95 },
-
-  highlightCard: { borderRadius: RADIUS_LG }, // ✅ fixed
-  highlightRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Theme.spacing.sm,
+  label: {
+    fontSize: 12,
+    marginTop: 4,
+    opacity: 0.95,
   },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-    backgroundColor: MODULE_COLOR,
-  },
-  highlightTitle: { fontSize: 15, fontWeight: "900" },
-  highlightText: { fontSize: 13, lineHeight: 18 },
+});
 
-  row: {
-    flexDirection: "row",
-    gap: Theme.spacing.md,
-    marginBottom: Theme.spacing.md,
+const quickStyles = StyleSheet.create({
+  card: {
+    borderRadius: 18,
   },
-
-  actionCard: {
-    borderRadius: RADIUS_LG, // ✅ fixed
-    padding: Theme.spacing.md,
-  },
-
   iconChip: {
     width: 38,
     height: 38,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Theme.spacing.sm,
+    marginBottom: 10,
   },
-
-  cardTitle: { fontSize: 14, fontWeight: "900" },
-  cardSub: { fontSize: 12, marginTop: 4, opacity: 0.95 },
-
-  tapHint: { fontSize: 11, fontWeight: "800", opacity: 0.85 },
-
-  badges: { flexDirection: "row", flexWrap: "wrap", gap: Theme.spacing.sm },
-
-  linkPill: {
+  title: { fontSize: 14, fontWeight: "900" },
+  sub: { fontSize: 12, marginTop: 4, opacity: 0.95 },
+  bottomRow: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
+    marginTop: 10,
   },
+  tapHint: { fontSize: 11, fontWeight: "800", opacity: 0.85 },
 });
