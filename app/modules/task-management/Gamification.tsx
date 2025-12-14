@@ -1,13 +1,15 @@
 // src/screens/Task/Gamifications.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   ScrollView,
   StyleSheet,
+  Modal,
   ActivityIndicator,
   TouchableOpacity,
   Platform,
   Text,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -18,9 +20,11 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
 import { useTheme } from "@/hooks/useTheme";
+
 import {
   GamificationStats,
-  getGamificationStats,
+  subscribeGamificationStats,
+  awardTaskCompletionOnce,
 } from "../task-management/taskGamifications";
 
 const MODULE_COLOR = "#38BDF8";
@@ -54,8 +58,13 @@ export default function GamificationsScreen() {
   const [stats, setStats] = useState<GamificationStats | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAddMenu, setShowAddMenu] = useState(false);
 
   const isDark = theme?.isDark === true;
+
+  // ✅ Animated XP bar
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const [trackWidth, setTrackWidth] = useState(0);
 
   const styles = useMemo(
     () =>
@@ -199,6 +208,17 @@ export default function GamificationsScreen() {
           fontSize: 11,
           color: theme.colors.textSecondary,
         },
+        chipButton: {
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm,
+          borderRadius: 999,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        chipButtonText: {
+          fontSize: theme.typography.fontSizes.sm,
+          fontWeight: theme.typography.fontWeights.semibold,
+        },
 
         smallCardsRow: {
           flexDirection: "row",
@@ -222,16 +242,6 @@ export default function GamificationsScreen() {
           color: theme.colors.textPrimary,
         },
 
-        neonBottomLine: {
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 3,
-          borderBottomLeftRadius: 24,
-          borderBottomRightRadius: 24,
-        },
-
         helperText: {
           marginTop: 6,
           fontSize: 11,
@@ -248,7 +258,29 @@ export default function GamificationsScreen() {
           fontSize: 13,
           color: "#FCA5A5",
         },
-
+        floatingAdd: {
+          position: "absolute",
+          top: -34,
+          alignSelf: "center",
+          zIndex: 10,
+          elevation: 10,
+        },
+        floatingAddButton: {
+          width: 52,
+          height: 52,
+          borderRadius: 26,
+          backgroundColor: MODULE_COLOR,
+          justifyContent: "center",
+          alignItems: "center",
+          borderWidth: 3,
+          borderColor: MODULE_COLOR + "AA",
+          shadowColor: MODULE_COLOR,
+          shadowOpacity: 0.9,
+          shadowRadius: 5,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: 25,
+          zIndex: 400,
+        },
         bottomBar: {
           position: "absolute",
           left: 16,
@@ -290,27 +322,39 @@ export default function GamificationsScreen() {
     [theme, isDark]
   );
 
+  // ✅ Real-time subscription + animated bar update
   useEffect(() => {
-    const load = async () => {
-      const user = auth.currentUser;
-      if (!user) {
-        setError("You need to be logged in to see your gamification stats.");
-        setLoading(false);
-        return;
-      }
+    const user = auth.currentUser;
+    if (!user) {
+      setError("You need to be logged in to see your gamification stats.");
+      setLoading(false);
+      return;
+    }
 
-      try {
-        const s = await getGamificationStats(user.uid);
+    setLoading(true);
+    setError(null);
+
+    const unsub = subscribeGamificationStats(
+      user.uid,
+      (s) => {
         setStats(s);
-      } catch (e: any) {
-        console.error("Failed to load gamification stats", e);
+        setLoading(false);
+
+        Animated.timing(progressAnim, {
+          toValue: s.progressToNextLevel,
+          duration: 650,
+          useNativeDriver: false, // width animation needs false
+        }).start();
+      },
+      (err) => {
+        console.error("subscribeGamificationStats error:", err);
         setError("Unable to load statistics.");
-      } finally {
         setLoading(false);
       }
-    };
+    );
 
-    load();
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -392,14 +436,19 @@ export default function GamificationsScreen() {
                     </Text>
                   </View>
 
-                  <View style={styles.progressBarTrack}>
-                    <View
+                  {/* ✅ Animated progress bar */}
+                  <View
+                    style={styles.progressBarTrack}
+                    onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+                  >
+                    <Animated.View
                       style={[
                         styles.progressBarFill,
                         {
-                          width: `${Math.round(
-                            stats.progressToNextLevel * 100
-                          )}%`,
+                          width: progressAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, trackWidth || 0],
+                          }),
                         },
                       ]}
                     />
@@ -548,9 +597,117 @@ export default function GamificationsScreen() {
           )}
         </ScrollView>
 
-        {/* 🔻 Bottom Taskbar */}
+        <Modal
+          visible={showAddMenu}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowAddMenu(false)}
+        >
+          <TouchableOpacity
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.4)",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+            activeOpacity={1}
+            onPressOut={() => setShowAddMenu(false)}
+          >
+            <Card
+              style={[
+                styles.neonShellCard,
+                {
+                  width: "70%",
+                  backgroundColor: theme.isDark ? "#020617" : "#0B1220",
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.neonBottomLine,
+                  {
+                    backgroundColor: MODULE_COLOR,
+                    shadowColor: MODULE_COLOR,
+                    shadowOpacity: 0.9,
+                    shadowRadius: 12,
+                    shadowOffset: { width: 0, height: 0 },
+                  },
+                ]}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.fontSizes.md,
+                  fontWeight: theme.typography.fontWeights.bold,
+                  marginBottom: theme.spacing.sm,
+                  color: theme.colors.textPrimary,
+                }}
+              >
+                Add...
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAddMenu(false);
+                  router.push("/modules/task-management/TaskAdd");
+                }}
+                style={[
+                  styles.chipButton,
+                  {
+                    backgroundColor: MODULE_COLOR,
+                    marginBottom: theme.spacing.sm,
+                  },
+                ]}
+              >
+                <Text style={[styles.chipButtonText, { color: "#fff" }]}>
+                  Add Task
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAddMenu(false);
+                  router.push("/modules/task-management/EventAdd");
+                }}
+                style={[styles.chipButton, { backgroundColor: "#0256ffff" }]}
+              >
+                <Text style={[styles.chipButtonText, { color: "#fff" }]}>
+                  Add Event
+                </Text>
+              </TouchableOpacity>
+            </Card>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* 🔻 BOTTOM TASKBAR NAVIGATION */}
         <View style={styles.bottomBar}>
-          {/* Task */}
+          {/* Center FAB attached to bar */}
+          <View style={styles.floatingAdd}>
+            <View
+              style={{
+                width: 65,
+                height: 65,
+                borderRadius: 32,
+                borderColor: MODULE_COLOR,
+                justifyContent: "center",
+                alignItems: "center",
+                backgroundColor: "#000",
+                shadowColor: MODULE_COLOR,
+                shadowOpacity: 1,
+                shadowRadius: 5,
+                shadowOffset: { width: 0, height: 0 },
+              }}
+            >
+              <TouchableOpacity
+                style={styles.floatingAddButton}
+                onPress={() => setShowAddMenu(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={34} color="#000" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* My Task */}
           <TouchableOpacity
             style={styles.bottomBarItem}
             onPress={() => router.push("/modules/task-management")}
@@ -562,10 +719,17 @@ export default function GamificationsScreen() {
                 color={theme.colors.textSecondary}
               />
             </View>
-            <Text style={styles.bottomBarLabel}>Task</Text>
+            <Text
+              style={[
+                styles.bottomBarLabel,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Task
+            </Text>
           </TouchableOpacity>
 
-          {/* Event */}
+          {/* My Event */}
           <TouchableOpacity
             style={styles.bottomBarItem}
             onPress={() => router.push("/modules/task-management/EventList")}
@@ -577,7 +741,14 @@ export default function GamificationsScreen() {
                 color={theme.colors.textSecondary}
               />
             </View>
-            <Text style={styles.bottomBarLabel}>Event</Text>
+            <Text
+              style={[
+                styles.bottomBarLabel,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Event
+            </Text>
           </TouchableOpacity>
 
           {/* Productivity (current) */}
@@ -585,7 +756,7 @@ export default function GamificationsScreen() {
             <View
               style={[
                 styles.bottomBarIconWrapper,
-                { backgroundColor: "rgba(56,189,248,0.15)" },
+                { backgroundColor: `${MODULE_COLOR}22` },
               ]}
             >
               <Ionicons
@@ -616,7 +787,14 @@ export default function GamificationsScreen() {
                 color={theme.colors.textSecondary}
               />
             </View>
-            <Text style={styles.bottomBarLabel}>Chart</Text>
+            <Text
+              style={[
+                styles.bottomBarLabel,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Chart
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

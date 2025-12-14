@@ -506,15 +506,12 @@ export default function TaskDashboard() {
           : t.assignedTo
           ? 1
           : 0;
-        const score =
-          typeof t.priorityScore === "number"
-            ? t.priorityScore
-            : computePriorityScore({
-                dueDate: t.dueDate ?? null,
-                startDate: t.startDate ?? null,
-                completed: t.completed,
-                assigneeCount,
-              });
+        const score = computePriorityScore({
+          dueDate: t.dueDate ?? null,
+          startDate: t.startDate ?? null,
+          completed: t.completed,
+          assigneeCount,
+        });
 
         return { ...t, priorityScore: score };
       })
