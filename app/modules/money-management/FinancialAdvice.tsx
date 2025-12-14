@@ -15,12 +15,15 @@ import {
   Platform,
   TextInput,
   KeyboardAvoidingView,
+  Modal,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
@@ -52,7 +55,6 @@ const MODULE_ACCENT = "#FFD93D";
 
 // ✅ Since you're running WEB, localhost is safest (still editable via settings)
 const DEFAULT_RAG_HOST = "http://localhost:8000";
-
 const RAG_HOST_STORAGE_KEY = "@money_rag_host_v1";
 
 // ✅ Your installed Ollama model
@@ -149,6 +151,11 @@ export default function FinancialAdviceScreen({ navigation }: any) {
   const [aiDebug, setAiDebug] = useState<any[] | null>(null);
   const lastPromptHashRef = useRef<string>("");
   const hasAutoRunRef = useRef(false);
+
+  // ✅ NEW: scroll + modal controls
+  const aiScrollRef = useRef<ScrollView | null>(null);
+  const [aiExpanded, setAiExpanded] = useState(false);
+  const [copyMsg, setCopyMsg] = useState<string>("");
 
   // Server Settings (Option C)
   const [ragHost, setRagHost] = useState<string>(DEFAULT_RAG_HOST);
@@ -409,6 +416,7 @@ Keep it <= 180 words.`;
     setAiError("");
     setAiAnswer("");
     setAiDebug(null);
+    setCopyMsg("");
 
     const host = normalizeHost(ragHost);
     const prompt = buildAiPrompt();
@@ -427,10 +435,10 @@ Keep it <= 180 words.`;
           body: JSON.stringify({
             text: prompt,
             n_results: 3,
-            model: DEFAULT_LLM_MODEL, // ✅ force installed model
+            model: DEFAULT_LLM_MODEL,
           }),
         },
-        60000 // ✅ 60s timeout (1B model can be slow)
+        60000
       );
 
       if (!resp.ok) {
@@ -443,15 +451,11 @@ Keep it <= 180 words.`;
       const results = Array.isArray(data?.results) ? data.results : null;
       const ollamaError = (data?.ollama_error || "").toString().trim();
 
-      if (ollamaError) {
-        throw new Error(`Ollama error: ${ollamaError}`);
-      }
-
-      if (!answer) {
+      if (ollamaError) throw new Error(`Ollama error: ${ollamaError}`);
+      if (!answer)
         throw new Error(
           "AI returned empty answer. Check Ollama model and server logs."
         );
-      }
 
       setAiAnswer(answer);
       setAiDebug(results);
@@ -469,12 +473,32 @@ Keep it <= 180 words.`;
   useEffect(() => {
     if (loading) return;
     if (!items.length) return;
-    if (hasAutoRunRef.current) return; // ✅ stop second run
+    if (hasAutoRunRef.current) return;
 
     hasAutoRunRef.current = true;
     const id = setTimeout(() => runAiCoach(), 350);
     return () => clearTimeout(id);
   }, [loading, items.length, runAiCoach]);
+
+  // ✅ when AI answer updates: scroll back to top so user starts from beginning
+  useEffect(() => {
+    if (!aiAnswer) return;
+    requestAnimationFrame(() => {
+      aiScrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+  }, [aiAnswer]);
+
+  const copyAnswer = useCallback(async () => {
+    if (!aiAnswer) return;
+    try {
+      await Clipboard.setStringAsync(aiAnswer);
+      setCopyMsg("Copied ✅");
+      setTimeout(() => setCopyMsg(""), 1200);
+    } catch {
+      setCopyMsg("Copy failed ❌");
+      setTimeout(() => setCopyMsg(""), 1200);
+    }
+  }, [aiAnswer]);
 
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
@@ -585,9 +609,7 @@ Keep it <= 180 words.`;
               <RNText style={[styles.cardTitle, { color: textPrimary }]}>
                 Server Settings
               </RNText>
-              <RNText
-                style={{ color: textSecondary, marginTop: 6, fontSize: 12 }}
-              >
+              <RNText style={{ color: textSecondary, marginTop: 6, fontSize: 12 }}>
                 For WEB, use{" "}
                 <RNText style={{ fontWeight: "900" }}>localhost:8000</RNText>.
               </RNText>
@@ -631,11 +653,7 @@ Keep it <= 180 words.`;
                   ]}
                   activeOpacity={0.85}
                 >
-                  <Ionicons
-                    name="save-outline"
-                    size={16}
-                    color={MODULE_ACCENT}
-                  />
+                  <Ionicons name="save-outline" size={16} color={MODULE_ACCENT} />
                   <RNText
                     style={{
                       color: textPrimary,
@@ -666,11 +684,7 @@ Keep it <= 180 words.`;
                     <ActivityIndicator />
                   ) : (
                     <>
-                      <Ionicons
-                        name="pulse-outline"
-                        size={16}
-                        color="#38BDF8"
-                      />
+                      <Ionicons name="pulse-outline" size={16} color="#38BDF8" />
                       <RNText
                         style={{
                           color: textPrimary,
@@ -686,16 +700,12 @@ Keep it <= 180 words.`;
               </View>
 
               {!!ragTestMsg && (
-                <RNText
-                  style={{ color: textMuted, marginTop: 10, fontSize: 12 }}
-                >
+                <RNText style={{ color: textMuted, marginTop: 10, fontSize: 12 }}>
                   {ragTestMsg}
                 </RNText>
               )}
 
-              <RNText
-                style={{ color: textSecondary, marginTop: 8, fontSize: 12 }}
-              >
+              <RNText style={{ color: textSecondary, marginTop: 8, fontSize: 12 }}>
                 In use:{" "}
                 <RNText style={{ color: textPrimary, fontWeight: "900" }}>
                   {normalizeHost(ragHost)}
@@ -721,9 +731,7 @@ Keep it <= 180 words.`;
                   <RNText style={[styles.cardTitle, { color: textPrimary }]}>
                     AI Money Coach
                   </RNText>
-                  <RNText
-                    style={{ color: textSecondary, marginTop: 4, fontSize: 12 }}
-                  >
+                  <RNText style={{ color: textSecondary, marginTop: 4, fontSize: 12 }}>
                     Model:{" "}
                     <RNText style={{ fontWeight: "900" }}>
                       {DEFAULT_LLM_MODEL}
@@ -731,43 +739,88 @@ Keep it <= 180 words.`;
                   </RNText>
                 </View>
 
-                <TouchableOpacity
-                  onPress={runAiCoach}
-                  disabled={aiLoading}
-                  style={[
-                    styles.aiBtn,
-                    {
-                      borderColor: MODULE_ACCENT,
-                      backgroundColor: isDarkmode
-                        ? "rgba(2,6,23,0.35)"
-                        : "rgba(255,255,255,0.65)",
-                      opacity: aiLoading ? 0.6 : 1,
-                    },
-                  ]}
-                  activeOpacity={0.85}
-                >
-                  {aiLoading ? (
-                    <ActivityIndicator />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name="sparkles-outline"
-                        size={16}
-                        color={MODULE_ACCENT}
-                      />
-                      <RNText
-                        style={{
-                          color: textPrimary,
-                          fontWeight: "900",
-                          marginLeft: 8,
-                        }}
-                      >
-                        Refresh
-                      </RNText>
-                    </>
-                  )}
-                </TouchableOpacity>
+                {/* ✅ actions */}
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={copyAnswer}
+                    disabled={!aiAnswer}
+                    style={[
+                      styles.aiBtnSmall,
+                      {
+                        borderColor: "rgba(148,163,184,0.25)",
+                        backgroundColor: isDarkmode
+                          ? "rgba(2,6,23,0.35)"
+                          : "rgba(255,255,255,0.65)",
+                        opacity: aiAnswer ? 1 : 0.55,
+                      },
+                    ]}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="copy-outline" size={16} color={textPrimary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setAiExpanded(true)}
+                    disabled={!aiAnswer}
+                    style={[
+                      styles.aiBtnSmall,
+                      {
+                        borderColor: "rgba(148,163,184,0.25)",
+                        backgroundColor: isDarkmode
+                          ? "rgba(2,6,23,0.35)"
+                          : "rgba(255,255,255,0.65)",
+                        opacity: aiAnswer ? 1 : 0.55,
+                      },
+                    ]}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="expand-outline" size={16} color={textPrimary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={runAiCoach}
+                    disabled={aiLoading}
+                    style={[
+                      styles.aiBtn,
+                      {
+                        borderColor: MODULE_ACCENT,
+                        backgroundColor: isDarkmode
+                          ? "rgba(2,6,23,0.35)"
+                          : "rgba(255,255,255,0.65)",
+                        opacity: aiLoading ? 0.6 : 1,
+                      },
+                    ]}
+                    activeOpacity={0.85}
+                  >
+                    {aiLoading ? (
+                      <ActivityIndicator />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="sparkles-outline"
+                          size={16}
+                          color={MODULE_ACCENT}
+                        />
+                        <RNText
+                          style={{
+                            color: textPrimary,
+                            fontWeight: "900",
+                            marginLeft: 8,
+                          }}
+                        >
+                          Refresh
+                        </RNText>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
+
+              {!!copyMsg && (
+                <RNText style={{ color: textMuted, marginTop: 8, fontSize: 12 }}>
+                  {copyMsg}
+                </RNText>
+              )}
 
               {aiError ? (
                 <View style={styles.aiBox}>
@@ -779,9 +832,23 @@ Keep it <= 180 words.`;
                   </RNText>
                 </View>
               ) : aiAnswer ? (
+                // ✅ KEY FIX: inner ScrollView so long advice can scroll
                 <View style={styles.aiBox}>
-                  <RNText style={{ color: textPrimary, lineHeight: 18 }}>
-                    {aiAnswer}
+                  <ScrollView
+                    ref={(r) => (aiScrollRef.current = r)}
+                    style={styles.aiScrollArea}
+                    contentContainerStyle={{ paddingRight: 6 }}
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <RNText style={[styles.aiText, { color: textPrimary }]}>
+                      {aiAnswer}
+                    </RNText>
+                  </ScrollView>
+
+                  <RNText style={[styles.aiHint, { color: textMuted }]}>
+                    Tip: Scroll inside this box • Tap ⤢ to open full view
                   </RNText>
                 </View>
               ) : (
@@ -858,6 +925,86 @@ Keep it <= 180 words.`;
             <View style={{ height: 8 }} />
           </ScrollView>
         </KeyboardAvoidingView>
+
+        {/* ✅ Modal: full AI answer (scrollable) */}
+        <Modal
+          visible={aiExpanded}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAiExpanded(false)}
+        >
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setAiExpanded(false)}
+          >
+            <Pressable
+              style={[
+                styles.modalCard,
+                neonGlowStyle({
+                  isDarkmode,
+                  accent: MODULE_ACCENT,
+                  backgroundColor: cardBg,
+                  borderColor: cardBorder,
+                  heavy: true,
+                }),
+              ]}
+              onPress={() => {}}
+            >
+              <View style={styles.modalHeader}>
+                <RNText style={[styles.modalTitle, { color: textPrimary }]}>
+                  AI Money Coach
+                </RNText>
+
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={copyAnswer}
+                    disabled={!aiAnswer}
+                    style={[
+                      styles.aiBtnSmall,
+                      {
+                        borderColor: "rgba(148,163,184,0.25)",
+                        backgroundColor: isDarkmode
+                          ? "rgba(2,6,23,0.35)"
+                          : "rgba(255,255,255,0.65)",
+                        opacity: aiAnswer ? 1 : 0.55,
+                      },
+                    ]}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="copy-outline" size={16} color={textPrimary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setAiExpanded(false)}
+                    style={[
+                      styles.aiBtnSmall,
+                      {
+                        borderColor: "rgba(148,163,184,0.25)",
+                        backgroundColor: isDarkmode
+                          ? "rgba(2,6,23,0.35)"
+                          : "rgba(255,255,255,0.65)",
+                      },
+                    ]}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="close-outline" size={18} color={textPrimary} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <ScrollView
+                style={{ marginTop: 10, maxHeight: 520 }}
+                contentContainerStyle={{ paddingBottom: 12 }}
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
+                <RNText style={[styles.aiText, { color: textPrimary }]}>
+                  {aiError ? `AI Error:\n${aiError}` : aiAnswer || "No AI advice yet."}
+                </RNText>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </SafeAreaView>
     </GradientBackground>
   );
@@ -908,7 +1055,7 @@ function makeStyles(theme: any) {
 
     aiHeaderRow: {
       flexDirection: "row",
-      alignItems: "center",
+      alignItems: "flex-start",
       gap: 10,
     },
     aiBtn: {
@@ -919,6 +1066,15 @@ function makeStyles(theme: any) {
       borderRadius: 14,
       borderWidth: 1,
     },
+    aiBtnSmall: {
+      width: 38,
+      height: 38,
+      borderRadius: 14,
+      borderWidth: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
     aiBox: {
       marginTop: 12,
       borderRadius: 16,
@@ -926,6 +1082,22 @@ function makeStyles(theme: any) {
       borderColor: "rgba(148,163,184,0.22)",
       padding: 12,
       backgroundColor: "rgba(255,255,255,0.06)",
+    },
+
+    // ✅ scrollable area (key fix)
+    aiScrollArea: {
+      maxHeight: 240, // adjust if you want taller
+      borderRadius: 12,
+    },
+    aiText: {
+      fontSize: 13,
+      lineHeight: 19,
+      fontWeight: "700",
+    },
+    aiHint: {
+      marginTop: 10,
+      fontSize: 11,
+      fontWeight: "700",
     },
 
     inputLabel: {
@@ -960,6 +1132,28 @@ function makeStyles(theme: any) {
       fontSize: 14,
       lineHeight: 20,
       fontWeight: "700",
+    },
+
+    // ✅ modal styles
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      padding: 16,
+      justifyContent: "center",
+    },
+    modalCard: {
+      borderRadius: 18,
+      padding: 14,
+    },
+    modalHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+    modalTitle: {
+      fontSize: 16,
+      fontWeight: "900",
     },
   });
 }

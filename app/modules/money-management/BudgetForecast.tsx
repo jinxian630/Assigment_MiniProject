@@ -36,13 +36,26 @@ type Tx = {
   type: "Income" | "Expense";
   amount: number;
   dateTime?: number;
-  account?: string; // ✅ matches TransactionAdd payload
+  account?: string;
 };
 
 type Option = { key: string; label: string };
 
 const screenWidth = Dimensions.get("window").width;
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 function ymKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -59,13 +72,15 @@ function safeNum(x: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Simple linear trend */
 function linearForecast(values: number[]) {
   const n = values.length;
   if (n === 0) return 0;
   if (n === 1) return Math.max(0, values[0]);
 
-  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  let sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumXX = 0;
   for (let i = 0; i < n; i++) {
     sumX += i;
     sumY += values[i];
@@ -80,12 +95,14 @@ function linearForecast(values: number[]) {
   return Number.isFinite(pred) ? Math.max(0, pred) : 0;
 }
 
-/** slope helper for AI insights */
 function slope(values: number[]) {
   const n = values.length;
   if (n < 2) return 0;
 
-  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  let sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumXX = 0;
   for (let i = 0; i < n; i++) {
     sumX += i;
     sumY += values[i];
@@ -96,20 +113,28 @@ function slope(values: number[]) {
   return denom === 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
 }
 
-/** icon mapping (safe + consistent idea with your add screen) */
 function iconForAccount(name: string): keyof typeof Ionicons.glyphMap {
   const s = (name || "").toLowerCase();
   if (s.includes("cash")) return "cash-outline";
-  if (s.includes("wallet") || s.includes("ewallet") || s.includes("e-wallet") || s.includes("tng"))
+  if (
+    s.includes("wallet") ||
+    s.includes("ewallet") ||
+    s.includes("e-wallet") ||
+    s.includes("tng")
+  )
     return "phone-portrait-outline";
-  if (s.includes("bank") || s.includes("maybank") || s.includes("cimb") || s.includes("rhb"))
+  if (
+    s.includes("bank") ||
+    s.includes("maybank") ||
+    s.includes("cimb") ||
+    s.includes("rhb")
+  )
     return "card-outline";
   if (s.includes("card") || s.includes("visa") || s.includes("master"))
     return "card-outline";
   return "wallet-outline";
 }
 
-/** neon card shell */
 function neonGlow({
   isDark,
   accent,
@@ -162,6 +187,34 @@ function chipStyle(isDark: boolean, selected: boolean, accent: string) {
   } as const;
 }
 
+// ✅ FIX chart background for phone/light theme
+function makeChartConfig(isDarkmode: boolean) {
+  const bg = isDarkmode ? "#020617" : "#FFFFFF";
+  const grid = isDarkmode ? "rgba(148,163,184,0.25)" : "rgba(15,23,42,0.12)";
+
+  return {
+    backgroundColor: bg,
+    backgroundGradientFrom: bg,
+    backgroundGradientTo: bg,
+    decimalPlaces: 0,
+    color: (opacity = 1) =>
+      isDarkmode ? `rgba(248,250,252,${opacity})` : `rgba(15,23,42,${opacity})`,
+    labelColor: (opacity = 1) =>
+      isDarkmode ? `rgba(248,250,252,${opacity})` : `rgba(15,23,42,${opacity})`,
+    propsForLabels: { fontSize: 10 },
+    propsForBackgroundLines: { stroke: grid, strokeDasharray: "4 6" },
+  };
+}
+
+function normalizeAccountName(v: any) {
+  const s = String(v ?? "").trim();
+  return s.length ? s : "";
+}
+
+function uniqueSorted(list: string[]) {
+  return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
+}
+
 export default function BudgetForecastScreen({ navigation }: any) {
   const router = useRouter();
   const nav = navigation ?? { goBack: () => router.back() };
@@ -184,7 +237,15 @@ export default function BudgetForecastScreen({ navigation }: any) {
   );
 
   const ui = getMoneyColors(moneyThemeCtx);
-  const { textPrimary, textSecondary, textMuted, cardBorder, cardBg, success, danger } = ui;
+  const {
+    textPrimary,
+    textSecondary,
+    textMuted,
+    cardBorder,
+    cardBg,
+    success,
+    danger,
+  } = ui;
 
   const auth = getAuth();
   const db = getFirestore();
@@ -198,33 +259,67 @@ export default function BudgetForecastScreen({ navigation }: any) {
   const [selectedAccount, setSelectedAccount] = useState<string>("ALL");
   const [selectedBaseMonthKey, setSelectedBaseMonthKey] = useState<string>("");
 
-  // Load accounts like TransactionAdd (users/{uid}/accounts)
+  // ✅ Account list now comes from BOTH:
+  // A) users/{uid}/accounts (new method)
+  // B) unique transaction.account values (old method)
   useEffect(() => {
+    let alive = true;
+
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) return;
-      try {
-        const snap = await getDocs(
-          query(collection(db, "users", user.uid, "accounts"), orderBy("createdAt", "asc"))
-        );
-        const names = snap.docs
-          .map((d) => String((d.data() as any)?.name ?? "").trim())
-          .filter(Boolean);
-        const uniq = Array.from(new Set(names));
-        setAccountOptions([{ key: "ALL", label: "All Accounts" }, ...uniq.map((x) => ({ key: x, label: x }))]);
 
-        if (selectedAccount !== "ALL" && !uniq.includes(selectedAccount)) {
+      try {
+        // A) Try read user subcollection accounts (no orderBy to avoid missing createdAt)
+        const snap = await getDocs(
+          collection(db, "users", user.uid, "accounts")
+        );
+        const fromAccounts = snap.docs
+          .map((d) => normalizeAccountName((d.data() as any)?.name))
+          .filter(Boolean);
+
+        // B) Read from existing transactions already loaded (fallback handled in separate effect too)
+        const fromTx = items
+          .map((t) => normalizeAccountName(t.account))
+          .filter(Boolean);
+
+        const merged = uniqueSorted([...fromAccounts, ...fromTx]);
+
+        if (!alive) return;
+        setAccountOptions([
+          { key: "ALL", label: "All Accounts" },
+          ...merged.map((x) => ({ key: x, label: x })),
+        ]);
+
+        if (selectedAccount !== "ALL" && !merged.includes(selectedAccount)) {
           setSelectedAccount("ALL");
         }
       } catch (e) {
         console.log("load accounts error", e);
+
+        // Even if accounts collection fails, still show accounts from transactions
+        const fromTx = uniqueSorted(
+          items.map((t) => normalizeAccountName(t.account)).filter(Boolean)
+        );
+        if (!alive) return;
+        setAccountOptions([
+          { key: "ALL", label: "All Accounts" },
+          ...fromTx.map((x) => ({ key: x, label: x })),
+        ]);
+
+        if (selectedAccount !== "ALL" && !fromTx.includes(selectedAccount)) {
+          setSelectedAccount("ALL");
+        }
       }
     });
 
-    return () => unsub();
+    return () => {
+      alive = false;
+      unsub();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, auth]);
+  }, [db, auth, items]);
 
-  // Subscribe expenses
+  // ✅ Load transactions
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) {
@@ -267,7 +362,10 @@ export default function BudgetForecastScreen({ navigation }: any) {
   }, [items, selectedAccount]);
 
   const months = useMemo(() => {
-    const monthly: Record<string, { income: number; expense: number; label: string; ts: number }> = {};
+    const monthly: Record<
+      string,
+      { income: number; expense: number; label: string; ts: number }
+    > = {};
 
     for (const t of filteredItems) {
       if (!t.dateTime) continue;
@@ -295,12 +393,14 @@ export default function BudgetForecastScreen({ navigation }: any) {
     [months]
   );
 
-  // auto base month = latest
   useEffect(() => {
     if (!monthOptions.length) return;
     const latest = monthOptions[monthOptions.length - 1]?.key;
     if (!selectedBaseMonthKey) setSelectedBaseMonthKey(latest);
-    if (selectedBaseMonthKey && !monthOptions.some((m) => m.key === selectedBaseMonthKey)) {
+    if (
+      selectedBaseMonthKey &&
+      !monthOptions.some((m) => m.key === selectedBaseMonthKey)
+    ) {
       setSelectedBaseMonthKey(latest);
     }
   }, [monthOptions, selectedBaseMonthKey]);
@@ -333,16 +433,24 @@ export default function BudgetForecastScreen({ navigation }: any) {
     const lastExpense = last3.map((x) => x.expense);
     const enough = last3.length >= 2;
 
-    const nextIncome = enough ? linearForecast(lastIncome) : (lastIncome[lastIncome.length - 1] ?? 0);
-    const nextExpense = enough ? linearForecast(lastExpense) : (lastExpense[lastExpense.length - 1] ?? 0);
+    const nextIncome = enough
+      ? linearForecast(lastIncome)
+      : lastIncome[lastIncome.length - 1] ?? 0;
+    const nextExpense = enough
+      ? linearForecast(lastExpense)
+      : lastExpense[lastExpense.length - 1] ?? 0;
 
     const incomePreds: number[] = [];
     const expensePreds: number[] = [];
     for (let i = 0; i < 3; i++) {
       const incBase = lastIncome.concat(incomePreds).slice(-3);
       const expBase = lastExpense.concat(expensePreds).slice(-3);
-      incomePreds.push(enough ? linearForecast(incBase) : (incBase[incBase.length - 1] ?? 0));
-      expensePreds.push(enough ? linearForecast(expBase) : (expBase[expBase.length - 1] ?? 0));
+      incomePreds.push(
+        enough ? linearForecast(incBase) : incBase[incBase.length - 1] ?? 0
+      );
+      expensePreds.push(
+        enough ? linearForecast(expBase) : expBase[expBase.length - 1] ?? 0
+      );
     }
 
     const labels = [...last3.map((x) => x.label), "Next+1", "Next+2", "Next+3"];
@@ -350,9 +458,10 @@ export default function BudgetForecastScreen({ navigation }: any) {
     const expenseSeries = [...lastExpense, ...expensePreds];
     const savingsSeries = incomeSeries.map((v, i) => v - expenseSeries[i]);
 
-    // AI insights
     const predictedSavings = nextIncome - nextExpense;
-    const lastSavings = (lastIncome[lastIncome.length - 1] ?? 0) - (lastExpense[lastExpense.length - 1] ?? 0);
+    const lastSavings =
+      (lastIncome[lastIncome.length - 1] ?? 0) -
+      (lastExpense[lastExpense.length - 1] ?? 0);
 
     const historyWindow = months.slice(Math.max(0, baseIdx - 5), baseIdx + 1);
     const histIncome = historyWindow.map((m) => m.income);
@@ -363,14 +472,27 @@ export default function BudgetForecastScreen({ navigation }: any) {
 
     const ai: string[] = [];
     if (!enough) {
-      ai.push("Not enough monthly history yet — add at least 2 months for better forecasting.");
+      ai.push(
+        "Not enough monthly history yet — add at least 2 months for better forecasting."
+      );
     } else {
-      if (expSlope > incSlope && expSlope > 0) ai.push("Expenses are rising faster than income — watch spending growth.");
-      else if (incSlope > expSlope && incSlope > 0) ai.push("Income trend is improving faster than expenses — good savings momentum.");
+      if (expSlope > incSlope && expSlope > 0)
+        ai.push(
+          "Expenses are rising faster than income — watch spending growth."
+        );
+      else if (incSlope > expSlope && incSlope > 0)
+        ai.push(
+          "Income trend is improving faster than expenses — good savings momentum."
+        );
 
-      if (predictedSavings < 0) ai.push("Forecast suggests a possible deficit next month. Consider cutting non-essential categories.");
-      else if (predictedSavings > 0 && predictedSavings >= lastSavings) ai.push("Savings outlook is positive and improving.");
-      else if (predictedSavings > 0 && predictedSavings < lastSavings) ai.push("Savings stays positive but may weaken slightly.");
+      if (predictedSavings < 0)
+        ai.push(
+          "Forecast suggests a possible deficit next month. Consider cutting non-essential categories."
+        );
+      else if (predictedSavings > 0 && predictedSavings >= lastSavings)
+        ai.push("Savings outlook is positive and improving.");
+      else if (predictedSavings > 0 && predictedSavings < lastSavings)
+        ai.push("Savings stays positive but may weaken slightly.");
     }
 
     return {
@@ -389,22 +511,10 @@ export default function BudgetForecastScreen({ navigation }: any) {
   const notEnoughData = model.last3.length < 2;
   const predictedSavings = model.nextIncome - model.nextExpense;
 
-  const chartConfig = useMemo(
-    () => ({
-      backgroundColor: "transparent",
-      backgroundGradientFrom: "transparent",
-      backgroundGradientTo: "transparent",
-      decimalPlaces: 0,
-      color: (opacity = 1) =>
-        isDarkmode ? `rgba(248,250,252,${opacity})` : `rgba(15,23,42,${opacity})`,
-      labelColor: (opacity = 1) =>
-        isDarkmode ? `rgba(248,250,252,${opacity})` : `rgba(15,23,42,${opacity})`,
-      propsForLabels: { fontSize: 10 },
-    }),
-    [isDarkmode]
-  );
+  const chartConfig = useMemo(() => makeChartConfig(isDarkmode), [isDarkmode]);
 
-  const sp = theme?.spacing ?? themeCtx?.theme?.spacing ?? { screenPadding: 16, md: 12, xxl: 26 };
+  const sp = theme?.spacing ??
+    themeCtx?.theme?.spacing ?? { screenPadding: 16, md: 12, xxl: 26 };
   const styles = useMemo(() => makeStyles(sp), [sp]);
 
   if (loading) {
@@ -419,14 +529,25 @@ export default function BudgetForecastScreen({ navigation }: any) {
     );
   }
 
+  const chartBg = isDarkmode ? "#020617" : "#FFFFFF";
+
   return (
     <GradientBackground>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-          {/* Header */}
+        <ScrollView
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
-            <IconButton icon="arrow-back" variant="secondary" size="medium" onPress={() => nav.goBack()} />
-            <RNText style={[styles.headerTitle, { color: textPrimary }]}>Budget Forecast</RNText>
+            <IconButton
+              icon="arrow-back"
+              variant="secondary"
+              size="medium"
+              onPress={() => nav.goBack()}
+            />
+            <RNText style={[styles.headerTitle, { color: textPrimary }]}>
+              Budget Forecast
+            </RNText>
 
             <TouchableOpacity
               onPress={() => toggleThemeSafe(moneyThemeCtx)}
@@ -435,7 +556,9 @@ export default function BudgetForecastScreen({ navigation }: any) {
                 styles.themeToggle,
                 {
                   borderColor: "#FFD93D",
-                  backgroundColor: isDarkmode ? "rgba(15,23,42,0.65)" : "rgba(255,255,255,0.75)",
+                  backgroundColor: isDarkmode
+                    ? "rgba(15,23,42,0.65)"
+                    : "rgba(255,255,255,0.75)",
                 },
               ]}
             >
@@ -447,35 +570,48 @@ export default function BudgetForecastScreen({ navigation }: any) {
             </TouchableOpacity>
           </View>
 
-          {/* Controls */}
-          <Card style={[styles.card, neonGlow({ isDark: isDarkmode, accent: "#A855F7", bg: cardBg, border: cardBorder })]}>
-            <RNText style={[styles.cardTitle, { color: textPrimary }]}>Forecast Controls</RNText>
+          <Card
+            style={[
+              styles.card,
+              neonGlow({
+                isDark: isDarkmode,
+                accent: "#A855F7",
+                bg: cardBg,
+                border: cardBorder,
+              }),
+            ]}
+          >
+            <RNText style={[styles.cardTitle, { color: textPrimary }]}>
+              Forecast Controls
+            </RNText>
 
-            <RNText style={[styles.sectionLabel, { color: textSecondary }]}>Account</RNText>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            <RNText style={[styles.sectionLabel, { color: textSecondary }]}>
+              Account
+            </RNText>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
               {accountOptions.map((a, index) => {
                 const active = selectedAccount === a.key;
-                const icon = a.key === "ALL" ? ("layers-outline" as const) : iconForAccount(a.label);
+                const icon =
+                  a.key === "ALL"
+                    ? ("layers-outline" as const)
+                    : iconForAccount(a.label);
 
                 return (
                   <TouchableOpacity
-                    key={`${a.key}-${index}`}   // ✅ index is defined here, so no crash
+                    key={`${a.key}-${index}`}
                     activeOpacity={0.9}
                     onPress={() => setSelectedAccount(a.key)}
-                    style={[
-                      chipStyle(isDarkmode, active, "#A855F7"),
-                      active
-                        ? {
-                            shadowColor: "#A855F7",
-                            shadowOpacity: isDarkmode ? 0.45 : 0.18,
-                            shadowRadius: 10,
-                            shadowOffset: { width: 0, height: 0 },
-                            elevation: 6,
-                          }
-                        : null,
-                    ]}
+                    style={chipStyle(isDarkmode, active, "#A855F7")}
                   >
-                    <Ionicons name={icon} size={16} color={active ? "#A855F7" : textMuted} />
+                    <Ionicons
+                      name={icon}
+                      size={16}
+                      color={active ? "#A855F7" : textMuted}
+                    />
                     <RNText
                       numberOfLines={1}
                       style={{
@@ -492,29 +628,40 @@ export default function BudgetForecastScreen({ navigation }: any) {
               })}
             </ScrollView>
 
-            <RNText style={[styles.sectionLabel, { color: textSecondary, marginTop: 6 }]}>Base Month</RNText>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            {!accountOptions || accountOptions.length <= 1 ? (
+              <RNText style={{ color: textMuted, fontSize: 12, marginTop: 8 }}>
+                No accounts found. Add accounts OR ensure your transactions have
+                an account field.
+              </RNText>
+            ) : null}
+
+            <RNText
+              style={[
+                styles.sectionLabel,
+                { color: textSecondary, marginTop: 6 },
+              ]}
+            >
+              Base Month
+            </RNText>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
               {monthOptions.map((m, index) => {
                 const active = selectedBaseMonthKey === m.key;
                 return (
                   <TouchableOpacity
-                    key={`${m.key}-${index}`}   // ✅ index defined
+                    key={`${m.key}-${index}`}
                     activeOpacity={0.9}
                     onPress={() => setSelectedBaseMonthKey(m.key)}
-                    style={[
-                      chipStyle(isDarkmode, active, "#38BDF8"),
-                      active
-                        ? {
-                            shadowColor: "#38BDF8",
-                            shadowOpacity: isDarkmode ? 0.45 : 0.18,
-                            shadowRadius: 10,
-                            shadowOffset: { width: 0, height: 0 },
-                            elevation: 6,
-                          }
-                        : null,
-                    ]}
+                    style={chipStyle(isDarkmode, active, "#38BDF8")}
                   >
-                    <Ionicons name="calendar-outline" size={16} color={active ? "#38BDF8" : textMuted} />
+                    <Ionicons
+                      name="calendar-outline"
+                      size={16}
+                      color={active ? "#38BDF8" : textMuted}
+                    />
                     <RNText
                       numberOfLines={1}
                       style={{
@@ -529,73 +676,21 @@ export default function BudgetForecastScreen({ navigation }: any) {
                 );
               })}
             </ScrollView>
-
-            {!monthOptions.length ? (
-              <RNText style={{ color: textMuted, fontSize: 12, marginTop: 8 }}>
-                No monthly data found for this selection yet.
-              </RNText>
-            ) : null}
           </Card>
 
-          {/* Prediction + AI */}
-          <Card style={[styles.card, neonGlow({ isDark: isDarkmode, accent: "#FFD93D", bg: cardBg, border: cardBorder, heavy: true })]}>
-            <RNText style={[styles.cardTitle, { color: textPrimary }]}>Next Month Prediction</RNText>
-
-            {notEnoughData ? (
-              <RNText style={{ color: textMuted, marginTop: 10 }}>
-                Add at least 2 months of transactions (for this account) to generate a meaningful forecast.
-              </RNText>
-            ) : (
-              <>
-                <RNText style={{ color: textSecondary, marginTop: 12 }}>
-                  Predicted Income: RM {model.nextIncome.toFixed(2)}
-                </RNText>
-                <RNText style={{ color: textSecondary, marginTop: 6 }}>
-                  Predicted Expense: RM {model.nextExpense.toFixed(2)}
-                </RNText>
-
-                <RNText
-                  style={{
-                    marginTop: 10,
-                    fontWeight: "900",
-                    color: predictedSavings >= 0 ? success : danger,
-                  }}
-                >
-                  Predicted Savings: RM {predictedSavings.toFixed(2)}
-                </RNText>
-
-                <View style={{ marginTop: 14 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Ionicons
-                      name="sparkles-outline"
-                      size={16}
-                      color={isDarkmode ? "rgba(253,230,138,1)" : "rgba(15,23,42,0.8)"}
-                    />
-                    <RNText style={{ color: textPrimary, fontWeight: "900" }}>AI Insights</RNText>
-                  </View>
-
-                  <View style={{ marginTop: 8, gap: 6 }}>
-                    {model.ai.map((line, index) => (
-                      <View key={`${index}-${line}`} style={{ flexDirection: "row", gap: 8 }}>
-                        <RNText style={{ color: textMuted, fontWeight: "900" }}>•</RNText>
-                        <RNText style={{ color: textSecondary, flex: 1 }}>{line}</RNText>
-                      </View>
-                    ))}
-                  </View>
-
-                  <RNText style={{ color: textMuted, fontSize: 11, marginTop: 10 }}>
-                    Trend-based forecast using your recent monthly history.
-                  </RNText>
-                </View>
-              </>
-            )}
-          </Card>
-
-          {/* Chart */}
-          <Card style={[styles.card, neonGlow({ isDark: isDarkmode, accent: "#38BDF8", bg: cardBg, border: cardBorder })]}>
-            <RNText style={[styles.cardTitle, { color: textPrimary }]}>Trend (Base + Next 3)</RNText>
-            <RNText style={{ color: textMuted, marginTop: 6, fontSize: 12 }}>
-              Income / Expense / Savings based on the selected base month window.
+          <Card
+            style={[
+              styles.card,
+              neonGlow({
+                isDark: isDarkmode,
+                accent: "#38BDF8",
+                bg: cardBg,
+                border: cardBorder,
+              }),
+            ]}
+          >
+            <RNText style={[styles.cardTitle, { color: textPrimary }]}>
+              Trend (Base + Next 3)
             </RNText>
 
             {!notEnoughData ? (
@@ -603,9 +698,21 @@ export default function BudgetForecastScreen({ navigation }: any) {
                 data={{
                   labels: model.labels,
                   datasets: [
-                    { data: model.incomeSeries, color: (o = 1) => `rgba(34,197,94,${o})`, strokeWidth: 2 },
-                    { data: model.expenseSeries, color: (o = 1) => `rgba(249,115,22,${o})`, strokeWidth: 2 },
-                    { data: model.savingsSeries, color: (o = 1) => `rgba(56,189,248,${o})`, strokeWidth: 2 },
+                    {
+                      data: model.incomeSeries,
+                      color: (o = 1) => `rgba(34,197,94,${o})`,
+                      strokeWidth: 2,
+                    },
+                    {
+                      data: model.expenseSeries,
+                      color: (o = 1) => `rgba(249,115,22,${o})`,
+                      strokeWidth: 2,
+                    },
+                    {
+                      data: model.savingsSeries,
+                      color: (o = 1) => `rgba(56,189,248,${o})`,
+                      strokeWidth: 2,
+                    },
                   ],
                   legend: ["Income", "Expense", "Savings"],
                 }}
@@ -613,7 +720,11 @@ export default function BudgetForecastScreen({ navigation }: any) {
                 height={280}
                 fromZero
                 chartConfig={chartConfig as any}
-                style={{ marginTop: 10, borderRadius: 16 }}
+                style={{
+                  marginTop: 10,
+                  borderRadius: 16,
+                  backgroundColor: chartBg,
+                }}
                 bezier
               />
             ) : (
