@@ -17,15 +17,16 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Request model
 class QueryRequest(BaseModel):
-    # Default LLM model name
-    model: str = "DeepSeek-R1-Distill-Qwen-7B"
+    # ✅ You only have gemma3:1b installed, so set it as default
+    model: str = "gemma3:1b"
+
     text: str
     n_results: int = 2
 
@@ -45,9 +46,9 @@ def search_vectors(request: QueryRequest):
     )
 
     return {
-        "ids": results["ids"],
-        "documents": results["documents"],
-        "distances": results["distances"]
+        "ids": results.get("ids", []),
+        "documents": results.get("documents", []),
+        "distances": results.get("distances", [])
     }
 
 
@@ -77,42 +78,72 @@ def search_rag_model(request: QueryRequest):
     # Loop results safely
     for doc, meta, dist in zip(docs, metas, dists):
         source_row = meta.get("source_row") if isinstance(meta, dict) else None
-
         response.append({
             "source_row": source_row,
-            "distance": round(dist, 4),
-            "text_preview": doc[:500]
+            "distance": round(float(dist), 4) if dist is not None else None,
+            "text_preview": (doc or "")[:500]
         })
 
     # Build RAG context
     context = "\n".join([r["text_preview"] for r in response])
 
-    # Fix broken multiline f-string
+    # Build prompt
     prompt_text = (
         f"Answer the following query using the provided context.\n\n"
         f"Query: {request.text}\n\n"
-        f"Context:\n{context}"
+        f"Context:\n{context}\n\n"
+        f"Rules:\n"
+        f"- Be practical and specific.\n"
+        f"- Use bullet points when helpful.\n"
+        f"- If context is weak, say so and give general best-practice advice.\n"
     )
 
-    # Send to Ollama
-    ollama_resp = requests.post(
-        OLLAMA_API_URL,
-        json={
-            "model": request.model,
-            "prompt": prompt_text
-        },
-        stream=True
-    )
+    # ✅ Send to Ollama (with timeout + generation limit)
+    try:
+        ollama_resp = requests.post(
+            OLLAMA_API_URL,
+            json={
+                "model": request.model,       # ✅ correct variable
+                "prompt": prompt_text,        # ✅ correct variable
+                "stream": True,
+                "options": {"num_predict": 220},  # ✅ avoid hanging
+            },
+            stream=True,
+            timeout=(10, 120),  # ✅ connect timeout 10s, read timeout 120s
+        )
+    except requests.RequestException as e:
+        return {
+            "results": response,
+            "model_answer": "",
+            "ollama_error": f"Request to Ollama failed: {str(e)}",
+        }
+
+    # ✅ If Ollama returns error, expose it so frontend can show it
+    if ollama_resp.status_code != 200:
+        try:
+            err_text = ollama_resp.text
+        except Exception:
+            err_text = "Unknown Ollama error"
+        return {
+            "results": response,
+            "model_answer": "",
+            "ollama_error": err_text,
+        }
 
     # Stream result
     model_answer = ""
     for line in ollama_resp.iter_lines():
-        if line:
+        if not line:
+            continue
+        try:
             data = json.loads(line.decode("utf-8"))
             if "response" in data:
                 model_answer += data["response"]
+        except Exception:
+            # ignore malformed chunks
+            pass
 
     return {
         "results": response,
-        "model_answer": model_answer.strip()
+        "model_answer": model_answer.strip(),
     }

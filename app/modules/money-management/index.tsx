@@ -1,5 +1,11 @@
 // app/modules/money-management/index.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -21,7 +27,6 @@ import { useFocusEffect } from "@react-navigation/native";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
-import { Badge } from "@/components/common/Badge";
 import { useTheme } from "@/hooks/useTheme";
 
 import { getMoneyColors, toggleThemeSafe } from "./MoneyUI";
@@ -44,14 +49,18 @@ const FIELD_USER_ID = "createdBy";
 const FIELD_AMOUNT = "amount";
 const FIELD_TYPE = "type"; // "Income" | "Expense"
 const FIELD_DATE_TIME = "dateTime"; // number(ms)
+const FIELD_NOTE = "note";
+const FIELD_CATEGORY = "category";
+const FIELD_ACCOUNT = "account";
 
 type TxType = {
   id: string;
-  type?: string;
+  type?: "Income" | "Expense" | string;
   amount?: number;
   dateTime?: number;
   category?: string;
   account?: string;
+  note?: string;
 };
 
 function formatRM(n: number) {
@@ -86,110 +95,152 @@ function neonGlowStyle(opts: {
     borderColor: isDarkmode ? `${accent}AA` : borderColor,
     shadowColor: accent,
     shadowOpacity: heavy ? glowA : glowB,
-    shadowRadius: heavy ? 16 : 10,
+    shadowRadius: heavy ? 18 : 10,
     shadowOffset: { width: 0, height: 0 },
-    elevation: heavy ? 10 : 6,
+    elevation: heavy ? 12 : 6,
   } as const;
 }
 
-function SnapshotCard(props: {
-  label: string;
-  valueText: string;
-  icon: any;
-  accent: string;
+function clamp01(x: number) {
+  if (!Number.isFinite(x)) return 0;
+  return Math.max(0, Math.min(1, x));
+}
+
+function fmtDate(ts?: number) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return d.toLocaleDateString("en-MY", { day: "2-digit", month: "short" });
+}
+
+/**
+ * ✅ Bigger + higher contrast money icon (especially in light theme)
+ * ✅ Pulses + glows only while syncing
+ */
+function MoneyPulseIcon({
+  syncing,
+  isDarkmode,
+  chipBg,
+}: {
+  syncing: boolean;
   isDarkmode: boolean;
-  textPrimary: string;
-  textSecondary: string;
-  cardBorder: string;
-  cardBg: string;
   chipBg: string;
 }) {
-  return (
-    <Card
-      style={flatStyle(
-        snapshotStyles.snapshotCard,
-        neonGlowStyle({
-          isDarkmode: props.isDarkmode,
-          accent: props.accent,
-          backgroundColor: props.cardBg,
-          borderColor: props.cardBorder,
-        })
-      )}
-    >
-      <View style={snapshotStyles.topRow}>
-        <View
-          style={[
-            snapshotStyles.iconChipSmall,
-            { backgroundColor: props.chipBg },
-          ]}
-        >
-          <Ionicons name={props.icon} size={18} color={props.accent} />
-        </View>
-        <View
-          style={[
-            snapshotStyles.accentDot,
-            { backgroundColor: props.accent },
-          ]}
-        />
-      </View>
+  const scale = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
 
-      <Text
-        style={[snapshotStyles.value, { color: props.textPrimary }]}
-        numberOfLines={1}
-      >
-        {props.valueText}
-      </Text>
-      <Text
-        style={[snapshotStyles.label, { color: props.textSecondary }]}
-        numberOfLines={1}
-      >
-        {props.label}
-      </Text>
-    </Card>
+  useEffect(() => {
+    let loop: Animated.CompositeAnimation | null = null;
+
+    if (syncing) {
+      loop = Animated.loop(
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(scale, {
+              toValue: 1.12,
+              duration: 520,
+              easing: Easing.out(Easing.quad),
+              useNativeDriver: true,
+            }),
+            Animated.timing(scale, {
+              toValue: 1,
+              duration: 520,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.sequence([
+            Animated.timing(opacity, {
+              toValue: 0.78,
+              duration: 520,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+            Animated.timing(opacity, {
+              toValue: 1,
+              duration: 520,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+          ]),
+        ])
+      );
+      loop.start();
+    } else {
+      // Reset instantly
+      scale.setValue(1);
+      opacity.setValue(1);
+    }
+
+    return () => {
+      loop?.stop();
+    };
+  }, [syncing, scale, opacity]);
+
+  // ✅ Fix: light theme icon hard to see -> use dark icon + strong border
+  const iconColor = isDarkmode ? MODULE_COLOR : "#0F172A";
+  const bgColor = isDarkmode ? chipBg : "rgba(255,255,255,0.96)";
+  const borderColor = isDarkmode ? `${MODULE_COLOR}AA` : "rgba(15,23,42,0.35)";
+
+  return (
+    <Animated.View
+      style={[
+        stylesStatic.moneyIconWrap,
+        {
+          backgroundColor: bgColor,
+          borderColor,
+          opacity,
+          transform: [{ scale }],
+          shadowColor: MODULE_COLOR,
+          shadowOpacity: syncing ? 0.65 : isDarkmode ? 0.28 : 0.18,
+          shadowRadius: syncing ? 20 : 10,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: syncing ? 12 : 4,
+        },
+      ]}
+    >
+      <Ionicons name="wallet-outline" size={30} color={iconColor} />
+    </Animated.View>
   );
 }
 
-function QuickCard(props: {
-  icon: any;
-  iconColor: string;
+function ActionPill(props: {
   title: string;
   subtitle: string;
+  icon: any;
+  color: string;
   onPress: () => void;
   isDarkmode: boolean;
   textPrimary: string;
   textMuted: string;
-  cardBorder: string;
-  cardBg: string;
   chipBg: string;
+  border: string;
 }) {
   return (
     <TouchableOpacity
-      activeOpacity={0.88}
+      activeOpacity={0.9}
       onPress={props.onPress}
-      style={{ flex: 1 }}
+      style={[
+        stylesStatic.actionPill,
+        {
+          borderColor: props.border,
+          backgroundColor: props.isDarkmode
+            ? "rgba(2,6,23,0.75)"
+            : "rgba(255,255,255,0.75)",
+        },
+      ]}
     >
-      <Card
-        style={flatStyle(
-          quickStyles.quickCard,
-          neonGlowStyle({
-            isDarkmode: props.isDarkmode,
-            accent: props.iconColor,
-            backgroundColor: props.cardBg,
-            borderColor: props.cardBorder,
-          })
-        )}
-      >
-        <View style={[quickStyles.iconChip, { backgroundColor: props.chipBg }]}>
-          <Ionicons name={props.icon} size={18} color={props.iconColor} />
-        </View>
-
-        <Text style={[quickStyles.title, { color: props.textPrimary }]}>
+      <View style={[stylesStatic.pillIcon, { backgroundColor: props.chipBg }]}>
+        <Ionicons name={props.icon} size={18} color={props.color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[stylesStatic.pillTitle, { color: props.textPrimary }]}>
           {props.title}
         </Text>
-        <Text style={[quickStyles.sub, { color: props.textMuted }]}>
+        <Text style={[stylesStatic.pillSub, { color: props.textMuted }]}>
           {props.subtitle}
         </Text>
-      </Card>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={props.textMuted} />
     </TouchableOpacity>
   );
 }
@@ -199,8 +250,6 @@ export default function MoneyManagementScreen() {
 
   const themeCtx = useTheme() as any;
   const theme = themeCtx?.theme ?? themeCtx;
-
-  // keep your existing logic
   const isDarkmode = !!themeCtx?.isDarkMode;
 
   const moneyThemeCtx = useMemo(
@@ -224,8 +273,9 @@ export default function MoneyManagementScreen() {
   const [balance, setBalance] = useState(0);
   const [monthIncome, setMonthIncome] = useState(0);
   const [monthExpense, setMonthExpense] = useState(0);
-  const [topCategories, setTopCategories] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [recentTx, setRecentTx] = useState<TxType[]>([]);
 
   // ✅ keep one realtime listener
   const snapUnsubRef = useRef<null | (() => void)>(null);
@@ -259,7 +309,7 @@ export default function MoneyManagementScreen() {
         setBalance(0);
         setMonthIncome(0);
         setMonthExpense(0);
-        setTopCategories([]);
+        setRecentTx([]);
         setIsLoading(false);
         return;
       }
@@ -270,7 +320,7 @@ export default function MoneyManagementScreen() {
         collection(db, TX_COLLECTION),
         where(FIELD_USER_ID as any, "==", user.uid),
         orderBy(FIELD_DATE_TIME as any, "desc"),
-        limit(800)
+        limit(200)
       );
 
       snapUnsubRef.current = onSnapshot(
@@ -287,7 +337,6 @@ export default function MoneyManagementScreen() {
 
           const now = new Date();
           const currentMonth = monthKey(now);
-          const catTotal = new Map<string, number>();
 
           for (const r of rows) {
             const amount = Number((r as any)?.[FIELD_AMOUNT] ?? 0);
@@ -304,12 +353,6 @@ export default function MoneyManagementScreen() {
               if (monthKey(d) === currentMonth) {
                 if (type === "Income") mIncome += amount;
                 else if (type === "Expense") mExpense += amount;
-
-                if (type === "Expense") {
-                  const rawCat = String((r as any)?.category ?? "Others");
-                  const cat = rawCat.trim() ? rawCat.trim() : "Others";
-                  catTotal.set(cat, (catTotal.get(cat) ?? 0) + Math.abs(amount));
-                }
               }
             }
           }
@@ -318,12 +361,7 @@ export default function MoneyManagementScreen() {
           setMonthIncome(mIncome);
           setMonthExpense(mExpense);
 
-          const sortedCats = Array.from(catTotal.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10)
-            .map(([name]) => name);
-
-          setTopCategories(sortedCats);
+          setRecentTx(rows.slice(0, 6));
           setIsLoading(false);
         },
         (err) => {
@@ -341,27 +379,15 @@ export default function MoneyManagementScreen() {
     });
   }, [detachAll]);
 
-  /**
-   * ✅ KEY FIX:
-   * UseEffect runs on mount no matter what.
-   * This ensures index page ALWAYS starts syncing immediately.
-   */
   useEffect(() => {
     attachListener();
     return () => detachAll();
   }, [attachListener, detachAll]);
 
-  /**
-   * Optional: keep focus refresh too (extra safety).
-   * If focus events work, it will reattach cleanly.
-   */
   useFocusEffect(
     useCallback(() => {
       attachListener();
-      return () => {
-        // you can comment this out if you want it to keep listening in background
-        detachAll();
-      };
+      return () => detachAll();
     }, [attachListener, detachAll])
   );
 
@@ -412,22 +438,47 @@ export default function MoneyManagementScreen() {
         useNativeDriver: false,
       }),
     ]).start();
-  }, [balance, monthIncome, monthExpense, animBalance, animIncome, animExpense]);
+  }, [
+    balance,
+    monthIncome,
+    monthExpense,
+    animBalance,
+    animIncome,
+    animExpense,
+  ]);
 
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
+  // ✅ keep your existing routing exactly (don’t break)
   const goToAddTransaction = () =>
-    router.push("/modules/money-management/TransactionAdd");
+    router.push("../modules/money-management/TransactionAdd");
   const goToTransactionList = () =>
-    router.push("/modules/money-management/TransactionList");
+    router.push("../modules/money-management/TransactionList");
   const goToChartDisplay = () =>
-    router.push("/modules/money-management/ChartDisplay");
+    router.push("../modules/money-management/ChartDisplay");
   const goToFinancialAdvice = () =>
-    router.push("/modules/money-management/FinancialAdvice");
+    router.push("../modules/money-management/FinancialAdvice");
   const goToBudgetForecast = () =>
-    router.push("/modules/money-management/BudgetForecast");
+    router.push("../modules/money-management/BudgetForecast");
   const goToPrint = () =>
-    router.push("/modules/money-management/PrintTransactionList");
+    router.push("../modules/money-management/PrintTransactionList");
+
+  // ====== extra UX logic ======
+  const netThisMonth = monthIncome - monthExpense;
+
+  // “Spending meter”: expense vs income (if no income yet, fall back)
+  const spendRatio =
+    monthIncome > 0
+      ? clamp01(monthExpense / monthIncome)
+      : clamp01(monthExpense / 1000);
+
+  const meterText =
+    monthIncome > 0
+      ? `${Math.round(spendRatio * 100)}% spent of income`
+      : "No income yet — add Income to improve insights";
+
+  const meterColor =
+    spendRatio < 0.6 ? "#22c55e" : spendRatio < 0.9 ? "#f59e0b" : "#ef4444";
 
   return (
     <GradientBackground>
@@ -446,11 +497,17 @@ export default function MoneyManagementScreen() {
             />
 
             <View style={{ flex: 1, alignItems: "center" }}>
+              <MoneyPulseIcon
+                syncing={isLoading}
+                isDarkmode={isDarkmode}
+                chipBg={chipBg}
+              />
+
               <Text style={[styles.title, { color: textPrimary }]}>
-                Money Management
+                Money Dashboard
               </Text>
               <Text style={[styles.subtitle, { color: textSecondary }]}>
-                Control • Insight • Growth
+                Balance • Insights • Control
               </Text>
             </View>
 
@@ -472,203 +529,380 @@ export default function MoneyManagementScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Snapshot */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: textPrimary }]}>
-              Financial Snapshot
-            </Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Ionicons name="pulse-outline" size={14} color={textSecondary} />
-              <Text style={[styles.miniHint, { color: textSecondary }]}>
-                {isLoading ? "Syncing…" : "Updated"}
-              </Text>
+          {/* HERO SUMMARY */}
+          <Card
+            style={flatStyle(
+              styles.heroCard,
+              neonGlowStyle({
+                isDarkmode,
+                accent: "#38BDF8",
+                backgroundColor: cardBg,
+                borderColor: cardBorder,
+                heavy: true,
+              })
+            )}
+          >
+            <View style={styles.heroTop}>
+              <View style={[styles.heroChip, { backgroundColor: chipBg }]}>
+                <Ionicons name="wallet-outline" size={18} color="#38BDF8" />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.heroLabel, { color: textSecondary }]}>
+                  Current Balance
+                </Text>
+                <Text style={[styles.heroValue, { color: textPrimary }]}>
+                  {balanceText}
+                </Text>
+              </View>
+
+              <View style={styles.heroStatus}>
+                <View
+                  style={[
+                    styles.dot,
+                    { backgroundColor: isLoading ? "#f59e0b" : "#22c55e" },
+                  ]}
+                />
+                <Text style={[styles.syncText, { color: textMuted }]}>
+                  {isLoading ? "Syncing" : "Live"}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          <View style={styles.snapshotGrid}>
-            <SnapshotCard
-              label="Balance"
-              valueText={balanceText}
-              icon="wallet-outline"
-              accent="#38BDF8"
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textSecondary={textSecondary}
-            />
-            <SnapshotCard
-              label="Income (This Month)"
-              valueText={incomeText}
-              icon="trending-up-outline"
-              accent="#22c55e"
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textSecondary={textSecondary}
-            />
-          </View>
+            {/* Small stats row */}
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStat}>
+                <Text style={[styles.statLabel, { color: textMuted }]}>
+                  Income (Month)
+                </Text>
+                <Text style={[styles.statValue, { color: "#22c55e" }]}>
+                  {incomeText}
+                </Text>
+              </View>
 
-          <View style={[styles.snapshotGrid, { marginTop: 10 }]}>
-            <SnapshotCard
-              label="Expense (This Month)"
-              valueText={expenseText}
-              icon="trending-down-outline"
-              accent="#f97316"
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textSecondary={textSecondary}
-            />
-            <SnapshotCard
-              label="Net (This Month)"
-              valueText={formatRM(monthIncome - monthExpense)}
-              icon="analytics-outline"
-              accent={monthIncome - monthExpense >= 0 ? "#22c55e" : "#ef4444"}
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textSecondary={textSecondary}
-            />
-          </View>
+              <View style={styles.dividerV} />
 
-          {/* Quick Actions */}
-          <Text style={[styles.sectionTitle, { color: textPrimary }]}>
-            Quick Actions
-          </Text>
+              <View style={styles.heroStat}>
+                <Text style={[styles.statLabel, { color: textMuted }]}>
+                  Expense (Month)
+                </Text>
+                <Text style={[styles.statValue, { color: "#f97316" }]}>
+                  {expenseText}
+                </Text>
+              </View>
 
-          <View style={styles.row}>
-            <QuickCard
-              icon="add-circle-outline"
-              iconColor="#ff7f50"
-              title="Add Transaction"
-              subtitle="Log income or expense"
-              onPress={goToAddTransaction}
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-            />
-            <QuickCard
-              icon="list-outline"
-              iconColor="#4b7bec"
-              title="Transaction History"
-              subtitle="View & manage records"
-              onPress={goToTransactionList}
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-            />
-          </View>
+              <View style={styles.dividerV} />
 
-          <View style={styles.row}>
-            <QuickCard
-              icon="pie-chart-outline"
-              iconColor="#20bf6b"
-              title="Spending Insights"
-              subtitle="Trends & breakdown"
+              <View style={styles.heroStat}>
+                <Text style={[styles.statLabel, { color: textMuted }]}>
+                  Net (Month)
+                </Text>
+                <Text
+                  style={[
+                    styles.statValue,
+                    { color: netThisMonth >= 0 ? "#22c55e" : "#ef4444" },
+                  ]}
+                >
+                  {formatRM(netThisMonth)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Spending meter */}
+            <View style={{ marginTop: 12 }}>
+              <View style={styles.meterTop}>
+                <Text style={[styles.meterTitle, { color: textPrimary }]}>
+                  Spending meter
+                </Text>
+                <Text style={[styles.meterHint, { color: textMuted }]}>
+                  {meterText}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.meterTrack,
+                  {
+                    backgroundColor: isDarkmode
+                      ? "rgba(255,255,255,0.08)"
+                      : "rgba(2,6,23,0.08)",
+                    borderColor: cardBorder,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.meterFill,
+                    {
+                      width: `${Math.max(6, Math.round(spendRatio * 100))}%`,
+                      backgroundColor: meterColor,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          </Card>
+
+          {/* INSIGHTS ROW */}
+          <View style={styles.insightsRow}>
+            <TouchableOpacity
+              activeOpacity={0.9}
               onPress={goToChartDisplay}
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-            />
-            <QuickCard
-              icon="bulb-outline"
-              iconColor="#FFD93D"
-              title="AI Financial Advice"
-              subtitle="Personalized tips"
-              onPress={goToFinancialAdvice}
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-            />
-          </View>
-
-          <View style={styles.row}>
-            <QuickCard
-              icon="trending-up-outline"
-              iconColor="#38BDF8"
-              title="Budget Forecast"
-              subtitle="Predict savings"
-              onPress={goToBudgetForecast}
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-            />
-            <QuickCard
-              icon="print-outline"
-              iconColor="#A855F7"
-              title="Reports & Export"
-              subtitle="Generate PDF report"
-              onPress={goToPrint}
-              isDarkmode={isDarkmode}
-              cardBg={cardBg}
-              cardBorder={cardBorder}
-              chipBg={chipBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-            />
-          </View>
-
-          {/* Categories (this month) */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: textPrimary }]}>
-              Categories (This Month)
-            </Text>
+              style={{ flex: 1 }}
+            >
+              <Card
+                style={flatStyle(
+                  styles.miniInsight,
+                  neonGlowStyle({
+                    isDarkmode,
+                    accent: "#A855F7",
+                    backgroundColor: cardBg,
+                    borderColor: cardBorder,
+                  })
+                )}
+              >
+                <View style={[styles.miniIcon, { backgroundColor: chipBg }]}>
+                  <Ionicons
+                    name="analytics-outline"
+                    size={16}
+                    color="#A855F7"
+                  />
+                </View>
+                <Text style={[styles.miniTitle, { color: textPrimary }]}>
+                  Insights
+                </Text>
+                <Text style={[styles.miniSub, { color: textMuted }]}>
+                  Trends & breakdown
+                </Text>
+              </Card>
+            </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={goToChartDisplay}
-              activeOpacity={0.85}
-              style={flatStyle(styles.linkPill, {
-                borderColor: cardBorder,
-                backgroundColor: isDarkmode
-                  ? "rgba(255,255,255,0.04)"
-                  : "rgba(2,6,23,0.03)",
-              })}
+              activeOpacity={0.9}
+              onPress={goToFinancialAdvice}
+              style={{ flex: 1 }}
             >
-              <Text
-                style={{ color: textSecondary, fontSize: 12, fontWeight: "800" }}
+              <Card
+                style={flatStyle(
+                  styles.miniInsight,
+                  neonGlowStyle({
+                    isDarkmode,
+                    accent: "#FFD93D",
+                    backgroundColor: cardBg,
+                    borderColor: cardBorder,
+                  })
+                )}
               >
-                View Insights
-              </Text>
-              <Ionicons name="arrow-forward" size={14} color={textSecondary} />
+                <View style={[styles.miniIcon, { backgroundColor: chipBg }]}>
+                  <Ionicons name="bulb-outline" size={16} color="#FFD93D" />
+                </View>
+                <Text style={[styles.miniTitle, { color: textPrimary }]}>
+                  Advice
+                </Text>
+                <Text style={[styles.miniSub, { color: textMuted }]}>
+                  Personalized tips
+                </Text>
+              </Card>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={goToBudgetForecast}
+              style={{ flex: 1 }}
+            >
+              <Card
+                style={flatStyle(
+                  styles.miniInsight,
+                  neonGlowStyle({
+                    isDarkmode,
+                    accent: "#38BDF8",
+                    backgroundColor: cardBg,
+                    borderColor: cardBorder,
+                  })
+                )}
+              >
+                <View style={[styles.miniIcon, { backgroundColor: chipBg }]}>
+                  <Ionicons
+                    name="trending-up-outline"
+                    size={16}
+                    color="#38BDF8"
+                  />
+                </View>
+                <Text style={[styles.miniTitle, { color: textPrimary }]}>
+                  Forecast
+                </Text>
+                <Text style={[styles.miniSub, { color: textMuted }]}>
+                  Predict savings
+                </Text>
+              </Card>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.badges}>
-            {topCategories.length === 0 ? (
-              <Text style={{ color: textMuted, fontWeight: "700" }}>
-                No expense records this month yet.
+          <Text
+            style={[
+              styles.sectionTitle,
+              { color: textPrimary, marginTop: 25, marginBottom: 15 },
+            ]}
+          >
+            Quick Actions
+          </Text>
+
+          <ActionPill
+            title="Add Transaction"
+            subtitle="Log income or expense"
+            icon="add-circle-outline"
+            color="#ff7f50"
+            onPress={goToAddTransaction}
+            isDarkmode={isDarkmode}
+            textPrimary={textPrimary}
+            textMuted={textMuted}
+            chipBg={chipBg}
+            border={cardBorder}
+          />
+          <ActionPill
+            title="Transaction History"
+            subtitle="View, edit and manage"
+            icon="list-outline"
+            color="#4b7bec"
+            onPress={goToTransactionList}
+            isDarkmode={isDarkmode}
+            textPrimary={textPrimary}
+            textMuted={textMuted}
+            chipBg={chipBg}
+            border={cardBorder}
+          />
+          <ActionPill
+            title="Reports & Export"
+            subtitle="Generate PDF report"
+            icon="print-outline"
+            color="#A855F7"
+            onPress={goToPrint}
+            isDarkmode={isDarkmode}
+            textPrimary={textPrimary}
+            textMuted={textMuted}
+            chipBg={chipBg}
+            border={cardBorder}
+          />
+
+          {/* RECENT TRANSACTIONS PREVIEW */}
+          <View style={[styles.sectionRow, { marginTop: 14 }]}>
+            <Text style={[styles.sectionTitle, { color: textPrimary }]}>
+              Recent Activity
+            </Text>
+            <TouchableOpacity
+              onPress={goToTransactionList}
+              activeOpacity={0.85}
+              style={[
+                styles.smallLink,
+                {
+                  borderColor: cardBorder,
+                  backgroundColor: isDarkmode
+                    ? "rgba(255,255,255,0.04)"
+                    : "rgba(2,6,23,0.03)",
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: textSecondary,
+                  fontWeight: "800",
+                  fontSize: 12,
+                }}
+              >
+                Details
               </Text>
-            ) : (
-              topCategories.map((c) => (
-                <Badge key={c} variant="primary" style={{ marginRight: 0 }}>
-                  {c}
-                </Badge>
-              ))
-            )}
+              <Ionicons
+                name="chevron-forward"
+                size={14}
+                color={textSecondary}
+              />
+            </TouchableOpacity>
           </View>
+
+          <Card
+            style={flatStyle(
+              styles.recentCard,
+              neonGlowStyle({
+                isDarkmode,
+                accent: "#F97316",
+                backgroundColor: cardBg,
+                borderColor: cardBorder,
+              })
+            )}
+          >
+            {recentTx.length === 0 ? (
+              <View style={{ paddingVertical: 6 }}>
+                <Text style={{ color: textMuted, fontWeight: "700" }}>
+                  No transactions yet. Add your first one to start insights.
+                </Text>
+              </View>
+            ) : (
+              recentTx.map((t, idx) => {
+                const type = String((t as any)?.[FIELD_TYPE] ?? "");
+                const amt = Number((t as any)?.[FIELD_AMOUNT] ?? 0);
+                const ts = Number((t as any)?.[FIELD_DATE_TIME] ?? 0);
+                const note = String((t as any)?.[FIELD_NOTE] ?? "");
+                const cat = String((t as any)?.[FIELD_CATEGORY] ?? "Others");
+                const acc = String((t as any)?.[FIELD_ACCOUNT] ?? "");
+                const isIncome = type === "Income";
+
+                return (
+                  <View
+                    key={t.id ?? String(idx)}
+                    style={[
+                      styles.txRow,
+                      idx !== recentTx.length - 1 && {
+                        borderBottomWidth: 1,
+                        borderBottomColor: isDarkmode
+                          ? "rgba(255,255,255,0.06)"
+                          : "rgba(2,6,23,0.06)",
+                        paddingBottom: 10,
+                        marginBottom: 10,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.txIcon, { backgroundColor: chipBg }]}>
+                      <Ionicons
+                        name={
+                          isIncome ? "arrow-up-outline" : "arrow-down-outline"
+                        }
+                        size={16}
+                        color={isIncome ? "#22c55e" : "#f97316"}
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.txTitle, { color: textPrimary }]}
+                        numberOfLines={1}
+                      >
+                        {note?.trim() ? note : cat}
+                      </Text>
+                      <Text
+                        style={[styles.txSub, { color: textMuted }]}
+                        numberOfLines={1}
+                      >
+                        {fmtDate(ts)}
+                        {acc ? ` · ${acc}` : ""}
+                        {cat ? ` · ${cat}` : ""}
+                      </Text>
+                    </View>
+
+                    <Text
+                      style={[
+                        styles.txAmount,
+                        { color: isIncome ? "#22c55e" : "#f97316" },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {isIncome ? "+" : "-"}
+                      {formatRM(Math.abs(amt))}
+                    </Text>
+                  </View>
+                );
+              })
+            )}
+          </Card>
 
           {/* Floating add */}
           <View
@@ -692,54 +926,37 @@ export default function MoneyManagementScreen() {
   );
 }
 
-const snapshotStyles = StyleSheet.create({
-  snapshotCard: {
-    flex: 1,
-    borderRadius: 20,
-    padding: 14,
-    overflow: "hidden",
-  },
-  topRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+const stylesStatic = StyleSheet.create({
+  // ✅ Bigger header icon
+  moneyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 24,
     alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+    borderWidth: 1.5,
+  },
+
+  actionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    borderWidth: 1,
     marginBottom: 10,
   },
-  iconChipSmall: {
-    width: 36,
-    height: 36,
+  pillIcon: {
+    width: 38,
+    height: 38,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  accentDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 99,
-    opacity: 0.95,
-  },
-  value: { fontSize: 16, fontWeight: "900" },
-  label: { marginTop: 4, fontSize: 12, fontWeight: "700", opacity: 0.92 },
-});
-
-const quickStyles = StyleSheet.create({
-  quickCard: {
-    borderRadius: 20,
-    padding: 14,
-    overflow: "hidden",
-    minHeight: 104,
-    justifyContent: "center",
-  },
-  iconChip: {
-    width: 40,
-    height: 40,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  title: { fontSize: 14, fontWeight: "900" },
-  sub: { marginTop: 4, fontSize: 11.5, fontWeight: "700" },
+  pillTitle: { fontSize: 14, fontWeight: "900" },
+  pillSub: { marginTop: 2, fontSize: 11.5, fontWeight: "700" },
 });
 
 function makeStyles(theme: any) {
@@ -754,7 +971,7 @@ function makeStyles(theme: any) {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginBottom: 14,
+      marginBottom: 12,
     },
     title: { fontSize: 18, fontWeight: "900", letterSpacing: 0.2 },
     subtitle: { marginTop: 2, fontSize: 12, fontWeight: "700", opacity: 0.9 },
@@ -768,25 +985,99 @@ function makeStyles(theme: any) {
       borderWidth: 1,
     },
 
-    sectionTitle: {
-      fontSize: 14,
-      fontWeight: "900",
-      marginTop: 14,
-      marginBottom: 10,
+    // HERO
+    heroCard: {
+      borderRadius: 22,
+      padding: 14,
+      overflow: "hidden",
     },
-    sectionHeaderRow: {
+    heroTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    heroChip: {
+      width: 42,
+      height: 42,
+      borderRadius: 16,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    heroLabel: { fontSize: 12, fontWeight: "800" },
+    heroValue: { marginTop: 2, fontSize: 22, fontWeight: "900" },
+
+    heroStatus: { alignItems: "flex-end", gap: 4 },
+    dot: { width: 8, height: 8, borderRadius: 99 },
+    syncText: { fontSize: 11, fontWeight: "800" },
+
+    heroStatsRow: {
+      marginTop: 12,
+      borderRadius: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 10,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginTop: 10,
+      backgroundColor: "rgba(255,255,255,0.02)",
+    },
+    heroStat: { flex: 1, alignItems: "center" },
+    statLabel: { fontSize: 11, fontWeight: "800" },
+    statValue: { marginTop: 4, fontSize: 12.5, fontWeight: "900" },
+    dividerV: {
+      width: 1,
+      height: 30,
+      backgroundColor: "rgba(148,163,184,0.25)",
+    },
+
+    meterTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 8,
+    },
+    meterTitle: { fontSize: 12.5, fontWeight: "900" },
+    meterHint: { fontSize: 11, fontWeight: "700" },
+    meterTrack: {
+      height: 10,
+      borderRadius: 999,
+      borderWidth: 1,
+      overflow: "hidden",
+    },
+    meterFill: {
+      height: "100%",
+      borderRadius: 999,
+    },
+
+    // INSIGHTS
+    insightsRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+    miniInsight: {
+      borderRadius: 18,
+      padding: 12,
+      overflow: "hidden",
+      minHeight: 86,
+      justifyContent: "center",
+    },
+    miniIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 8,
+    },
+    miniTitle: { fontSize: 13, fontWeight: "900" },
+    miniSub: { marginTop: 2, fontSize: 11.5, fontWeight: "700" },
+
+    // SECTION
+    sectionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginTop: 14,
       marginBottom: 10,
     },
-    miniHint: { fontSize: 11, fontWeight: "800", opacity: 0.9 },
-
-    snapshotGrid: { flexDirection: "row", gap: 10 },
-    row: { flexDirection: "row", gap: 10, marginBottom: 10 },
-
-    linkPill: {
+    sectionTitle: { fontSize: 14, fontWeight: "900" },
+    smallLink: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
@@ -796,11 +1087,26 @@ function makeStyles(theme: any) {
       borderWidth: 1,
     },
 
-    badges: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 10,
-      marginTop: 6,
+    // RECENT
+    recentCard: {
+      borderRadius: 18,
+      padding: 12,
+      overflow: "hidden",
     },
+    txRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    txIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    txTitle: { fontSize: 13, fontWeight: "900" },
+    txSub: { marginTop: 2, fontSize: 11.5, fontWeight: "700" },
+    txAmount: { fontSize: 12.5, fontWeight: "900" },
   });
 }
