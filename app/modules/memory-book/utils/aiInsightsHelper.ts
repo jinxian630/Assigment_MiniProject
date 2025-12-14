@@ -1,13 +1,18 @@
 /**
  * Comprehensive AI Insights Helper
  * Extends ollamaHelper with more detailed analysis
+ * Supports: Ollama (local), OpenAI (optional), or smart data-driven analysis
  */
 
 import { checkOllamaConnection } from "./ollamaHelper";
 import type { Memory } from "./memoryHelpers";
 
 const OLLAMA_BASE_URL = "http://localhost:11434/api/generate";
-const MODEL_NAME = "deepseek";
+const MODEL_NAME = "deepseek-r1:1.5b"; // Using the installed DeepSeek model
+
+// Optional: OpenAI API (set via environment variable if you want to use it)
+const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
 export interface PeriodComparison {
   changes: Array<{
@@ -83,7 +88,7 @@ export function comparePeriods(
   if (Math.abs(currentCount - previousCount) > 0) {
     const change = currentCount - previousCount;
     changes.push({
-      message: `${change > 0 ? "+" : ""}${change} memory${Math.abs(change) === 1 ? "" : "ies"} vs previous period`,
+      message: `${change > 0 ? "+" : ""}${change} ${Math.abs(change) === 1 ? "memory" : "memories"} vs previous period`,
       trend: change > 0 ? "up" : "down",
     });
   }
@@ -143,6 +148,16 @@ export async function generateComprehensiveInsights(
     { energy: 0, stress: 0, clarity: 0, warmth: 0, count: 0 }
   );
 
+  // Handle division by zero
+  if (totals.count === 0) {
+    return {
+      overallMood: "Neutral",
+      moodScore: 50,
+      emotionDistribution: [],
+      suggestions: ["Create more memories to get personalized insights!"],
+    };
+  }
+
   const avgEnergy = totals.energy / totals.count;
   const avgStress = totals.stress / totals.count;
   const avgClarity = totals.clarity / totals.count;
@@ -189,59 +204,188 @@ export async function generateComprehensiveInsights(
     },
   ];
 
-  // Generate suggestions
+  // Generate intelligent suggestions (with or without AI)
   let suggestions: string[] = [];
 
-  if (useAI) {
-    try {
-      const prompt = `Based on these mood patterns:
+  // Smart data-driven suggestions (always generated)
+  const smartSuggestions: string[] = [];
+  
+  // Stress analysis
+  if (avgStress > 70) {
+    smartSuggestions.push("Your stress levels are quite high. Consider trying meditation, deep breathing, or taking short breaks throughout the day.");
+  } else if (avgStress > 60) {
+    smartSuggestions.push("You've been experiencing elevated stress. Activities like walking, listening to music, or talking with friends can help.");
+  } else if (avgStress < 30) {
+    smartSuggestions.push("Great job managing stress! You're maintaining a calm and balanced state.");
+  }
+
+  // Energy analysis
+  if (avgEnergy < 30) {
+    smartSuggestions.push("Your energy levels are low. Make sure you're getting enough sleep, staying hydrated, and eating nutritious meals.");
+  } else if (avgEnergy < 40) {
+    smartSuggestions.push("Consider activities that boost energy naturally, like morning exercise, sunlight exposure, or engaging hobbies.");
+  } else if (avgEnergy > 75) {
+    smartSuggestions.push("You're maintaining high energy! Channel this into productive activities and creative projects.");
+  }
+
+  // Clarity analysis
+  if (avgClarity < 35) {
+    smartSuggestions.push("Your mental clarity could use a boost. Try journaling, organizing your thoughts, or reducing distractions.");
+  } else if (avgClarity > 70) {
+    smartSuggestions.push("You're experiencing great mental clarity! This is a good time for important decisions and focused work.");
+  }
+
+  // Warmth/Connection analysis
+  if (avgWarmth > 75) {
+    smartSuggestions.push("You're feeling very connected and warm. These positive relationships are valuable - keep nurturing them!");
+  } else if (avgWarmth < 40) {
+    smartSuggestions.push("Consider reaching out to friends or family. Social connections can significantly improve your mood and well-being.");
+  }
+
+  // Mood score analysis
+  if (moodScore > 75) {
+    smartSuggestions.push("Your overall mood has been excellent! Keep doing what makes you happy and fulfilled.");
+  } else if (moodScore < 45) {
+    smartSuggestions.push("Your mood has been lower recently. Remember that it's okay to have difficult days, and consider speaking with someone you trust.");
+  }
+
+  // Balance check
+  const isBalanced = avgStress < 50 && avgEnergy > 40 && avgEnergy < 70 && avgClarity > 40;
+  if (isBalanced && smartSuggestions.length === 0) {
+    smartSuggestions.push("Your emotional patterns are well-balanced. Keep tracking your feelings and maintaining this equilibrium!");
+  }
+
+  // Try AI enhancement if available (Ollama first, then OpenAI if configured)
+  if (useAI && smartSuggestions.length > 0) {
+    const prompt = `Based on these mood patterns:
 - Average Energy: ${avgEnergy.toFixed(1)}%
 - Average Stress: ${avgStress.toFixed(1)}%
 - Average Clarity: ${avgClarity.toFixed(1)}%
 - Average Warmth: ${avgWarmth.toFixed(1)}%
+- Mood Score: ${moodScore}%
 - Total Memories: ${memories.length}
 
-Generate 2-3 brief, gentle, and useful suggestions (one sentence each) to help improve mood and well-being. Be supportive, not preachy. Format as a simple list, one per line.`;
+Generate 1-2 brief, personalized, and supportive suggestions to help improve well-being. Be warm and encouraging. Just return the suggestions, one per line, no numbering.`;
 
-      const response = await fetch(OLLAMA_BASE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: MODEL_NAME,
-          prompt: prompt,
-          stream: false,
-        }),
-      });
+    let aiSuccess = false;
 
-      if (response.ok) {
-        const data = await response.json();
-        const aiResponse = data.response || "";
-        // Extract suggestions (lines starting with - or numbers)
-        const lines = aiResponse
-          .split("\n")
-          .map((line: string) => line.replace(/^[-•\d.\s]+/, "").trim())
-          .filter((line: string) => line.length > 10);
-        suggestions = lines.slice(0, 3);
+    // Try Ollama first (local, free)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 5000); // 5 second timeout
+
+      try {
+        const response = await fetch(OLLAMA_BASE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: MODEL_NAME,
+            prompt: prompt,
+            stream: false,
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json();
+          const aiResponse = data.response || "";
+          console.log("✅ AI Suggestions from Ollama/DeepSeek:", aiResponse);
+          const lines = aiResponse
+            .split("\n")
+            .map((line: string) => line.replace(/^[-•\d.\s]+/, "").trim())
+            .filter((line: string) => line.length > 15 && line.length < 200);
+          
+          if (lines.length > 0) {
+            suggestions = [...lines.slice(0, 2), ...smartSuggestions.slice(0, 1)].slice(0, 3);
+            aiSuccess = true;
+          }
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name !== 'AbortError') {
+          console.log("⚠️ Ollama request failed, trying fallback:", fetchError.message);
+        }
       }
-    } catch (error) {
-      console.error("Error getting AI suggestions:", error);
+    } catch (error: any) {
+      console.log("⚠️ Ollama error:", error.message);
     }
+
+    // Fallback to OpenAI if Ollama failed and API key is available
+    if (!aiSuccess && OPENAI_API_KEY) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          controller.abort();
+        }, 5000);
+
+        try {
+          const response = await fetch(OPENAI_API_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-3.5-turbo",
+              messages: [
+                {
+                  role: "system",
+                  content: "You are a thoughtful AI assistant helping users understand their mood patterns. Be warm, supportive, and encouraging.",
+                },
+                {
+                  role: "user",
+                  content: prompt,
+                },
+              ],
+              max_tokens: 150,
+              temperature: 0.7,
+            }),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const data = await response.json();
+            const aiResponse = data.choices?.[0]?.message?.content || "";
+            console.log("✅ AI Suggestions from OpenAI:", aiResponse);
+            const lines = aiResponse
+              .split("\n")
+              .map((line: string) => line.replace(/^[-•\d.\s]+/, "").trim())
+              .filter((line: string) => line.length > 15 && line.length < 200);
+            
+            if (lines.length > 0) {
+              suggestions = [...lines.slice(0, 2), ...smartSuggestions.slice(0, 1)].slice(0, 3);
+              aiSuccess = true;
+            }
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          if (fetchError.name !== 'AbortError') {
+            console.log("⚠️ OpenAI request failed:", fetchError.message);
+          }
+        }
+      } catch (error: any) {
+        console.log("⚠️ OpenAI error:", error.message);
+      }
+    }
+
+    // If AI failed, use smart suggestions
+    if (!aiSuccess) {
+      suggestions = smartSuggestions.slice(0, 3);
+    }
+  } else {
+    // Use smart suggestions without AI
+    suggestions = smartSuggestions.slice(0, 3);
   }
 
-  // Fallback suggestions
+  // Final fallback
   if (suggestions.length === 0) {
-    if (avgStress > 60) {
-      suggestions.push("Consider activities that help reduce stress, like meditation or exercise.");
-    }
-    if (avgEnergy < 40) {
-      suggestions.push("Try to get more rest and engage in activities that energize you.");
-    }
-    if (avgWarmth > 70) {
-      suggestions.push("You've been feeling warm and connected. Keep nurturing those relationships!");
-    }
-    if (suggestions.length === 0) {
-      suggestions.push("Your emotional patterns look balanced. Keep tracking your feelings!");
-    }
+    suggestions.push("Keep tracking your emotions! Regular reflection helps you understand your patterns better.");
   }
 
   return {

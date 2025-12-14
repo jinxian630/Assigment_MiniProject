@@ -1,6 +1,6 @@
 // app/modules/memory-book/MemoryPostCreate.tsx
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import {
   deleteObject,
 } from "firebase/storage";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { extractStoragePathFromURL } from "./utils/storageHelpers";
 
 import EmotionSelector, { MoodData } from "./EmotionSelector";
@@ -34,6 +35,8 @@ import { IconButton } from "@/components/common/IconButton";
 import InteractiveButton from "./components/InteractiveButton";
 import { useTheme } from "@/hooks/useTheme";
 import { testFirestoreConnection } from "./utils/testFirestore";
+import BottomNavBar from "./components/BottomNavBar";
+import VoiceJournal from "./components/VoiceJournal";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -84,6 +87,7 @@ export default function MemoryPostCreate() {
   const [loadingMemory, setLoadingMemory] = useState(isEditMode);
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdDocId, setCreatedDocId] = useState<string | null>(null);
+  const uploadAbortController = useRef<AbortController | null>(null);
 
   const [moodData, setMoodData] = useState<MoodData>({
     energy: 50,
@@ -92,6 +96,17 @@ export default function MemoryPostCreate() {
     warmth: 40,
     color: "#a78bfa",
   });
+
+  // Voice journal state
+  const [voiceJournalData, setVoiceJournalData] = useState<{
+    emoji?: string;
+    feeling?: string;
+    prompt?: string;
+    audioURI?: string;
+    duration?: number;
+    moodTag?: string;
+    timestamp: number;
+  } | null>(null);
 
   // 🎨 Theme-aware colors - Professional dark glowing purple for light mode
   const colors = {
@@ -103,7 +118,6 @@ export default function MemoryPostCreate() {
     chipBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(124,58,237,0.2)", // Dark purple with glow for light mode
     inputBg: isDarkMode ? "#020617" : "#F8F7FF", // Very subtle purple tint
     inputBorder: isDarkMode ? "#1F2937" : "#C4B5FD", // Dark purple border for light mode
-    stepChipBg: isDarkMode ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.98)", // More opaque white in light mode
   };
 
   const glowText = getGlowText(PRIMARY_PURPLE, isDarkMode);
@@ -147,28 +161,85 @@ export default function MemoryPostCreate() {
     loadMemory();
   }, [editId]);
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      // Abort any ongoing uploads
+      if (uploadAbortController.current) {
+        uploadAbortController.current.abort();
+      }
+      // Reset loading state
+      setLoading(false);
+    };
+  }, []);
 
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false, // Disable native editing to avoid dark UI issues
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const selectedImage = result.assets[0];
+
+        // Optionally resize/crop the image to maintain aspect ratio
+        // This helps with consistency without forcing users through native cropping UI
+        try {
+          const manipulatedImage = await ImageManipulator.manipulateAsync(
+            selectedImage.uri,
+            [
+              {
+                resize: {
+                  width: 1200, // Max width to keep file size reasonable
+                },
+              },
+            ],
+            {
+              compress: 0.9,
+              format: ImageManipulator.SaveFormat.JPEG,
+            }
+          );
+          setImage(manipulatedImage.uri);
+        } catch (manipulateError) {
+          // If manipulation fails, use original image
+          console.warn(
+            "Image manipulation failed, using original:",
+            manipulateError
+          );
+          setImage(selectedImage.uri);
+        }
+      }
+    } catch (error: any) {
+      console.error("Error picking image:", error);
+      Alert.alert("Error", "Failed to pick image. Please try again.");
     }
   };
 
   const removeImage = () => setImage(null);
 
   const handlePublish = async () => {
-    if (!title.trim()) {
+    const trimmedTitle = title.trim();
+    const trimmedDescription = description.trim();
+
+    if (!trimmedTitle) {
       Alert.alert("Missing title", "Please enter a title for this memory.");
       return;
     }
-    if (!description.trim()) {
+    if (trimmedTitle.length > 100) {
+      Alert.alert("Title too long", "Title must be 100 characters or less.");
+      return;
+    }
+    if (!trimmedDescription) {
       Alert.alert("Missing story", "Please write something about this memory.");
+      return;
+    }
+    if (trimmedDescription.length > 2000) {
+      Alert.alert(
+        "Description too long",
+        "Description must be 2000 characters or less."
+      );
       return;
     }
     // Validate image requirement
@@ -194,35 +265,185 @@ export default function MemoryPostCreate() {
 
       // Upload new image only if a new one was selected
       if (image) {
-        // If editing and there's an existing image, mark it for deletion
-        if (isEditMode && existingImageURL) {
-          oldImagePath = extractStoragePathFromURL(existingImageURL);
+        try {
+          // If editing and there's an existing image, mark it for deletion
+          if (isEditMode && existingImageURL) {
+            oldImagePath = extractStoragePathFromURL(existingImageURL);
+          }
+
+          console.log("📤 Uploading image:", image.substring(0, 50) + "...");
+
+          // Handle image upload for both web and mobile
+          let blob: Blob;
+
+          if (Platform.OS === "web") {
+            // Web: use fetch directly
+            const resp = await fetch(image);
+            if (!resp.ok) {
+              throw new Error(`Failed to fetch image: ${resp.statusText}`);
+            }
+            blob = await resp.blob();
+          } else {
+            // Mobile: use XMLHttpRequest for better compatibility with local URIs
+            blob = await new Promise<Blob>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.onload = () => {
+                resolve(xhr.response);
+              };
+              xhr.onerror = () => {
+                reject(new Error("Failed to load image"));
+              };
+              xhr.responseType = "blob";
+              xhr.open("GET", image, true);
+              xhr.send();
+            });
+          }
+
+          if (!blob || blob.size === 0) {
+            throw new Error("Image blob is empty or invalid");
+          }
+
+          console.log("✅ Image blob created, size:", blob.size, "bytes");
+
+          // create unique id for Firestore image name
+          const uniqueId =
+            Date.now().toString(16) +
+            Math.random().toString(16) +
+            "0".repeat(16);
+          const guid = [
+            uniqueId.substring(0, 8),
+            uniqueId.substring(8, 12),
+            "4000-8" + uniqueId.substring(13, 16),
+            uniqueId.substring(16, 28),
+          ].join("-");
+
+          const imageRef = ref(storage, `MemoryPosts/${guid}`);
+          console.log("📤 Uploading to Firebase Storage...");
+          const snap = await uploadBytes(imageRef, blob);
+          console.log("✅ Image uploaded successfully");
+          downloadURL = await getDownloadURL(snap.ref);
+          console.log(
+            "✅ Download URL obtained:",
+            downloadURL.substring(0, 50) + "..."
+          );
+        } catch (imageError: any) {
+          console.error("❌ Error uploading image:", imageError);
+          setLoading(false);
+          Alert.alert(
+            "Image Upload Error",
+            `Failed to upload image: ${
+              imageError.message || "Unknown error"
+            }\n\nPlease try selecting the image again or check your internet connection.`
+          );
+          return;
         }
-
-        const resp = await fetch(image);
-        const blob = await resp.blob();
-
-        // create unique id for Firestore image name
-        const uniqueId =
-          Date.now().toString(16) + Math.random().toString(16) + "0".repeat(16);
-        const guid = [
-          uniqueId.substring(0, 8),
-          uniqueId.substring(8, 12),
-          "4000-8" + uniqueId.substring(13, 16),
-          uniqueId.substring(16, 28),
-        ].join("-");
-
-        const imageRef = ref(storage, `MemoryPosts/${guid}`);
-        const snap = await uploadBytes(imageRef, blob);
-        downloadURL = await getDownloadURL(snap.ref);
       }
 
       const now = Date.now();
 
+      // Upload voice recording if available
+      let voiceAudioURL: string | null = null;
+      if (voiceJournalData?.audioURI) {
+        try {
+          console.log("📤 Uploading voice recording...");
+          console.log("📁 Audio URI:", voiceJournalData.audioURI);
+          console.log("📊 Voice journal data:", voiceJournalData);
+
+          // Use expo-file-system to read the file (works with file:// URIs on mobile)
+          const fileUri = voiceJournalData.audioURI;
+          let fileData: Blob | Uint8Array;
+
+          if (Platform.OS === "web") {
+            // Web: use fetch
+            console.log("🌐 Using fetch for web platform");
+            const response = await fetch(fileUri);
+            if (!response.ok) {
+              throw new Error(
+                `Failed to fetch audio: ${response.status} ${response.statusText}`
+              );
+            }
+            fileData = await response.blob();
+            console.log("✅ Fetched audio blob, size:", fileData.size, "bytes");
+          } else {
+            // Mobile: use XMLHttpRequest to create Blob (same approach as images)
+            console.log("📱 Using XMLHttpRequest for mobile platform");
+            
+            // Use XMLHttpRequest to load the file as a Blob (works with file:// URIs)
+            fileData = await new Promise<Blob>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.onload = () => {
+                if (xhr.status === 200 || xhr.status === 0) {
+                  // Status 0 is for file:// URIs
+                  resolve(xhr.response);
+                } else {
+                  reject(new Error(`Failed to load audio: ${xhr.status} ${xhr.statusText}`));
+                }
+              };
+              xhr.onerror = () => {
+                reject(new Error("Failed to load audio file"));
+              };
+              xhr.responseType = "blob";
+              xhr.open("GET", fileUri, true);
+              xhr.send();
+            });
+            
+            console.log("✅ Loaded audio blob, size:", fileData.size, "bytes");
+            
+            // Validate file size (max 10MB)
+            const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+            if (fileData.size > maxSizeBytes) {
+              throw new Error(
+                `Audio file is too large (${(
+                  fileData.size /
+                  1024 /
+                  1024
+                ).toFixed(2)}MB). Maximum size is 10MB.`
+              );
+            }
+          }
+
+          const uniqueId =
+            Date.now().toString(16) +
+            Math.random().toString(16) +
+            "0".repeat(16);
+          const guid = [
+            uniqueId.substring(0, 8),
+            uniqueId.substring(8, 12),
+            "4000-8" + uniqueId.substring(13, 16),
+            uniqueId.substring(16, 28),
+          ].join("-");
+
+          const audioRef = ref(storage, `MemoryPosts/Voice/${guid}.m4a`);
+          console.log("📤 Uploading to Firebase Storage:", audioRef.fullPath);
+          await uploadBytes(audioRef, fileData);
+          voiceAudioURL = await getDownloadURL(audioRef);
+          console.log(
+            "✅ Voice recording uploaded successfully:",
+            voiceAudioURL.substring(0, 50) + "..."
+          );
+          console.log("🔗 Full URL:", voiceAudioURL);
+        } catch (audioError: any) {
+          console.error("❌ Error uploading voice recording:", audioError);
+          console.error("❌ Error details:", {
+            message: audioError.message,
+            stack: audioError.stack,
+            audioURI: voiceJournalData.audioURI,
+            platform: Platform.OS,
+          });
+          Alert.alert(
+            "Upload Warning",
+            `Voice recording could not be uploaded: ${audioError.message}. Your memory will still be saved.`
+          );
+          // Don't block publishing if voice upload fails
+        }
+      } else {
+        console.log("ℹ️ No audioURI in voiceJournalData:", voiceJournalData);
+      }
+
       // Prepare the data object
       const memoryData: any = {
-        title: title.trim(),
-        description: description.trim(),
+        title: trimmedTitle,
+        description: trimmedDescription,
         imageURL: downloadURL,
         emotionSpectrum: {
           energy: moodData.energy,
@@ -233,6 +454,53 @@ export default function MemoryPostCreate() {
         emotionColor: moodData.color,
         updatedDate: now,
       };
+
+      // Add voice journal data if available (only include defined values)
+      if (voiceJournalData) {
+        console.log("📝 Preparing voice journal data for Firestore...");
+        const voiceJournal: any = {};
+        if (voiceJournalData.emoji) voiceJournal.emoji = voiceJournalData.emoji;
+        if (voiceJournalData.feeling)
+          voiceJournal.feeling = voiceJournalData.feeling;
+        if (voiceJournalData.prompt)
+          voiceJournal.prompt = voiceJournalData.prompt;
+        if (voiceAudioURL) {
+          voiceJournal.audioURL = voiceAudioURL;
+          console.log(
+            "✅ Added audioURL to voiceJournal:",
+            voiceAudioURL.substring(0, 50) + "..."
+          );
+        } else {
+          console.warn(
+            "⚠️ No voiceAudioURL - upload may have failed or audioURI was missing"
+          );
+        }
+        if (
+          voiceJournalData.duration !== undefined &&
+          voiceJournalData.duration !== null
+        ) {
+          voiceJournal.duration = voiceJournalData.duration;
+        }
+        if (voiceJournalData.moodTag)
+          voiceJournal.moodTag = voiceJournalData.moodTag;
+        if (voiceJournalData.timestamp)
+          voiceJournal.timestamp = voiceJournalData.timestamp;
+
+        console.log("📋 Voice journal object:", voiceJournal);
+        console.log("📊 Voice journal keys:", Object.keys(voiceJournal));
+
+        // Only add voiceJournal if it has at least one field
+        if (Object.keys(voiceJournal).length > 0) {
+          memoryData.voiceJournal = voiceJournal;
+          console.log("✅ Added voiceJournal to memoryData");
+        } else {
+          console.warn(
+            "⚠️ Voice journal object is empty, not adding to memoryData"
+          );
+        }
+      } else {
+        console.log("ℹ️ No voiceJournalData to add");
+      }
 
       // Only add these fields when creating new memory
       if (!isEditMode) {
@@ -253,7 +521,17 @@ export default function MemoryPostCreate() {
           ? "📝 Attempting to update memory..."
           : "📝 Attempting to save memory to Firestore..."
       );
-      console.log("📦 Data:", JSON.stringify(memoryData, null, 2));
+      console.log(
+        "📦 Final memoryData before saving:",
+        JSON.stringify(memoryData, null, 2)
+      );
+      console.log("🔍 Voice journal in memoryData:", memoryData.voiceJournal);
+      if (memoryData.voiceJournal) {
+        console.log(
+          "🎙️ Voice journal audioURL:",
+          memoryData.voiceJournal.audioURL
+        );
+      }
       console.log("👤 User ID:", user.uid);
       console.log("📚 Collection: MemoryPosts");
 
@@ -321,43 +599,10 @@ export default function MemoryPostCreate() {
         }
       }
 
-      // Show visual success indicator first
+      // Show visual success indicator (dark purple overlay only, no white alert)
       setCreatedDocId(docRef.id);
       setShowSuccess(true);
       setLoading(false);
-
-      // Show success alert with document ID (user requested this)
-      // Use setTimeout to ensure UI is ready and alert displays properly
-      setTimeout(() => {
-        console.log("🎉 Showing success alert with doc ID:", docRef.id);
-        Alert.alert(
-          "✅ Success!",
-          isEditMode
-            ? `Memory updated successfully!\n\nDocument ID: ${docRef.id}`
-            : `Memory post published successfully!\n\nDocument ID: ${docRef.id}\nProject: ${db.app.options.projectId}`,
-          [
-            {
-              text: "View Timeline",
-              onPress: () => {
-                setShowSuccess(false);
-                router.back();
-              },
-            },
-            {
-              text: isEditMode ? "OK" : "Create Another",
-              style: "cancel",
-              onPress: () => {
-                setShowSuccess(false);
-                setCreatedDocId(null);
-                if (isEditMode) {
-                  router.back();
-                }
-              },
-            },
-          ],
-          { cancelable: false }
-        );
-      }, 100);
 
       // Reset form
       setTitle("");
@@ -455,7 +700,7 @@ export default function MemoryPostCreate() {
               <TouchableOpacity
                 onPress={() => {
                   setShowSuccess(false);
-                  router.back();
+                  router.push("/modules/memory-book/MemoryTimeline");
                 }}
                 style={[
                   styles.successButton,
@@ -482,19 +727,7 @@ export default function MemoryPostCreate() {
               {isEditMode ? "Edit Memory" : "New Memory"}
             </Text>
           </View>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity
-              onPress={testFirestoreConnection}
-              style={{
-                padding: 6,
-                borderRadius: 6,
-                backgroundColor: isDarkMode
-                  ? "rgba(139,92,246,0.2)"
-                  : "rgba(139,92,246,0.1)",
-              }}
-            >
-              <Ionicons name="bug-outline" size={18} color={PRIMARY_PURPLE} />
-            </TouchableOpacity>
+          <View style={styles.headerRight}>
             <InteractiveButton
               onPress={toggleTheme}
               icon={isDarkMode ? "sunny-outline" : "moon-outline"}
@@ -502,8 +735,9 @@ export default function MemoryPostCreate() {
               variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
-              iconColor={colors.text}
-              iconSize={20}
+              iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 28 : 26}
+              noBorder={true}
               style={styles.themeToggle}
               accessibilityLabel="Toggle theme"
               accessibilityHint={`Changes to ${
@@ -522,7 +756,8 @@ export default function MemoryPostCreate() {
         ) : (
           <KeyboardAvoidingView
             style={styles.flex}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
           >
             <ScrollView
               style={styles.flex}
@@ -538,25 +773,6 @@ export default function MemoryPostCreate() {
                   <Text style={[styles.introSubtitle, softText]}>
                     Add a photo, give it a title, describe what happened, and
                     how you felt.
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.stepChip,
-                    {
-                      borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "AA"),
-                      backgroundColor: colors.stepChipBg,
-                      shadowColor: PRIMARY_PURPLE,
-                      shadowOpacity: isDarkMode ? 0.3 : 0.4,
-                      shadowRadius: isDarkMode ? 8 : 10,
-                      shadowOffset: { width: 0, height: 0 },
-                      elevation: isDarkMode ? 4 : 6,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.stepChipText, glowText]}>
-                    STEP 1 OF 2
                   </Text>
                 </View>
               </View>
@@ -706,6 +922,7 @@ export default function MemoryPostCreate() {
                   placeholder="eg. Picnic at KLCC park"
                   value={title}
                   onChangeText={setTitle}
+                  maxLength={100}
                   style={[
                     styles.textInput,
                     {
@@ -716,6 +933,13 @@ export default function MemoryPostCreate() {
                   ]}
                   placeholderTextColor={colors.textSoft}
                 />
+                {title.length > 80 && (
+                  <Text
+                    style={[styles.characterCount, { color: colors.textSoft }]}
+                  >
+                    {title.length}/100 characters
+                  </Text>
+                )}
 
                 {/* Story */}
                 <Text style={[styles.fieldLabel, glowText, { marginTop: 14 }]}>
@@ -731,6 +955,7 @@ export default function MemoryPostCreate() {
                   onChangeText={setDescription}
                   multiline
                   numberOfLines={6}
+                  maxLength={2000}
                   style={[
                     styles.textArea,
                     {
@@ -741,6 +966,13 @@ export default function MemoryPostCreate() {
                   ]}
                   placeholderTextColor={colors.textSoft}
                 />
+                {description.length > 1800 && (
+                  <Text
+                    style={[styles.characterCount, { color: colors.textSoft }]}
+                  >
+                    {description.length}/2000 characters
+                  </Text>
+                )}
               </View>
 
               {/* EMOTIONS */}
@@ -749,6 +981,92 @@ export default function MemoryPostCreate() {
                 setMoodData={setMoodData}
                 isDarkMode={isDarkMode}
               />
+
+              {/* VOICE JOURNAL */}
+              <View
+                style={[
+                  createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                    padding: 16,
+                    marginBottom: 18,
+                  }),
+                  {
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+              >
+                <View style={styles.detailsHeaderRow}>
+                  <View
+                    style={[
+                      styles.detailsChip,
+                      { backgroundColor: colors.chipBg },
+                    ]}
+                  >
+                    <Ionicons
+                      name="mic"
+                      size={14}
+                      color={PRIMARY_PURPLE}
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text style={[styles.detailsChipText, glowText]}>
+                      VOICE JOURNAL
+                    </Text>
+                  </View>
+                  <Text style={[styles.detailsHint, softText]}>
+                    Express your feelings through voice (Optional)
+                  </Text>
+                </View>
+                <VoiceJournal
+                  onRecordingComplete={(data) => {
+                    setVoiceJournalData(data);
+                    console.log("🎙️ Voice journal data:", data);
+                  }}
+                  isDarkMode={isDarkMode}
+                />
+                {voiceJournalData && (
+                  <View
+                    style={[
+                      styles.voiceJournalSummary,
+                      {
+                        backgroundColor: colors.chipBg,
+                        borderColor: PRIMARY_PURPLE + "66",
+                      },
+                    ]}
+                  >
+                    <View style={styles.voiceJournalSummaryRow}>
+                      {voiceJournalData.emoji && (
+                        <Text style={styles.voiceJournalEmoji}>
+                          {voiceJournalData.emoji}
+                        </Text>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        {voiceJournalData.feeling && (
+                          <Text style={[styles.voiceJournalFeeling, glowText]}>
+                            {voiceJournalData.feeling}
+                          </Text>
+                        )}
+                        {voiceJournalData.moodTag && (
+                          <Text style={[styles.voiceJournalFeeling, glowText]}>
+                            {voiceJournalData.moodTag}
+                          </Text>
+                        )}
+                        {voiceJournalData.duration && (
+                          <Text style={[styles.voiceJournalDuration, softText]}>
+                            {Math.floor(voiceJournalData.duration / 60)}:
+                            {(voiceJournalData.duration % 60)
+                              .toString()
+                              .padStart(2, "0")}
+                          </Text>
+                        )}
+                      </View>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={24}
+                        color="#10B981"
+                      />
+                    </View>
+                  </View>
+                )}
+              </View>
 
               {/* PUBLISH BUTTON */}
               <InteractiveButton
@@ -785,6 +1103,8 @@ export default function MemoryPostCreate() {
             </ScrollView>
           </KeyboardAvoidingView>
         )}
+        {/* Bottom Navigation */}
+        <BottomNavBar isDarkMode={isDarkMode} />
       </SafeAreaView>
     </GradientBackground>
   );
@@ -797,29 +1117,39 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 6,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    paddingTop: Platform.OS === "ios" ? 6 : 4,
+    paddingBottom: Platform.OS === "ios" ? 8 : 6,
+    minHeight: Platform.OS === "ios" ? 50 : 48,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === "ios" ? 17 : 16,
     fontWeight: "600",
+    flexShrink: 1,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: Platform.OS === "ios" ? 10 : 12,
+    flexShrink: 0,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
   },
   themeToggle: {
-    width: 40,
-    alignItems: "flex-end",
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 40,
+    paddingBottom: Platform.OS === "ios" ? 160 : 140, // Increased to clear bottom navigation bar
   },
 
   introRow: {
     marginBottom: 18,
-    flexDirection: "row",
-    justifyContent: "space-between",
   },
   introTitle: {
     fontSize: 22,
@@ -831,17 +1161,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     opacity: 0.85,
-  },
-  stepChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1.5,
-  },
-  stepChipText: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
   },
 
   cardHeaderRow: {
@@ -1047,5 +1366,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     textAlign: "center",
+  },
+  voiceJournalSummary: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  voiceJournalSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  voiceJournalEmoji: {
+    fontSize: 32,
+  },
+  voiceJournalFeeling: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  voiceJournalDuration: {
+    fontSize: 12,
+  },
+  characterCount: {
+    fontSize: 11,
+    marginTop: 4,
+    textAlign: "right",
   },
 });

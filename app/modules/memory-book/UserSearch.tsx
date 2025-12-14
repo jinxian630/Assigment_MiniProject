@@ -24,8 +24,11 @@ import { db } from "@/config/firebase";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import BottomNavBar from "./components/BottomNavBar";
+import InteractiveButton from "./components/InteractiveButton";
 
 const MODULE_PURPLE = "#a855f7";
+const PRIMARY_PURPLE = "#a855f7";
 
 /** 🎨 Neon card shell helper */
 const createNeonCardShell = (
@@ -61,6 +64,7 @@ export default function UserSearch() {
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
 
   // Animation refs
@@ -133,7 +137,8 @@ export default function UserSearch() {
   }, []);
 
   useEffect(() => {
-    const usersRef = collection(db, "Users");
+    // Use lowercase "users" (correct collection name per firestore service and rules)
+    const usersRef = collection(db, "users");
 
     const unsub = onSnapshot(
       usersRef,
@@ -142,12 +147,16 @@ export default function UserSearch() {
         snapshot.forEach((doc) => {
           list.push({ id: doc.id, ...(doc.data() as any) });
         });
+        console.log("UserSearch: Loaded", list.length, "users");
         setUsers(list);
         setLoading(false);
       },
       (err) => {
-        console.log("UserSearch error:", err);
+        console.error("UserSearch error:", err);
         setLoading(false);
+        setError(
+          err.message || "Failed to load users. Please check your connection."
+        );
       }
     );
 
@@ -236,21 +245,26 @@ export default function UserSearch() {
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             Search Users
           </Text>
-          <TouchableOpacity
+          <InteractiveButton
             onPress={() => {
               toggleTheme();
               if (Platform.OS === "ios") {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }
             }}
+            icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+            variant="ghost"
+            size="sm"
+            isDarkMode={isDarkMode}
+            iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+            iconSize={Platform.OS === "ios" ? 28 : 26}
             style={styles.themeButton}
-          >
-            <Ionicons
-              name={isDarkMode ? "sunny" : "moon"}
-              size={22}
-              color={colors.text}
-            />
-          </TouchableOpacity>
+            noBorder={true}
+            accessibilityLabel="Toggle theme"
+            accessibilityHint={`Changes to ${
+              isDarkMode ? "light" : "dark"
+            } mode`}
+          />
         </View>
 
         {/* Search Bar */}
@@ -258,15 +272,16 @@ export default function UserSearch() {
           <Animated.View
             style={[
               styles.searchContainer,
-              createNeonCardShell(MODULE_PURPLE, isDarkMode, {
+              {
                 paddingHorizontal: 16,
                 paddingVertical: 14,
-              }),
-              {
+                borderRadius: 14,
+                borderWidth: 1.5,
                 backgroundColor: colors.inputBg,
                 borderColor: borderColor,
-                shadowOpacity: searchShadowOpacity,
-                shadowRadius: searchShadowRadius,
+                shadowOpacity: 0,
+                shadowRadius: 0,
+                elevation: 0,
               },
             ]}
           >
@@ -316,6 +331,22 @@ export default function UserSearch() {
               Loading users...
             </Text>
           </View>
+        ) : error ? (
+          <View style={styles.centerContainer}>
+            <Ionicons
+              name="alert-circle"
+              size={48}
+              color={colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.loadingText,
+                { color: colors.textSecondary, marginTop: 16 },
+              ]}
+            >
+              {error}
+            </Text>
+          </View>
         ) : (
           <ScrollView
             style={styles.scrollView}
@@ -331,17 +362,10 @@ export default function UserSearch() {
                     {
                       backgroundColor: colors.chipBg,
                       borderColor: MODULE_PURPLE + (isDarkMode ? "66" : "80"),
-                      shadowColor: MODULE_PURPLE,
-                      shadowOpacity: searchGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.5, 0.9],
-                      }),
-                      shadowRadius: searchGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [15, 30],
-                      }),
+                      shadowOpacity: 0,
+                      shadowRadius: 0,
                       shadowOffset: { width: 0, height: 0 },
-                      elevation: 8,
+                      elevation: 0,
                     },
                   ]}
                 >
@@ -371,17 +395,10 @@ export default function UserSearch() {
                     {
                       backgroundColor: colors.chipBg,
                       borderColor: MODULE_PURPLE + (isDarkMode ? "66" : "80"),
-                      shadowColor: MODULE_PURPLE,
-                      shadowOpacity: searchGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.5, 0.9],
-                      }),
-                      shadowRadius: searchGlow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [15, 30],
-                      }),
+                      shadowOpacity: 0,
+                      shadowRadius: 0,
                       shadowOffset: { width: 0, height: 0 },
-                      elevation: 8,
+                      elevation: 0,
                     },
                   ]}
                 >
@@ -454,23 +471,19 @@ export default function UserSearch() {
                           }),
                           {
                             backgroundColor: colors.card,
-                            shadowOpacity: cardGlow.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: isDarkMode
-                                ? [0.7, 0.95]
-                                : [0.4, 0.6],
-                            }),
-                            shadowRadius: cardGlow.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [20, 30],
-                            }),
+                            // Removed shadow animations to avoid conflict with native driver
+                            // Using static shadow values instead
+                            shadowOpacity: isDarkMode ? 0.8 : 0.5,
+                            shadowRadius: 25,
                             transform: [{ scale: scaleAnim }],
                           },
                         ]}
                       >
                         <View style={styles.userCardContent}>
                           {/* Avatar */}
-                          {user.photoURL ? (
+                          {user.photoURL &&
+                          user.photoURL !== "-" &&
+                          user.photoURL.trim() !== "" ? (
                             <Image
                               source={{ uri: user.photoURL }}
                               style={[
@@ -547,6 +560,9 @@ export default function UserSearch() {
             )}
           </ScrollView>
         )}
+
+        {/* Bottom Navigation */}
+        <BottomNavBar isDarkMode={isDarkMode} />
       </SafeAreaView>
     </GradientBackground>
   );
@@ -572,8 +588,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   themeButton: {
-    width: 40,
-    height: 40,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
     alignItems: "center",
     justifyContent: "center",
   },

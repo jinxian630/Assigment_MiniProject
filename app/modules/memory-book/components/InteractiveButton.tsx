@@ -26,6 +26,8 @@ type InteractiveButtonProps = {
   iconSize?: number;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  tooltipPosition?: "top" | "bottom";
+  noBorder?: boolean;
 };
 
 export default function InteractiveButton({
@@ -42,6 +44,8 @@ export default function InteractiveButton({
   iconSize = 20,
   accessibilityLabel,
   accessibilityHint,
+  tooltipPosition = "top",
+  noBorder = false,
 }: InteractiveButtonProps) {
   const [isPressed, setIsPressed] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -76,7 +80,7 @@ export default function InteractiveButton({
   const handlePressIn = () => {
     if (disabled) return;
     setIsPressed(true);
-    
+
     if (Platform.OS === "ios") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -131,7 +135,7 @@ export default function InteractiveButton({
         duration: 200,
         useNativeDriver: true,
       }).start();
-      
+
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1.08,
@@ -155,7 +159,7 @@ export default function InteractiveButton({
         duration: 150,
         useNativeDriver: true,
       }).start(() => setShowTooltip(false));
-      
+
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
@@ -180,15 +184,19 @@ export default function InteractiveButton({
         : variant === "danger"
         ? "#ef4444"
         : variant === "secondary"
-        ? (isDarkMode ? "#374151" : "#E5E7EB")
+        ? isDarkMode
+          ? "#374151"
+          : "#E5E7EB"
         : "transparent",
       variant === "primary"
         ? "#9333EA"
         : variant === "danger"
         ? "#dc2626"
         : variant === "secondary"
-        ? (isDarkMode ? "#4B5563" : "#D1D5DB")
-        : PRIMARY_PURPLE + "20",
+        ? isDarkMode
+          ? "#4B5563"
+          : "#D1D5DB"
+        : PRIMARY_PURPLE + "30",
     ],
   });
 
@@ -241,17 +249,28 @@ export default function InteractiveButton({
             style={[
               styles.buttonInner,
               {
-                backgroundColor,
+                backgroundColor:
+                  noBorder && variant === "ghost"
+                    ? "transparent"
+                    : backgroundColor,
                 borderColor,
-                borderWidth: variant === "ghost" ? 1.5 : 0,
-                shadowColor: PRIMARY_PURPLE,
-                shadowOpacity,
-                shadowRadius,
+                borderWidth: noBorder ? 0 : variant === "ghost" ? 1.5 : 0,
+                shadowColor:
+                  noBorder && variant === "ghost"
+                    ? "transparent"
+                    : PRIMARY_PURPLE,
+                shadowOpacity:
+                  noBorder && variant === "ghost" ? 0 : shadowOpacity,
+                shadowRadius:
+                  noBorder && variant === "ghost" ? 0 : shadowRadius,
                 shadowOffset: { width: 0, height: 4 },
-                elevation: shadowAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [4, 12],
-                }) as any,
+                elevation:
+                  noBorder && variant === "ghost"
+                    ? 0
+                    : (shadowAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [4, 12],
+                      }) as any),
               },
             ]}
           >
@@ -267,7 +286,7 @@ export default function InteractiveButton({
                 }
               />
             )}
-            {label && (
+            {label && typeof label === "string" && label.trim() !== "" && (
               <Text
                 style={[
                   styles.label,
@@ -290,34 +309,67 @@ export default function InteractiveButton({
       </Animated.View>
 
       {/* Tooltip */}
-      {description && showTooltip && Platform.OS === "web" && (
-        <Animated.View
-          style={[
-            styles.tooltip,
-            {
-              opacity: tooltipOpacity,
-              backgroundColor: isDarkMode ? "#1F2937" : "#0F172A",
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.tooltipText,
-              { color: isDarkMode ? "#E5E7EB" : "#FFFFFF" },
-            ]}
-          >
-            {description}
-          </Text>
+      {description &&
+        typeof description === "string" &&
+        showTooltip &&
+        Platform.OS === "web" && (
           <View
             style={[
-              styles.tooltipArrow,
-              {
-                borderTopColor: isDarkMode ? "#1F2937" : "#0F172A",
-              },
+              styles.tooltip,
+              tooltipPosition === "bottom"
+                ? styles.tooltipBottom
+                : styles.tooltipTop,
             ]}
-          />
-        </Animated.View>
-      )}
+            pointerEvents="none"
+          >
+            <Animated.View
+              style={[
+                {
+                  opacity: tooltipOpacity,
+                  backgroundColor: isDarkMode ? "#1F2937" : "#0F172A",
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  minWidth: 120,
+                  maxWidth: 200,
+                },
+              ]}
+              // Ensure no layout properties are animated
+              collapsable={false}
+            >
+              <Text
+                style={[
+                  styles.tooltipText,
+                  { color: isDarkMode ? "#E5E7EB" : "#FFFFFF" },
+                ]}
+              >
+                {description}
+              </Text>
+            </Animated.View>
+            <View
+              style={[
+                tooltipPosition === "bottom"
+                  ? styles.tooltipArrowBottom
+                  : styles.tooltipArrowTop,
+                {
+                  borderTopColor:
+                    tooltipPosition === "top"
+                      ? isDarkMode
+                        ? "#1F2937"
+                        : "#0F172A"
+                      : "transparent",
+                  borderBottomColor:
+                    tooltipPosition === "bottom"
+                      ? isDarkMode
+                        ? "#1F2937"
+                        : "#0F172A"
+                      : "transparent",
+                },
+              ]}
+              pointerEvents="none"
+            />
+          </View>
+        )}
     </View>
   );
 }
@@ -327,15 +379,17 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   button: {
-    borderRadius: 12,
+    borderRadius: 14,
   },
   buttonInner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 14,
+    paddingHorizontal: Platform.OS === "ios" ? 16 : 14,
+    paddingVertical: Platform.OS === "ios" ? 12 : 10,
+    minHeight: Platform.OS === "ios" ? 44 : 42,
+    backgroundColor: "transparent", // Default transparent
   },
   label: {
     fontWeight: "600",
@@ -343,13 +397,9 @@ const styles = StyleSheet.create({
   },
   tooltip: {
     position: "absolute",
-    bottom: "100%",
-    left: "50%",
-    transform: [{ translateX: -50 }, { translateY: -8 }],
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
-    marginBottom: 4,
     minWidth: 120,
     maxWidth: 200,
     zIndex: 1000,
@@ -358,16 +408,28 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tooltipTop: {
+    bottom: "100%",
+    alignSelf: "center",
+    marginBottom: 8,
+  },
+  tooltipBottom: {
+    top: "100%",
+    alignSelf: "center",
+    marginTop: 4,
   },
   tooltipText: {
     fontSize: 12,
     textAlign: "center",
     fontWeight: "500",
   },
-  tooltipArrow: {
+  tooltipArrowTop: {
     position: "absolute",
     bottom: -6,
-    left: "50%",
+    alignSelf: "center",
     transform: [{ translateX: -6 }],
     width: 0,
     height: 0,
@@ -377,5 +439,17 @@ const styles = StyleSheet.create({
     borderLeftColor: "transparent",
     borderRightColor: "transparent",
   },
+  tooltipArrowBottom: {
+    position: "absolute",
+    top: -6,
+    alignSelf: "center",
+    transform: [{ translateX: -6 }],
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderBottomWidth: 6,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+  },
 });
-

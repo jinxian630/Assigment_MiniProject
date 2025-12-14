@@ -120,26 +120,32 @@ export function subscribeToUserMemories(
       where("userId", "==", userId)
     );
 
-    return onSnapshot(
+    const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
+        console.log("📖 subscribeToUserMemories: Received snapshot with", snapshot.size, "documents");
         const list: Memory[] = [];
         snapshot.forEach((doc) => {
           list.push({ id: doc.id, ...doc.data() } as Memory);
         });
         // Sort manually by startDate descending
         list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
+        console.log("✅ subscribeToUserMemories: Calling callback with", list.length, "memories");
         callback(list);
       },
       (error: any) => {
-        console.error("Error in subscribeToUserMemories:", error);
-        // Call callback with empty array on error
+        console.error("❌ Error in subscribeToUserMemories:", error);
+        console.error("❌ Error code:", error.code);
+        console.error("❌ Error message:", error.message);
+        // Always call callback with empty array on error so UI doesn't hang
         callback([]);
       }
     );
+
+    return unsubscribe;
   } catch (error: any) {
-    console.error("Error setting up subscribeToUserMemories:", error);
-    // Call callback with empty array immediately
+    console.error("❌ Error setting up subscribeToUserMemories:", error);
+    // Call callback with empty array immediately so UI doesn't hang
     callback([]);
     // Return a no-op unsubscribe function
     return () => {};

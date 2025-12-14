@@ -12,15 +12,15 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { incrementLikes } from "../utils/firebaseHelpers";
 import { saveMemory, unsaveMemory, isMemorySaved } from "../utils/saveHelpers";
-import { shareMemory, saveImageToGallery } from "../utils/shareHelpers";
+import { isMemoryLiked, likeMemory, unlikeMemory } from "../utils/likeHelpers";
+import { shareMemory } from "../utils/shareHelpers";
 import { getSmartDate } from "../utils/dateHelpers";
 import type { Memory } from "../utils/memoryHelpers";
 import { auth } from "@/config/firebase";
 import ImageZoomViewer from "./ImageZoomViewer";
 import InteractiveButton from "./InteractiveButton";
-import { TOUCH_TARGET_SIZE } from "../utils/constants";
+import VoicePlayer from "./VoicePlayer";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -48,20 +48,24 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
   const heartScale = useState(new Animated.Value(1))[0];
   const bookmarkScale = useState(new Animated.Value(1))[0];
 
-  // Check if memory is saved on mount
+  // Check if memory is saved and liked on mount
   React.useEffect(() => {
-    const checkSaved = async () => {
+    const checkStatus = async () => {
       const user = auth.currentUser;
       if (user) {
         try {
-          const saved = await isMemorySaved(memory.id, user.uid);
+          const [saved, liked] = await Promise.all([
+            isMemorySaved(memory.id, user.uid),
+            isMemoryLiked(memory.id, user.uid),
+          ]);
           setIsSaved(saved);
+          setIsLiked(liked);
         } catch (error) {
-          console.error("Error checking saved status:", error);
+          console.error("Error checking memory status:", error);
         }
       }
     };
-    checkSaved();
+    checkStatus();
   }, [memory.id]);
 
   const colors = {
@@ -98,12 +102,18 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
     ]).start();
 
     // Update in Firestore
-    if (newLiked) {
-      try {
-        await incrementLikes(memory.id);
-      } catch (error) {
-        console.error("Error liking post:", error);
+    try {
+      if (newLiked) {
+        await likeMemory(memory.id);
+      } else {
+        await unlikeMemory(memory.id);
       }
+    } catch (error: any) {
+      console.error("Error liking/unliking post:", error);
+      // Revert UI state on error
+      setIsLiked(!newLiked);
+      setLikeCount((prev) => (newLiked ? prev - 1 : prev + 1));
+      Alert.alert("Error", error.message || "Failed to update like");
     }
   };
 
@@ -186,9 +196,13 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
     }
   };
 
-  const handleSaveImage = async () => {
+  const handleShareImage = async () => {
     if (memory.imageURL) {
-      await saveImageToGallery(memory.imageURL);
+      await shareMemory(
+        memory.title || "Memory",
+        memory.description || "",
+        memory.imageURL
+      );
     }
   };
 
@@ -252,6 +266,7 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
               isDarkMode={isDarkMode}
               iconColor={colors.textSoft}
               style={styles.editButton}
+              noBorder={true}
               accessibilityLabel="Edit memory"
               accessibilityHint="Opens edit screen for this memory"
             />
@@ -265,6 +280,7 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
             isDarkMode={isDarkMode}
             iconColor={colors.textSoft}
             style={styles.shareButton}
+            noBorder={true}
             accessibilityLabel="Share memory"
             accessibilityHint="Shares this memory with other apps"
           />
@@ -280,7 +296,13 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
           accessibilityRole="imagebutton"
           accessibilityHint="Double tap to view full screen image"
         >
-          <Image source={{ uri: memory.imageURL }} style={styles.image} />
+          <Image
+            source={{ uri: memory.imageURL }}
+            style={styles.image}
+            onError={() => {
+              console.warn("Failed to load image:", memory.imageURL);
+            }}
+          />
         </TouchableOpacity>
       )}
 
@@ -295,24 +317,41 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
             size="sm"
             isDarkMode={isDarkMode}
             iconColor={isLiked ? "#ef4444" : colors.text}
-            iconSize={26}
-            style={{ minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }}
+            iconSize={Platform.OS === "ios" ? 24 : 22}
+            style={{
+              minWidth: Platform.OS === "ios" ? 44 : 40,
+              minHeight: Platform.OS === "ios" ? 44 : 40,
+            }}
+            noBorder={true}
             accessibilityLabel={isLiked ? "Unlike memory" : "Like memory"}
-            accessibilityHint={isLiked ? "Remove your like" : "Like this memory"}
+            accessibilityHint={
+              isLiked ? "Remove your like" : "Like this memory"
+            }
           />
           <View style={{ position: "relative" }}>
             <InteractiveButton
               onPress={handlePress}
               icon="chatbubble-outline"
-              description={`View ${memory.comments || 0} comments on this memory`}
+              description={`View ${
+                memory.comments || 0
+              } comments on this memory`}
               variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
               iconColor={colors.text}
-              iconSize={24}
-              style={[styles.actionButton, { minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }]}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
+              style={[
+                styles.actionButton,
+                {
+                  minWidth: Platform.OS === "ios" ? 44 : 40,
+                  minHeight: Platform.OS === "ios" ? 44 : 40,
+                },
+              ]}
+              noBorder={true}
               accessibilityLabel="View comments"
-              accessibilityHint={`${memory.comments || 0} comments on this memory`}
+              accessibilityHint={`${
+                memory.comments || 0
+              } comments on this memory`}
             />
             {memory.comments && memory.comments > 0 && (
               <View style={styles.badge}>
@@ -324,16 +363,22 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
         <InteractiveButton
           onPress={handleSave}
           icon={isSaved ? "bookmark" : "bookmark-outline"}
-          description={isSaved ? "Remove from saved memories" : "Save to your saved memories"}
+          description={isSaved ? "Unsave" : "Save"}
           variant="ghost"
           size="sm"
           isDarkMode={isDarkMode}
           disabled={saving}
           iconColor={isSaved ? PRIMARY_PURPLE : colors.text}
-          iconSize={24}
-          style={{ minWidth: TOUCH_TARGET_SIZE, minHeight: TOUCH_TARGET_SIZE }}
+          iconSize={Platform.OS === "ios" ? 24 : 22}
+          style={{
+            minWidth: Platform.OS === "ios" ? 44 : 40,
+            minHeight: Platform.OS === "ios" ? 44 : 40,
+          }}
+          noBorder={true}
           accessibilityLabel={isSaved ? "Remove from saved" : "Save memory"}
-          accessibilityHint={isSaved ? "Unsave this memory" : "Save this memory for later"}
+          accessibilityHint={
+            isSaved ? "Unsave this memory" : "Save this memory for later"
+          }
         />
       </View>
 
@@ -412,7 +457,7 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
         visible={showImageZoom}
         imageURL={memory.imageURL || ""}
         onClose={() => setShowImageZoom(false)}
-        onSave={handleSaveImage}
+        onShare={handleShareImage}
       />
     </Animated.View>
   );
@@ -434,21 +479,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 12,
+    padding: Platform.OS === "ios" ? 14 : 12,
   },
   headerActions: {
     flexDirection: "row",
     gap: 8,
   },
   editButton: {
-    minWidth: TOUCH_TARGET_SIZE,
-    minHeight: TOUCH_TARGET_SIZE,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
     justifyContent: "center",
     alignItems: "center",
   },
   shareButton: {
-    minWidth: TOUCH_TARGET_SIZE,
-    minHeight: TOUCH_TARGET_SIZE,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -472,24 +517,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   username: {
-    fontSize: 14,
+    fontSize: Platform.OS === "ios" ? 15 : 14,
     fontWeight: "600",
   },
   timestamp: {
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: Platform.OS === "ios" ? 12 : 11,
+    marginTop: Platform.OS === "ios" ? 3 : 2,
   },
   image: {
     width: "100%",
-    height: 400,
+    height: Platform.OS === "ios" ? 350 : 400,
     backgroundColor: "#1F2937",
   },
   actions: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
   },
   actionLeft: {
     flexDirection: "row",
@@ -500,30 +545,32 @@ const styles = StyleSheet.create({
     marginLeft: 0,
   },
   likes: {
-    fontSize: 14,
+    fontSize: Platform.OS === "ios" ? 15 : 14,
     fontWeight: "600",
-    paddingHorizontal: 12,
-    marginBottom: 4,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    marginBottom: Platform.OS === "ios" ? 6 : 4,
   },
   caption: {
-    paddingHorizontal: 12,
-    marginBottom: 4,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    marginBottom: Platform.OS === "ios" ? 6 : 4,
   },
   captionText: {
-    fontSize: 14,
+    fontSize: Platform.OS === "ios" ? 15 : 14,
+    lineHeight: Platform.OS === "ios" ? 22 : 20,
   },
   captionUsername: {
     fontWeight: "700",
   },
   description: {
-    fontSize: 13,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    fontSize: Platform.OS === "ios" ? 14 : 13,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    marginBottom: Platform.OS === "ios" ? 10 : 8,
+    lineHeight: Platform.OS === "ios" ? 20 : 18,
   },
   viewComments: {
-    fontSize: 13,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    fontSize: Platform.OS === "ios" ? 14 : 13,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    marginBottom: Platform.OS === "ios" ? 10 : 8,
   },
   emotionPreview: {
     marginHorizontal: 12,

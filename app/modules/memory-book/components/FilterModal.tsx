@@ -103,6 +103,12 @@ export default function FilterModal({
       onRequestClose={handleClose}
     >
       <View style={styles.modalOverlay}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={handleClose}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="box-none"
+        />
         <View
           style={[
             styles.modalContent,
@@ -111,6 +117,7 @@ export default function FilterModal({
               borderColor: colors.border,
             },
           ]}
+          pointerEvents="box-only"
         >
           {/* Header */}
           <View style={styles.header}>
@@ -124,7 +131,11 @@ export default function FilterModal({
 
           <ScrollView
             style={styles.scrollView}
-            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+            bounces={true}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled={true}
           >
             {/* Keyword Search */}
             <View style={styles.section}>
@@ -379,8 +390,9 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderTopWidth: 1,
-    maxHeight: "90%",
-    paddingBottom: Platform.OS === "ios" ? 34 : 16,
+    maxHeight: Platform.OS === "ios" ? "85%" : "90%",
+    flex: 1,
+    flexDirection: "column",
   },
   header: {
     flexDirection: "row",
@@ -401,6 +413,10 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: Platform.OS === "ios" ? 20 : 16,
   },
   section: {
     paddingHorizontal: 20,
@@ -477,9 +493,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     paddingHorizontal: 20,
     paddingTop: 16,
+    paddingBottom: Platform.OS === "ios" ? 34 : 20,
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: "rgba(168,85,247,0.2)",
+    backgroundColor: "transparent",
   },
   resetButton: {
     flex: 1,

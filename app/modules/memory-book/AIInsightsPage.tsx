@@ -19,11 +19,13 @@ import InteractiveButton from "./components/InteractiveButton";
 import { subscribeToUserMemories } from "./utils/firebaseHelpers";
 import type { Memory } from "./utils/memoryHelpers";
 import { checkOllamaConnection } from "./utils/ollamaHelper";
+import BottomNavBar from "./components/BottomNavBar";
 import {
   generateComprehensiveInsights,
   extractThemes,
   getHighlights,
   comparePeriods,
+  type ComprehensiveInsights,
 } from "./utils/aiInsightsHelper";
 
 const PRIMARY_PURPLE = "#a855f7";
@@ -32,13 +34,17 @@ type TimeRange = "7D" | "30D" | "90D";
 
 export default function AIInsightsPage() {
   const router = useRouter();
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, toggleTheme } = useTheme();
   const { user } = useAuth();
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>("30D");
   const [ollamaAvailable, setOllamaAvailable] = useState(false);
+  const [moodTrends, setMoodTrends] = useState<
+    Array<{ date: string; mood: number }>
+  >([]);
+  const [loadingAI, setLoadingAI] = useState(false);
 
   const colors = {
     background: isDarkMode ? "#020617" : "#FAF5FF",
@@ -51,7 +57,8 @@ export default function AIInsightsPage() {
   };
 
   useEffect(() => {
-    if (!user?.uid) {
+    const userId = user?.id || (user as any)?.uid;
+    if (!userId) {
       setLoading(false);
       setError("Please log in to view insights");
       return;
@@ -59,35 +66,42 @@ export default function AIInsightsPage() {
 
     setLoading(true);
     setError(null);
+    setMemories([]); // Reset memories
 
-    let timeout: NodeJS.Timeout;
+    let timeout: ReturnType<typeof setTimeout>;
     let unsubscribe: (() => void) | null = null;
+    let hasReceivedData = false;
 
     try {
-      unsubscribe = subscribeToUserMemories(
-        user.uid,
-        (memoriesList) => {
-          console.log("AI Insights: Received memories:", memoriesList.length);
-          setMemories(memoriesList);
-          setLoading(false);
-          setError(null);
-          if (timeout) clearTimeout(timeout);
-        }
-      );
-
-      // Timeout fallback - stop loading after 10 seconds
-      timeout = setTimeout(() => {
-        console.warn("AI Insights: Loading timeout");
+      unsubscribe = subscribeToUserMemories(userId, (memoriesList) => {
+        console.log("AI Insights: Received memories:", memoriesList.length);
+        hasReceivedData = true;
+        setMemories(memoriesList);
         setLoading(false);
-        setError("Loading took too long. Please check your Firebase connection and try again.");
-      }, 10000);
+        setError(null);
+        if (timeout) clearTimeout(timeout);
+      });
+
+      // Timeout fallback - stop loading after 5 seconds (reduced from 10)
+      timeout = setTimeout(() => {
+        if (!hasReceivedData) {
+          console.warn("AI Insights: Loading timeout - no data received");
+          setLoading(false);
+          setError(
+            "Loading took too long. This might be due to Firebase permissions or connection issues. Please check your Firebase configuration."
+          );
+          // Set empty memories so page can still render
+          setMemories([]);
+        }
+      }, 5000);
     } catch (err: any) {
       console.error("AI Insights: Error subscribing to memories:", err);
       setLoading(false);
       setError(
-        err.message || 
-        "Failed to connect to Firebase. Please check your Firebase configuration."
+        err.message ||
+          "Failed to connect to Firebase. Please check your Firebase configuration."
       );
+      setMemories([]);
     }
 
     return () => {
@@ -108,21 +122,149 @@ export default function AIInsightsPage() {
     return memories.filter((m) => m.startDate >= cutoff);
   }, [memories, timeRange]);
 
+  // Calculate mood trends over time
+  useEffect(() => {
+    if (filteredMemories.length === 0) {
+      setMoodTrends([]);
+      return;
+    }
+
+    // Group memories by day and calculate average mood for each day
+    const dailyMood: Record<string, number[]> = {};
+
+    filteredMemories.forEach((memory) => {
+      if (memory.emotionSpectrum && memory.startDate) {
+        const date = new Date(memory.startDate);
+        const dateKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
+
+        const mood =
+          (memory.emotionSpectrum.energy +
+            memory.emotionSpectrum.clarity +
+            memory.emotionSpectrum.warmth -
+            memory.emotionSpectrum.stress +
+            100) /
+          4;
+
+        if (!dailyMood[dateKey]) {
+          dailyMood[dateKey] = [];
+        }
+        dailyMood[dateKey].push(mood);
+      }
+    });
+
+    // Calculate average mood per day and sort by date
+    const trends = Object.entries(dailyMood)
+      .map(([date, moods]) => ({
+        date,
+        mood: Math.round(moods.reduce((sum, m) => sum + m, 0) / moods.length),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-14); // Last 14 days for visualization
+
+    setMoodTrends(trends);
+  }, [filteredMemories]);
+
   // Calculate period comparison
   const periodComparison = useMemo(() => {
     if (filteredMemories.length === 0) return null;
     const daysAgo = timeRange === "7D" ? 7 : timeRange === "30D" ? 30 : 90;
     const previousCutoff = Date.now() - daysAgo * 2 * 24 * 60 * 60 * 1000;
     const previousMemories = memories.filter(
-      (m) => m.startDate >= previousCutoff && m.startDate < previousCutoff + daysAgo * 24 * 60 * 60 * 1000
+      (m) =>
+        m.startDate >= previousCutoff &&
+        m.startDate < previousCutoff + daysAgo * 24 * 60 * 60 * 1000
     );
     return comparePeriods(filteredMemories, previousMemories);
   }, [filteredMemories, memories, timeRange]);
 
-  // Get insights
-  const insights = useMemo(() => {
-    if (filteredMemories.length === 0) return null;
-    return generateComprehensiveInsights(filteredMemories, ollamaAvailable);
+  // Get insights (async) - Generate immediately, enhance with AI if available
+  const [insights, setInsights] = useState<ComprehensiveInsights | null>(null);
+
+  useEffect(() => {
+    if (filteredMemories.length === 0) {
+      setInsights(null);
+      setLoadingAI(false);
+      return;
+    }
+
+    let isCancelled = false;
+
+    // Generate basic insights immediately (without AI) - with timeout
+    const basicTimeout = setTimeout(() => {
+      if (!isCancelled && !insights) {
+        console.warn("Basic insights generation timeout - using fallback");
+        setInsights({
+          overallMood: "Neutral",
+          moodScore: 50,
+          emotionDistribution: [],
+          suggestions: ["Not enough data for insights yet"],
+        });
+        setLoadingAI(false);
+      }
+    }, 3000);
+
+    generateComprehensiveInsights(filteredMemories, false)
+      .then((basicResult) => {
+        clearTimeout(basicTimeout);
+        if (!isCancelled) {
+          setInsights(basicResult);
+          setLoadingAI(false);
+        }
+      })
+      .catch((error) => {
+        clearTimeout(basicTimeout);
+        console.error("Error generating basic insights:", error);
+        if (!isCancelled) {
+          // Set fallback insights so page can render
+          setInsights({
+            overallMood: "Neutral",
+            moodScore: 50,
+            emotionDistribution: [],
+            suggestions: ["Unable to generate insights. Please try again."],
+          });
+          setLoadingAI(false);
+        }
+      });
+
+    // Then try to enhance with AI if available (non-blocking)
+    if (ollamaAvailable) {
+      setLoadingAI(true);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        setLoadingAI(false);
+      }, 8000);
+
+      generateComprehensiveInsights(filteredMemories, true)
+        .then((aiResult) => {
+          clearTimeout(timeoutId);
+          if (!isCancelled) {
+            setInsights(aiResult);
+            setLoadingAI(false);
+          }
+        })
+        .catch((error) => {
+          clearTimeout(timeoutId);
+          if (error.name !== "AbortError") {
+            console.error("Error generating AI insights:", error);
+          }
+          if (!isCancelled) {
+            setLoadingAI(false);
+          }
+        });
+
+      return () => {
+        isCancelled = true;
+        clearTimeout(timeoutId);
+        clearTimeout(basicTimeout);
+        controller.abort();
+      };
+    }
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(basicTimeout);
+    };
   }, [filteredMemories, ollamaAvailable]);
 
   // Get themes
@@ -150,6 +292,7 @@ export default function AIInsightsPage() {
               Analyzing your memories...
             </Text>
           </View>
+          <BottomNavBar isDarkMode={isDarkMode} />
         </SafeAreaView>
       </GradientBackground>
     );
@@ -159,7 +302,9 @@ export default function AIInsightsPage() {
     return (
       <GradientBackground>
         <SafeAreaView style={styles.safeArea}>
-          <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <View
+            style={[styles.container, { backgroundColor: colors.background }]}
+          >
             <View
               style={[
                 styles.header,
@@ -185,7 +330,22 @@ export default function AIInsightsPage() {
                   AI Insights
                 </Text>
               </View>
-              <View style={{ width: 40 }} />
+              <InteractiveButton
+                onPress={toggleTheme}
+                icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+                description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+                variant="ghost"
+                size="sm"
+                isDarkMode={isDarkMode}
+                iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+                iconSize={Platform.OS === "ios" ? 24 : 22}
+                noBorder={true}
+                style={styles.themeToggle}
+                accessibilityLabel="Toggle theme"
+                accessibilityHint={`Changes to ${
+                  isDarkMode ? "light" : "dark"
+                } mode`}
+              />
             </View>
             <View style={styles.center}>
               <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
@@ -200,9 +360,10 @@ export default function AIInsightsPage() {
                   setLoading(true);
                   setError(null);
                   // Retry by re-triggering useEffect
-                  if (user?.uid) {
+                  const userId = user?.id || (user as any)?.uid;
+                  if (userId) {
                     const unsubscribe = subscribeToUserMemories(
-                      user.uid,
+                      userId,
                       (memoriesList) => {
                         setMemories(memoriesList);
                         setLoading(false);
@@ -221,6 +382,7 @@ export default function AIInsightsPage() {
               />
             </View>
           </View>
+          <BottomNavBar isDarkMode={isDarkMode} />
         </SafeAreaView>
       </GradientBackground>
     );
@@ -229,7 +391,9 @@ export default function AIInsightsPage() {
   return (
     <GradientBackground>
       <SafeAreaView style={styles.safeArea}>
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View
+          style={[styles.container, { backgroundColor: colors.background }]}
+        >
           {/* Header */}
           <View
             style={[
@@ -246,9 +410,12 @@ export default function AIInsightsPage() {
               variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
-              iconColor={colors.text}
+              iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
               style={styles.backButton}
+              noBorder={true}
               accessibilityLabel="Go back"
+              accessibilityHint="Returns to previous screen"
             />
             <View style={styles.headerCenter}>
               <Ionicons name="sparkles" size={24} color={PRIMARY_PURPLE} />
@@ -256,12 +423,31 @@ export default function AIInsightsPage() {
                 AI Insights
               </Text>
             </View>
-            <View style={{ width: 40 }} />
+            <InteractiveButton
+              onPress={toggleTheme}
+              icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+              description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
+              noBorder={true}
+              style={styles.themeToggle}
+              accessibilityLabel="Toggle theme"
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
+            />
           </View>
 
           {filteredMemories.length === 0 ? (
             <View style={styles.center}>
-              <Ionicons name="analytics-outline" size={64} color={colors.textSoft} />
+              <Ionicons
+                name="analytics-outline"
+                size={64}
+                color={colors.textSoft}
+              />
               <Text style={[styles.emptyTitle, { color: colors.text }]}>
                 No memories yet
               </Text>
@@ -275,6 +461,17 @@ export default function AIInsightsPage() {
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
             >
+              {/* Show loading indicator for AI processing */}
+              {loadingAI && !insights && (
+                <View style={styles.aiLoadingContainer}>
+                  <ActivityIndicator size="small" color={PRIMARY_PURPLE} />
+                  <Text
+                    style={[styles.aiLoadingText, { color: colors.textSoft }]}
+                  >
+                    Generating AI insights...
+                  </Text>
+                </View>
+              )}
               {/* Time Range Selector */}
               <View style={styles.timeRangeContainer}>
                 {(["7D", "30D", "90D"] as TimeRange[]).map((range) => (
@@ -295,8 +492,7 @@ export default function AIInsightsPage() {
                       style={[
                         styles.timeRangeText,
                         {
-                          color:
-                            timeRange === range ? "#FFFFFF" : colors.text,
+                          color: timeRange === range ? "#FFFFFF" : colors.text,
                           fontWeight: timeRange === range ? "700" : "500",
                         },
                       ]}
@@ -320,14 +516,21 @@ export default function AIInsightsPage() {
                   ]}
                 >
                   <Text style={[styles.heroTitle, { color: colors.text }]}>
-                    This {timeRange} in 10 seconds
+                    This{" "}
+                    {timeRange === "7D"
+                      ? "Week"
+                      : timeRange === "30D"
+                      ? "Month"
+                      : "Quarter"}{" "}
+                    in 10 seconds
                   </Text>
                   <Text
                     style={[
                       styles.heroMood,
                       {
                         color: PRIMARY_PURPLE,
-                        textShadowColor: PRIMARY_PURPLE + (isDarkMode ? "CC" : "88"),
+                        textShadowColor:
+                          PRIMARY_PURPLE + (isDarkMode ? "CC" : "88"),
                         textShadowRadius: isDarkMode ? 8 : 6,
                       },
                     ]}
@@ -356,7 +559,9 @@ export default function AIInsightsPage() {
                                 : colors.textSoft
                             }
                           />
-                          <Text style={[styles.changeText, { color: colors.text }]}>
+                          <Text
+                            style={[styles.changeText, { color: colors.text }]}
+                          >
                             {change.message}
                           </Text>
                         </View>
@@ -367,13 +572,159 @@ export default function AIInsightsPage() {
               )}
 
               {/* Trends Section */}
-              {insights && (
+              {insights ? (
                 <View style={styles.section}>
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Trends
+                    Mood Trends
                   </Text>
+
+                  {/* Mood Trend Chart */}
+                  {moodTrends.length > 0 && (
+                    <View
+                      style={[
+                        styles.trendChartCard,
+                        createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                          padding: 20,
+                          marginBottom: 16,
+                        }),
+                        { backgroundColor: colors.surface },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.trendCardTitle,
+                          { color: colors.text, marginBottom: 16 },
+                        ]}
+                      >
+                        Mood Over Time
+                      </Text>
+                      <View style={styles.chartContainer}>
+                        <View style={styles.chartBars}>
+                          {moodTrends.map((trend, idx) => {
+                            const maxMood = Math.max(
+                              ...moodTrends.map((t) => t.mood),
+                              100
+                            );
+                            const height = (trend.mood / maxMood) * 100;
+                            const date = new Date(trend.date);
+                            const dayLabel = date.getDate();
+                            const monthLabel = date.toLocaleDateString(
+                              "en-US",
+                              { month: "short" }
+                            );
+
+                            return (
+                              <View key={idx} style={styles.chartBarContainer}>
+                                <View
+                                  style={[
+                                    styles.chartBar,
+                                    {
+                                      height: `${height}%`,
+                                      backgroundColor:
+                                        trend.mood > 60
+                                          ? "#10b981"
+                                          : trend.mood > 40
+                                          ? PRIMARY_PURPLE
+                                          : "#ef4444",
+                                      minHeight: 4,
+                                    },
+                                  ]}
+                                />
+                                <Text
+                                  style={[
+                                    styles.chartLabel,
+                                    { color: colors.textSoft },
+                                  ]}
+                                >
+                                  {dayLabel}
+                                </Text>
+                                {idx === 0 && (
+                                  <Text
+                                    style={[
+                                      styles.chartMonthLabel,
+                                      { color: colors.textSoft },
+                                    ]}
+                                  >
+                                    {monthLabel}
+                                  </Text>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                        <View style={styles.chartYAxis}>
+                          <Text
+                            style={[
+                              styles.chartYLabel,
+                              { color: colors.textSoft },
+                            ]}
+                          >
+                            100
+                          </Text>
+                          <Text
+                            style={[
+                              styles.chartYLabel,
+                              { color: colors.textSoft },
+                            ]}
+                          >
+                            50
+                          </Text>
+                          <Text
+                            style={[
+                              styles.chartYLabel,
+                              { color: colors.textSoft },
+                            ]}
+                          >
+                            0
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.chartLegend}>
+                        <View style={styles.legendItem}>
+                          <View
+                            style={[
+                              styles.legendDot,
+                              { backgroundColor: "#10b981" },
+                            ]}
+                          />
+                          <Text
+                            style={[styles.legendText, { color: colors.text }]}
+                          >
+                            High
+                          </Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                          <View
+                            style={[
+                              styles.legendDot,
+                              { backgroundColor: PRIMARY_PURPLE },
+                            ]}
+                          />
+                          <Text
+                            style={[styles.legendText, { color: colors.text }]}
+                          >
+                            Medium
+                          </Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                          <View
+                            style={[
+                              styles.legendDot,
+                              { backgroundColor: "#ef4444" },
+                            ]}
+                          />
+                          <Text
+                            style={[styles.legendText, { color: colors.text }]}
+                          >
+                            Low
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
                   <View style={styles.trendsRow}>
-                    {/* Mood Score Chart */}
+                    {/* Mood Score Card */}
                     <View
                       style={[
                         styles.trendCard,
@@ -383,15 +734,18 @@ export default function AIInsightsPage() {
                         { backgroundColor: colors.surface },
                       ]}
                     >
-                      <Text style={[styles.trendCardTitle, { color: colors.text }]}>
-                        Mood Score
+                      <Text
+                        style={[styles.trendCardTitle, { color: colors.text }]}
+                      >
+                        Average Mood
                       </Text>
                       <Text
                         style={[
                           styles.trendCardValue,
                           {
                             color: PRIMARY_PURPLE,
-                            textShadowColor: PRIMARY_PURPLE + (isDarkMode ? "CC" : "88"),
+                            textShadowColor:
+                              PRIMARY_PURPLE + (isDarkMode ? "CC" : "88"),
                             textShadowRadius: isDarkMode ? 8 : 6,
                           },
                         ]}
@@ -421,7 +775,9 @@ export default function AIInsightsPage() {
                         { backgroundColor: colors.surface },
                       ]}
                     >
-                      <Text style={[styles.trendCardTitle, { color: colors.text }]}>
+                      <Text
+                        style={[styles.trendCardTitle, { color: colors.text }]}
+                      >
                         Emotions
                       </Text>
                       <View style={styles.emotionRing}>
@@ -433,13 +789,32 @@ export default function AIInsightsPage() {
                                 { backgroundColor: emotion.color },
                               ]}
                             />
-                            <Text style={[styles.emotionLabel, { color: colors.text }]}>
+                            <Text
+                              style={[
+                                styles.emotionLabel,
+                                { color: colors.text },
+                              ]}
+                            >
                               {emotion.label}: {emotion.percentage}%
                             </Text>
                           </View>
                         ))}
                       </View>
                     </View>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    Mood Trends
+                  </Text>
+                  <View style={styles.aiLoadingContainer}>
+                    <ActivityIndicator size="small" color={PRIMARY_PURPLE} />
+                    <Text
+                      style={[styles.aiLoadingText, { color: colors.textSoft }]}
+                    >
+                      Calculating mood trends...
+                    </Text>
                   </View>
                 </View>
               )}
@@ -467,10 +842,17 @@ export default function AIInsightsPage() {
                           },
                         ]}
                       >
-                        <Text style={[styles.themeChipText, { color: colors.text }]}>
+                        <Text
+                          style={[styles.themeChipText, { color: colors.text }]}
+                        >
                           {theme.name}
                         </Text>
-                        <Text style={[styles.themeChipCount, { color: PRIMARY_PURPLE }]}>
+                        <Text
+                          style={[
+                            styles.themeChipCount,
+                            { color: PRIMARY_PURPLE },
+                          ]}
+                        >
                           {theme.count}
                         </Text>
                       </View>
@@ -517,13 +899,19 @@ export default function AIInsightsPage() {
                         )}
                         <View style={styles.highlightContent}>
                           <Text
-                            style={[styles.highlightTitle, { color: colors.text }]}
+                            style={[
+                              styles.highlightTitle,
+                              { color: colors.text },
+                            ]}
                             numberOfLines={1}
                           >
                             {highlight.memory.title}
                           </Text>
                           <Text
-                            style={[styles.highlightReason, { color: colors.textSoft }]}
+                            style={[
+                              styles.highlightReason,
+                              { color: colors.textSoft },
+                            ]}
                             numberOfLines={2}
                           >
                             {highlight.reason}
@@ -558,7 +946,9 @@ export default function AIInsightsPage() {
                         color={PRIMARY_PURPLE}
                         style={{ marginRight: 12 }}
                       />
-                      <Text style={[styles.suggestionText, { color: colors.text }]}>
+                      <Text
+                        style={[styles.suggestionText, { color: colors.text }]}
+                      >
                         {suggestion}
                       </Text>
                     </View>
@@ -569,7 +959,11 @@ export default function AIInsightsPage() {
               {/* Ollama Status */}
               <View style={styles.statusCard}>
                 <Ionicons
-                  name={ollamaAvailable ? "checkmark-circle" : "alert-circle-outline"}
+                  name={
+                    ollamaAvailable
+                      ? "checkmark-circle"
+                      : "alert-circle-outline"
+                  }
                   size={16}
                   color={ollamaAvailable ? "#10b981" : colors.textSoft}
                 />
@@ -582,6 +976,9 @@ export default function AIInsightsPage() {
             </ScrollView>
           )}
         </View>
+
+        {/* Bottom Navigation */}
+        <BottomNavBar isDarkMode={isDarkMode} />
       </SafeAreaView>
     </GradientBackground>
   );
@@ -633,12 +1030,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    paddingVertical: Platform.OS === "ios" ? 12 : 10,
     borderBottomWidth: 1,
+    minHeight: Platform.OS === "ios" ? 52 : 50,
   },
   backButton: {
-    width: 40,
+    minWidth: Platform.OS === "ios" ? 40 : 36,
+    minHeight: Platform.OS === "ios" ? 40 : 36,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  themeToggle: {
+    minWidth: Platform.OS === "ios" ? 40 : 38,
+    minHeight: Platform.OS === "ios" ? 40 : 38,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerCenter: {
     flexDirection: "row",
@@ -646,15 +1054,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.OS === "ios" ? 18 : 17,
     fontWeight: "700",
+    flexShrink: 1,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 100,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
   timeRangeContainer: {
     flexDirection: "row",
@@ -830,5 +1239,82 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
+  aiLoadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    gap: 12,
+  },
+  aiLoadingText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  trendChartCard: {
+    width: "100%",
+  },
+  chartContainer: {
+    flexDirection: "row",
+    height: 200,
+    marginBottom: 12,
+  },
+  chartBars: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-around",
+    paddingBottom: 30,
+    paddingHorizontal: 8,
+  },
+  chartBarContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    height: "100%",
+    maxWidth: 40,
+  },
+  chartBar: {
+    width: "80%",
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  chartLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+  },
+  chartMonthLabel: {
+    fontSize: 9,
+    fontWeight: "400",
+    marginTop: 2,
+  },
+  chartYAxis: {
+    width: 30,
+    justifyContent: "space-between",
+    paddingBottom: 30,
+    alignItems: "flex-end",
+  },
+  chartYLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+  },
+  chartLegend: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 16,
+    marginTop: 8,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
 });
-

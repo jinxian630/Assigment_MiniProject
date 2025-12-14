@@ -30,14 +30,46 @@ import type { Memory } from "./utils/memoryHelpers";
 
 const PRIMARY_PURPLE = "#a855f7";
 
+/** 🎨 Cyberpunk neon card shell helper */
+const createNeonCardShell = (
+  accentColor: string,
+  isDark: boolean,
+  extra: any = {}
+) => {
+  return {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: accentColor + (isDark ? "66" : "CC"),
+    shadowColor: accentColor,
+    shadowOpacity: isDark ? 0.9 : 0.75,
+    shadowRadius: isDark ? 30 : 25,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: isDark ? 18 : 15,
+    ...extra,
+  };
+};
+
+/** 🎨 Glow text styles */
+const getGlowText = (accentColor: string, isDark: boolean) => ({
+  color: isDark ? "#E0F2FE" : "#6B21A8",
+  textShadowColor: accentColor + (isDark ? "CC" : "88"),
+  textShadowOffset: { width: 0, height: 0 },
+  textShadowRadius: isDark ? 8 : 6,
+});
+
+const getSoftText = (isDark: boolean) => ({
+  color: isDark ? "#CBD5E1" : "#9333EA",
+});
+
 export default function SavedPosts() {
   const router = useRouter();
-  const { theme, isDarkMode } = useTheme();
+  const { theme, isDarkMode, toggleTheme } = useTheme();
   const { user } = useAuth();
   const [savedMemories, setSavedMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showNoResults, setShowNoResults] = useState(false);
   const [activeFilters, setActiveFilters] = useState<FilterOptions>({
     keyword: "",
     emotionColor: null,
@@ -53,6 +85,9 @@ export default function SavedPosts() {
     border: isDarkMode ? "#1F2937" : "#7C3AED",
     chipBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(124,58,237,0.2)",
   };
+
+  const glowText = getGlowText(PRIMARY_PURPLE, isDarkMode);
+  const softText = getSoftText(isDarkMode);
 
   useEffect(() => {
     const userId = auth.currentUser?.uid || user?.id;
@@ -93,27 +128,40 @@ export default function SavedPosts() {
     return filtered;
   }, [savedMemories, activeFilters]);
 
+  // Show overlay when filters are active and no results
+  useEffect(() => {
+    const hasActiveFilters =
+      activeFilters.keyword ||
+      activeFilters.emotionColor ||
+      (activeFilters.feelingType && activeFilters.feelingRank);
+
+    if (
+      hasActiveFilters &&
+      filteredMemories.length === 0 &&
+      savedMemories.length > 0
+    ) {
+      // Only show if not already showing
+      if (!showNoResults) {
+        setTimeout(() => {
+          setShowNoResults(true);
+        }, 300);
+      }
+    } else if (filteredMemories.length > 0) {
+      // Hide overlay if results are found
+      setShowNoResults(false);
+    }
+  }, [filteredMemories, activeFilters, savedMemories.length]);
+
   const handleApplyFilters = (filters: FilterOptions) => {
     setActiveFilters(filters);
     const filtered = applyFilters(savedMemories, filters);
 
     if (filtered.length === 0 && savedMemories.length > 0) {
       setTimeout(() => {
-        Alert.alert(
-          "No Results Found",
-          "No memories match your filter criteria. Try adjusting your filters.",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                if (Platform.OS === "ios") {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-              },
-            },
-          ]
-        );
+        setShowNoResults(true);
       }, 300);
+    } else {
+      setShowNoResults(false);
     }
   };
 
@@ -128,6 +176,68 @@ export default function SavedPosts() {
   return (
     <GradientBackground>
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        {/* NO RESULTS OVERLAY */}
+        {showNoResults && (
+          <View
+            style={[
+              styles.successOverlay,
+              {
+                backgroundColor: isDarkMode
+                  ? "rgba(15,23,42,0.95)"
+                  : "rgba(255,255,255,0.95)",
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.successCard,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 24,
+                }),
+                {
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.successIcon,
+                  {
+                    backgroundColor: PRIMARY_PURPLE + "20",
+                    borderColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="filter-outline"
+                  size={64}
+                  color={PRIMARY_PURPLE}
+                />
+              </View>
+              <Text style={[styles.successTitle, glowText]}>
+                No Results Found
+              </Text>
+              <Text style={[styles.successSubtitle, softText]}>
+                No memories match your filter criteria. Try adjusting your
+                filters.
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowNoResults(false);
+                }}
+                style={[
+                  styles.successButton,
+                  {
+                    backgroundColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Text style={styles.successButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Header */}
         <View
           style={[
@@ -149,31 +259,56 @@ export default function SavedPosts() {
               Saved Posts
             </Text>
           </View>
-          <View style={{ position: "relative" }}>
+          <View style={styles.headerRight}>
             <InteractiveButton
-              onPress={() => {
-                setShowFilterModal(true);
-              }}
-              icon="filter"
-              description={
-                hasActiveFilters
-                  ? "Filter active - tap to adjust filters"
-                  : "Filter saved memories by mood, color, feeling, or keyword"
-              }
-              variant={hasActiveFilters ? "primary" : "secondary"}
+              onPress={toggleTheme}
+              icon={isDarkMode ? "sunny-outline" : "moon-outline"}
+              description={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+              variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
-              iconColor={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
-              iconSize={20}
-              style={styles.filterButton}
-              accessibilityLabel="Filter saved memories"
-              accessibilityHint="Opens filter options"
+              iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
+              noBorder={true}
+              style={styles.themeToggle}
+              accessibilityLabel="Toggle theme"
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
             />
-            {hasActiveFilters && (
-              <View
-                style={[styles.filterBadge, { backgroundColor: "#FFFFFF" }]}
+            <View style={{ position: "relative" }}>
+              <InteractiveButton
+                onPress={() => {
+                  setShowFilterModal(true);
+                }}
+                icon="filter"
+                description={
+                  hasActiveFilters
+                    ? "Filter active - tap to adjust filters"
+                    : "Filter saved memories by mood, color, feeling, or keyword"
+                }
+                variant={hasActiveFilters ? "primary" : "ghost"}
+                size="sm"
+                isDarkMode={isDarkMode}
+                iconColor={
+                  hasActiveFilters
+                    ? "#FFFFFF"
+                    : isDarkMode
+                    ? "#E5E7EB"
+                    : PRIMARY_PURPLE
+                }
+                iconSize={Platform.OS === "ios" ? 26 : 24}
+                noBorder={true}
+                style={styles.filterButton}
+                accessibilityLabel="Filter saved memories"
+                accessibilityHint="Opens filter options"
               />
-            )}
+              {hasActiveFilters && (
+                <View
+                  style={[styles.filterBadge, { backgroundColor: "#FFFFFF" }]}
+                />
+              )}
+            </View>
           </View>
         </View>
 
@@ -238,7 +373,7 @@ export default function SavedPosts() {
                     ? `${filteredMemories.length} of ${savedMemories.length}`
                     : savedMemories.length}{" "}
                   {filteredMemories.length === 1 ? "Saved Post" : "Saved Posts"}
-                  {hasActiveFilters && " (Filtered)"}
+                  {hasActiveFilters ? " (Filtered)" : ""}
                 </Text>
               </View>
 
@@ -312,8 +447,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === "ios" ? 17 : 16,
     fontWeight: "700",
+    flexShrink: 1,
   },
   center: {
     flex: 1,
@@ -329,7 +465,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 80,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
   feedSection: {
     paddingHorizontal: 16,
@@ -371,18 +507,11 @@ const styles = StyleSheet.create({
     maxWidth: 280,
   },
   filterButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
-    position: "relative",
-    shadowColor: PRIMARY_PURPLE,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    backgroundColor: "transparent",
   },
   filterBadge: {
     position: "absolute",
@@ -391,6 +520,54 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  successOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  successCard: {
+    alignItems: "center",
+    maxWidth: 320,
+    width: "100%",
+  },
+  successIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  successSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  successButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 999,
+    minWidth: 160,
+  },
+  successButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
   },
   emptyFilterContainer: {
     alignItems: "center",

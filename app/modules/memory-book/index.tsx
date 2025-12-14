@@ -19,7 +19,9 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
-import { subscribeToLatestMemories } from "./utils/firebaseHelpers";
+import { auth, db } from "@/config/firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { subscribeToUserMemories } from "./utils/firebaseHelpers";
 import type { Memory } from "./utils/memoryHelpers";
 import PostCard from "./components/PostCard";
 import BottomNavBar from "./components/BottomNavBar";
@@ -30,10 +32,20 @@ const PRIMARY_PURPLE = "#a855f7";
 
 // Using Memory type from memoryHelpers
 
+type UserProfile = {
+  id: string;
+  displayName?: string;
+  email?: string;
+  photoURL?: string;
+  bio?: string;
+};
+
 export default function MemoryBookScreen() {
   const router = useRouter();
   const { theme, isDarkMode, toggleTheme } = useTheme();
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showAIInsights, setShowAIInsights] = useState(true);
@@ -56,11 +68,89 @@ export default function MemoryBookScreen() {
     chipBg: isDarkMode ? "rgba(168,85,247,0.12)" : "rgba(124,58,237,0.2)",
   };
 
+  // Load user profile from Firestore
   useEffect(() => {
-    console.log("🔄 Setting up memory subscription...");
-    const unsubscribe = subscribeToLatestMemories(20, (memoriesList) => {
-      console.log("📦 Memory feed: Received", memoriesList.length, "memories");
-      console.log("📋 Memory IDs:", memoriesList.map(m => m.id));
+    const loadUserProfile = async () => {
+      const currentUserId = auth.currentUser?.uid || authUser?.id;
+      if (!currentUserId) {
+        // Fallback to auth user data if available
+        if (authUser) {
+          setUser({
+            id: authUser.id,
+            displayName: authUser.displayName,
+            email: authUser.email,
+            photoURL: authUser.photoURL,
+          });
+        }
+        setLoadingUser(false);
+        return;
+      }
+
+      try {
+        // Try users collection first
+        let userRef = doc(db, "users", currentUserId);
+        let userSnap = await getDoc(userRef);
+
+        // If not found, try Users collection (capitalized)
+        if (!userSnap.exists()) {
+          userRef = doc(db, "Users", currentUserId);
+          userSnap = await getDoc(userRef);
+        }
+
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          setUser({
+            id: currentUserId,
+            displayName: userData.displayName,
+            email: userData.email,
+            photoURL: userData.photoURL,
+            bio: userData.bio,
+          });
+        } else {
+          // Fallback to auth user data
+          if (authUser) {
+            setUser({
+              id: authUser.id,
+              displayName: authUser.displayName,
+              email: authUser.email,
+              photoURL: authUser.photoURL,
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Error loading user profile:", error);
+        // Fallback to auth user data
+        if (authUser) {
+          setUser({
+            id: authUser.id,
+            displayName: authUser.displayName,
+            email: authUser.email,
+            photoURL: authUser.photoURL,
+          });
+        }
+      } finally {
+        setLoadingUser(false);
+      }
+    };
+
+    loadUserProfile();
+  }, [authUser]);
+
+  useEffect(() => {
+    const currentUserId = user?.id || authUser?.id || auth.currentUser?.uid;
+    if (!currentUserId) {
+      console.log("⚠️ No user ID available, skipping memory subscription");
+      setMemories([]);
+      return;
+    }
+
+    console.log("🔄 Setting up memory subscription for user:", currentUserId);
+    const unsubscribe = subscribeToUserMemories(currentUserId, (memoriesList) => {
+      console.log("📦 Memory feed: Received", memoriesList.length, "memories for user", currentUserId);
+      console.log(
+        "📋 Memory IDs:",
+        memoriesList.map((m) => m.id)
+      );
       setMemories(memoriesList);
     });
 
@@ -68,7 +158,7 @@ export default function MemoryBookScreen() {
       console.log("🛑 Unsubscribing from memories");
       unsubscribe();
     };
-  }, []);
+  }, [user?.id, authUser?.id]);
 
   // Pulsing glow animation for profile card
   useEffect(() => {
@@ -142,7 +232,7 @@ export default function MemoryBookScreen() {
     }
 
     // Pass current user's ID to UserProfile
-    const currentUserId = user?.id;
+    const currentUserId = user?.id || authUser?.id || auth.currentUser?.uid;
     if (currentUserId) {
       router.push(`/modules/memory-book/UserProfile?userId=${currentUserId}`);
     } else {
@@ -206,9 +296,10 @@ export default function MemoryBookScreen() {
               variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
-              iconColor={colors.text}
-              iconSize={22}
+              iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
               style={styles.headerIcon}
+              noBorder={true}
               accessibilityLabel="Search users"
               accessibilityHint="Opens user search page"
             />
@@ -219,12 +310,43 @@ export default function MemoryBookScreen() {
               variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
-              iconColor={colors.text}
-              iconSize={22}
+              iconColor={isDarkMode ? "#E5E7EB" : PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
               style={styles.headerIcon}
+              noBorder={true}
               accessibilityLabel="Toggle theme"
-              accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
             />
+            <TouchableOpacity
+              onPress={handleProfilePress}
+              activeOpacity={0.8}
+              style={styles.profileButton}
+            >
+              {user?.photoURL ? (
+                <Image
+                  source={{ uri: user.photoURL }}
+                  style={styles.headerAvatar}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.headerAvatar,
+                    styles.headerAvatarPlaceholder,
+                    {
+                      backgroundColor: "transparent",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="person"
+                    size={Platform.OS === "ios" ? 18 : 16}
+                    color={PRIMARY_PURPLE}
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -245,7 +367,9 @@ export default function MemoryBookScreen() {
             style={[
               styles.profileSection,
               {
-                backgroundColor: colors.surface,
+                backgroundColor: isDarkMode
+                  ? "rgba(30, 41, 59, 0.85)"
+                  : "rgba(255, 255, 255, 0.98)",
                 borderColor: PRIMARY_PURPLE + (isDarkMode ? "66" : "CC"),
                 shadowColor: PRIMARY_PURPLE,
                 shadowOpacity: profileCardGlow.interpolate({
@@ -358,10 +482,10 @@ export default function MemoryBookScreen() {
 
             <View style={styles.profileInfo}>
               <Text style={[styles.username, { color: colors.text }]}>
-                {user?.displayName || "User"}
+                {user?.displayName || authUser?.displayName || "User"}
               </Text>
               <Text style={[styles.bio, { color: colors.textSoft }]}>
-                Preserving moments, crafting memories
+                {user?.bio || "Preserving moments, crafting memories"}
               </Text>
             </View>
 
@@ -376,18 +500,22 @@ export default function MemoryBookScreen() {
                 variant="primary"
                 size="md"
                 isDarkMode={isDarkMode}
-                style={styles.editButton}
+                style={styles.profileActionButton}
+                noBorder={true}
                 accessibilityLabel="Create new memory"
                 accessibilityHint="Opens the memory creation screen"
               />
               <InteractiveButton
                 onPress={handleProfilePress}
+                icon="person-outline"
                 label="View Profile"
                 description="View your profile, stats, and all your memories"
                 variant="ghost"
                 size="md"
                 isDarkMode={isDarkMode}
-                style={[styles.editButton, styles.editButtonOutline]}
+                iconColor={PRIMARY_PURPLE}
+                style={styles.profileActionButton}
+                noBorder={true}
                 accessibilityLabel="View profile"
                 accessibilityHint="Opens your profile page"
               />
@@ -408,12 +536,6 @@ export default function MemoryBookScreen() {
                 styles.insightsToggle,
                 {
                   backgroundColor: colors.chipBg,
-                  borderColor: PRIMARY_PURPLE + "44",
-                  shadowColor: PRIMARY_PURPLE,
-                  shadowOpacity: 0.3,
-                  shadowRadius: 8,
-                  shadowOffset: { width: 0, height: 2 },
-                  elevation: 4,
                 },
               ]}
             >
@@ -499,44 +621,72 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
     borderBottomWidth: 1,
     shadowColor: PRIMARY_PURPLE,
     shadowOpacity: 0.2,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 4,
+    minHeight: Platform.OS === "ios" ? 50 : 48,
   },
   headerLeft: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
+    minWidth: 0, // Allow text to shrink
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === "ios" ? 17 : 16,
     fontWeight: "700",
-    marginLeft: 8,
+    marginLeft: Platform.OS === "ios" ? 8 : 6,
+    flexShrink: 1, // Allow text to shrink if needed
   },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: Platform.OS === "ios" ? 6 : 8,
+    flexShrink: 0, // Prevent icons from shrinking
   },
   headerIcon: {
-    padding: 4,
+    padding: 0,
+    minWidth: Platform.OS === "ios" ? 40 : 36,
+    minHeight: Platform.OS === "ios" ? 40 : 36,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  profileButton: {
+    marginLeft: Platform.OS === "ios" ? 2 : 4,
+    padding: 2,
+    minWidth: Platform.OS === "ios" ? 36 : 32,
+    minHeight: Platform.OS === "ios" ? 36 : 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerAvatar: {
+    width: Platform.OS === "ios" ? 30 : 28,
+    height: Platform.OS === "ios" ? 30 : 28,
+    borderRadius: Platform.OS === "ios" ? 15 : 14,
+    borderWidth: 0,
+  },
+  headerAvatarPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 0,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 80,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
   profileSection: {
-    margin: 16,
+    margin: Platform.OS === "ios" ? 12 : 16,
     borderRadius: 20,
     borderWidth: 1.5,
-    padding: 18,
+    padding: Platform.OS === "ios" ? 16 : 18,
   },
   profileTop: {
     flexDirection: "row",
@@ -547,9 +697,9 @@ const styles = StyleSheet.create({
     marginRight: 20,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: Platform.OS === "ios" ? 70 : 80,
+    height: Platform.OS === "ios" ? 70 : 80,
+    borderRadius: Platform.OS === "ios" ? 35 : 40,
   },
   avatarPlaceholder: {
     borderWidth: 2,
@@ -565,14 +715,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statNumber: {
-    fontSize: 20,
+    fontSize: Platform.OS === "ios" ? 18 : 20,
     fontWeight: "700",
     letterSpacing: 0.3,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: Platform.OS === "ios" ? 12 : 11,
     fontWeight: "500",
-    marginTop: 6,
+    marginTop: Platform.OS === "ios" ? 4 : 6,
     letterSpacing: 0.5,
     textTransform: "uppercase",
     opacity: 0.8,
@@ -582,34 +732,26 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   username: {
-    fontSize: 22,
+    fontSize: Platform.OS === "ios" ? 20 : 22,
     fontWeight: "700",
-    marginBottom: 8,
+    marginBottom: Platform.OS === "ios" ? 6 : 8,
     letterSpacing: 0.5,
   },
   bio: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: Platform.OS === "ios" ? 15 : 14,
+    lineHeight: Platform.OS === "ios" ? 22 : 20,
     fontWeight: "400",
     letterSpacing: 0.2,
     opacity: 0.85,
   },
   profileActions: {
     flexDirection: "row",
-    gap: 8,
+    gap: Platform.OS === "ios" ? 10 : 8,
   },
-  editButton: {
+  profileActionButton: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    gap: 6,
-  },
-  editButtonOutline: {
-    backgroundColor: "transparent",
+    minHeight: Platform.OS === "ios" ? 48 : 46,
+    borderRadius: 14,
   },
   editButtonText: {
     color: "#fff",
@@ -629,9 +771,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginHorizontal: 16,
     marginBottom: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 6,
+    borderRadius: 14,
+    borderWidth: 0, // Remove black border
+    gap: 8,
+    minHeight: Platform.OS === "ios" ? 44 : 42,
   },
   insightsToggleText: {
     fontSize: 13,

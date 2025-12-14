@@ -19,8 +19,10 @@ import { useRegistration } from '@/contexts/RegistrationContext';
 import { storageService } from '@/services/storage.service';
 import { auth } from '@/config/firebase';
 import { Theme } from '@/constants/theme';
+import { useRouter } from 'expo-router';
 
 export default function RegisterStep3() {
+  const router = useRouter();
   const { data, updateStep3, goToPreviousStep, submitRegistration, isLoading } = useRegistration();
 
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -86,9 +88,52 @@ export default function RegisterStep3() {
   };
 
   const handleComplete = async () => {
+    // First, validate that all required data from previous steps is present
+    const missingFields: string[] = [];
+    
+    if (!data.displayName || data.displayName.trim().length === 0) {
+      missingFields.push('Display Name');
+    }
+    if (!data.email || data.email.trim().length === 0) {
+      missingFields.push('Email');
+    }
+    if (!data.password || data.password.trim().length === 0) {
+      missingFields.push('Password');
+    }
+    if (!data.birthDate || data.birthDate.trim().length === 0) {
+      missingFields.push('Birth Date');
+    }
+    if (!data.gender) {
+      missingFields.push('Gender');
+    }
+    if (!data.phoneNumber || data.phoneNumber.trim().length === 0) {
+      missingFields.push('Phone Number');
+    }
+
+    if (missingFields.length > 0) {
+      Alert.alert(
+        'Missing Information',
+        `Please complete all previous steps first. Missing: ${missingFields.join(', ')}.\n\nPlease go back to Step 1 or Step 2 to complete your registration.`,
+        [
+          { text: 'Go to Step 1', onPress: () => router.push('/(auth)/register/step1') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     setUploading(true);
     try {
-      let photoURL = '';
+      // Debug: Log current registration data
+      console.log('📋 Registration data before submit:', {
+        displayName: data.displayName,
+        email: data.email,
+        hasPassword: !!data.password,
+        birthDate: data.birthDate,
+        gender: data.gender,
+        phoneNumber: data.phoneNumber,
+        photoURL: imageUri || data.photoURL || 'none',
+      });
 
       // Upload photo if one was selected
       if (imageUri) {
@@ -106,10 +151,46 @@ export default function RegisterStep3() {
       // Success - navigation handled by AuthContext
     } catch (error: any) {
       console.error('Registration error:', error);
-      Alert.alert(
-        'Registration Failed',
-        error.message || 'An error occurred during registration'
-      );
+      
+      // Get user-friendly error message
+      const errorCode = error?.code || '';
+      let errorTitle = 'Registration Failed';
+      let errorMessage = 'An error occurred during registration. Please try again.';
+
+      // Map Firebase error codes to user-friendly messages
+      switch (errorCode) {
+        case 'auth/email-already-in-use':
+          errorTitle = 'Email Already Registered';
+          errorMessage = 'This email address is already registered. Please use a different email or try logging in instead.';
+          break;
+        case 'auth/invalid-email':
+          errorTitle = 'Invalid Email';
+          errorMessage = 'Please enter a valid email address.';
+          break;
+        case 'auth/weak-password':
+          errorTitle = 'Weak Password';
+          errorMessage = 'Password should be at least 6 characters long.';
+          break;
+        case 'auth/network-request-failed':
+          errorTitle = 'Network Error';
+          errorMessage = 'No internet connection. Please check your connection and try again.';
+          break;
+        case 'auth/too-many-requests':
+          errorTitle = 'Too Many Attempts';
+          errorMessage = 'Too many registration attempts. Please try again later.';
+          break;
+        case 'auth/operation-not-allowed':
+          errorTitle = 'Registration Disabled';
+          errorMessage = 'Email/password registration is currently disabled.';
+          break;
+        default:
+          // Use the error message if available, otherwise use default
+          if (error?.message) {
+            errorMessage = error.message;
+          }
+      }
+
+      Alert.alert(errorTitle, errorMessage);
     } finally {
       setUploading(false);
     }
@@ -198,7 +279,7 @@ export default function RegisterStep3() {
             variant="primary"
             onPress={handleComplete}
             fullWidth
-            disabled={!imageUri || uploading || isLoading}
+            disabled={uploading || isLoading}
             loading={uploading || isLoading}
             style={styles.completeButton}
           >

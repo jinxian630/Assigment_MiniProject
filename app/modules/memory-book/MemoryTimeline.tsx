@@ -23,16 +23,21 @@ import {
   onSnapshot,
   orderBy,
   query,
+  where,
   doc,
   deleteDoc,
+  getDoc,
 } from "firebase/firestore";
 import { ref, deleteObject } from "firebase/storage";
-import { db, storage } from "@/config/firebase";
+import { db, storage, auth } from "@/config/firebase";
 import { extractStoragePathFromURL } from "./utils/storageHelpers";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/hooks/useAuth";
+import BottomNavBar from "./components/BottomNavBar";
+import VoicePlayer from "./components/VoicePlayer";
 
 const PRIMARY_PURPLE = "#a855f7";
 
@@ -48,6 +53,15 @@ type MemoryPost = {
     stress: number;
     clarity: number;
     warmth: number;
+  };
+  voiceJournal?: {
+    audioURL?: string;
+    duration?: number;
+    emoji?: string;
+    feeling?: string;
+    moodTag?: string;
+    prompt?: string;
+    timestamp?: number;
   };
   CreatedUser?: {
     CreatedUserName?: string;
@@ -89,6 +103,7 @@ const getSoftText = (isDark: boolean) => ({
 export default function MemoryTimeline() {
   const router = useRouter();
   const { theme, isDarkMode, toggleTheme } = useTheme();
+  const { user: authUser } = useAuth();
 
   const [memories, setMemories] = useState<MemoryPost[]>([]);
   const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
@@ -96,6 +111,7 @@ export default function MemoryTimeline() {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showNoResults, setShowNoResults] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{
     memoryId: string;
     title: string;
@@ -134,11 +150,23 @@ export default function MemoryTimeline() {
   const softText = getSoftText(isDarkMode);
 
   useEffect(() => {
-    console.log("🔄 MemoryTimeline: Setting up subscription...");
+    const currentUserId = auth.currentUser?.uid || authUser?.id;
+    if (!currentUserId) {
+      console.log("⚠️ No user ID available, skipping memory subscription");
+      setMemories([]);
+      return;
+    }
+
+    console.log("🔄 MemoryTimeline: Setting up subscription for user:", currentUserId);
     const postsRef = collection(db, "MemoryPosts");
-    
-    // Try query with orderBy first
-    const q = query(postsRef, orderBy("startDate", "desc"));
+
+    // Filter by current user's ID
+    // Use query without orderBy first (to avoid index requirement), then sort manually
+    // This is more reliable and doesn't require creating a composite index
+    const q = query(
+      postsRef,
+      where("userId", "==", currentUserId)
+    );
 
     const unsubscribe = onSnapshot(
       q,
@@ -147,42 +175,19 @@ export default function MemoryTimeline() {
         const list: MemoryPost[] = [];
         snapshot.forEach((d) => {
           const data = d.data();
-          console.log("📄 Timeline doc:", d.id, "startDate:", data.startDate);
+          console.log("📄 Timeline doc:", d.id, "startDate:", data.startDate, "userId:", data.userId);
           list.push({ id: d.id, ...(data as any) });
         });
+        // Sort manually by startDate descending (newest first)
+        list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
         console.log("✅ MemoryTimeline: Total memories:", list.length);
         setMemories(list);
       },
       (error: any) => {
         console.error("❌ MemoryTimeline query error:", error);
         console.error("❌ Error code:", error.code);
-        
-        // Fallback: query without orderBy if index is missing
-        if (error.code === "failed-precondition" || error.code === 9) {
-          console.log("⚠️ Index missing, trying fallback query...");
-          const fallbackQ = query(postsRef);
-          
-          return onSnapshot(
-            fallbackQ,
-            (snapshot) => {
-              console.log("📖 MemoryTimeline fallback: Received", snapshot.size, "documents");
-              const list: MemoryPost[] = [];
-              snapshot.forEach((d) => {
-                list.push({ id: d.id, ...(d.data() as any) });
-              });
-              // Sort manually
-              list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
-              console.log("✅ MemoryTimeline fallback: Total memories:", list.length);
-              setMemories(list);
-            },
-            (fallbackError: any) => {
-              console.error("❌ MemoryTimeline fallback also failed:", fallbackError);
-              setMemories([]);
-            }
-          );
-        } else {
-          setMemories([]);
-        }
+        console.error("❌ Error message:", error.message);
+        setMemories([]);
       }
     );
 
@@ -232,20 +237,7 @@ export default function MemoryTimeline() {
 
     if (filtered.length === 0 && memories.length > 0) {
       setTimeout(() => {
-        Alert.alert(
-          "No Results Found",
-          "No memories match your filter criteria. Try adjusting your filters.",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                if (Platform.OS === "ios") {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-              },
-            },
-          ]
-        );
+        setShowNoResults(true);
       }, 300);
     }
   };
@@ -334,6 +326,10 @@ export default function MemoryTimeline() {
         ]).start();
       }
 
+      // Get memory document to check for voice recording before deleting
+      const memoryDoc = await getDoc(doc(db, "MemoryPosts", memoryId));
+      const memoryData = memoryDoc.exists() ? memoryDoc.data() : null;
+
       // Delete the document from Firestore
       await deleteDoc(doc(db, "MemoryPosts", memoryId));
 
@@ -346,12 +342,41 @@ export default function MemoryTimeline() {
             await deleteObject(imageRef);
             console.log("✅ Image deleted from storage:", storagePath);
           } else {
-            console.warn("⚠️ Could not extract storage path from URL:", imageURL);
+            console.warn(
+              "⚠️ Could not extract storage path from URL:",
+              imageURL
+            );
           }
         } catch (err: any) {
           // Image might already be deleted or not exist - this is okay
           if (err.code !== "storage/object-not-found") {
             console.warn("Image deletion warning:", err.message);
+          }
+        }
+      }
+
+      // Delete voice recording from Storage if it exists
+      if (memoryData?.voiceJournal?.audioURL) {
+        try {
+          const audioURL = memoryData.voiceJournal.audioURL;
+          const storagePath = extractStoragePathFromURL(audioURL);
+          if (storagePath) {
+            const audioRef = ref(storage, storagePath);
+            await deleteObject(audioRef);
+            console.log(
+              "✅ Voice recording deleted from storage:",
+              storagePath
+            );
+          } else {
+            console.warn(
+              "⚠️ Could not extract storage path from audio URL:",
+              audioURL
+            );
+          }
+        } catch (err: any) {
+          // Voice recording might already be deleted - this is okay
+          if (err.code !== "storage/object-not-found") {
+            console.warn("Voice recording deletion warning:", err.message);
           }
         }
       }
@@ -371,12 +396,13 @@ export default function MemoryTimeline() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
 
-      let errorMessage = err.message || "Failed to delete memory. Please try again.";
-      
+      let errorMessage =
+        err.message || "Failed to delete memory. Please try again.";
+
       if (err.code === "permission-denied") {
         errorMessage = `Permission denied!\n\nYour Firestore security rules are blocking deletes.\n\nMake sure you:\n1. Are logged in\n2. Own this memory post\n3. Have updated Firestore rules\n\nCheck rules at:\nhttps://console.firebase.google.com/project/${db.app.options.projectId}/firestore/rules`;
       }
-      
+
       Alert.alert("Error", errorMessage);
 
       // Reset animation on error
@@ -405,7 +431,7 @@ export default function MemoryTimeline() {
     imageURL?: string
   ) => {
     console.log("🔔 confirmDelete called with:", { memoryId, title });
-    
+
     // Haptic feedback
     if (Platform.OS === "ios") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -418,13 +444,13 @@ export default function MemoryTimeline() {
 
   const handleConfirmDelete = () => {
     if (!deleteTarget) return;
-    
+
     console.log("✅ User confirmed deletion");
     if (Platform.OS === "ios") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
     setShowDeleteConfirm(false);
-    deleteMemory(deleteTarget.memoryId, deleteTarget.title, deleteTarget.imageURL);
+    deleteMemory(deleteTarget.memoryId, deleteTarget.imageURL);
   };
 
   const handleCancelDelete = () => {
@@ -471,17 +497,12 @@ export default function MemoryTimeline() {
                   },
                 ]}
               >
-                <Ionicons
-                  name="warning"
-                  size={64}
-                  color="#ef4444"
-                />
+                <Ionicons name="warning" size={64} color="#ef4444" />
               </View>
-              <Text style={[styles.confirmTitle, glowText]}>
-                Delete Memory
-              </Text>
+              <Text style={[styles.confirmTitle, glowText]}>Delete Memory</Text>
               <Text style={[styles.confirmSubtitle, softText]}>
-                Are you sure you want to delete "{deleteTarget.title || "this memory"}"?
+                Are you sure you want to delete "
+                {deleteTarget.title || "this memory"}"?
               </Text>
               <Text style={[styles.confirmWarning, softText]}>
                 This action cannot be undone.
@@ -497,7 +518,12 @@ export default function MemoryTimeline() {
                     },
                   ]}
                 >
-                  <Text style={[styles.confirmButtonText, { color: colors.textSoft }]}>
+                  <Text
+                    style={[
+                      styles.confirmButtonText,
+                      { color: colors.textSoft },
+                    ]}
+                  >
                     Cancel
                   </Text>
                 </TouchableOpacity>
@@ -514,6 +540,68 @@ export default function MemoryTimeline() {
                   <Text style={styles.confirmButtonText}>Delete</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        )}
+
+        {/* NO RESULTS OVERLAY */}
+        {showNoResults && (
+          <View
+            style={[
+              styles.successOverlay,
+              {
+                backgroundColor: isDarkMode
+                  ? "rgba(15,23,42,0.95)"
+                  : "rgba(255,255,255,0.95)",
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.successCard,
+                createNeonCardShell(PRIMARY_PURPLE, isDarkMode, {
+                  padding: 24,
+                }),
+                {
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.successIcon,
+                  {
+                    backgroundColor: PRIMARY_PURPLE + "20",
+                    borderColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="filter-outline"
+                  size={64}
+                  color={PRIMARY_PURPLE}
+                />
+              </View>
+              <Text style={[styles.successTitle, glowText]}>
+                No Results Found
+              </Text>
+              <Text style={[styles.successSubtitle, softText]}>
+                No memories match your filter criteria. Try adjusting your
+                filters.
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowNoResults(false);
+                }}
+                style={[
+                  styles.successButton,
+                  {
+                    backgroundColor: PRIMARY_PURPLE,
+                  },
+                ]}
+              >
+                <Text style={styles.successButtonText}>OK</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -594,12 +682,12 @@ export default function MemoryTimeline() {
                   ? `${filteredMemories.length} of ${memories.length}`
                   : memories.length}{" "}
                 {filteredMemories.length === 1 ? "memory" : "memories"}
-                {hasActiveFilters && " (Filtered)"}
+                {hasActiveFilters ? " (Filtered)" : ""}
               </Text>
             )}
           </View>
-          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-            <View style={{ position: "relative" }}>
+          <View style={styles.headerRight}>
+            <View style={{ position: "relative", marginRight: 8 }}>
               <InteractiveButton
                 onPress={() => {
                   setShowFilterModal(true);
@@ -610,11 +698,18 @@ export default function MemoryTimeline() {
                     ? "Filter active - tap to adjust filters"
                     : "Filter memories by mood, color, feeling, or keyword"
                 }
-                variant={hasActiveFilters ? "primary" : "secondary"}
+                variant={hasActiveFilters ? "primary" : "ghost"}
                 size="sm"
                 isDarkMode={isDarkMode}
-                iconColor={hasActiveFilters ? "#FFFFFF" : PRIMARY_PURPLE}
-                iconSize={20}
+                iconColor={
+                  hasActiveFilters
+                    ? "#FFFFFF"
+                    : isDarkMode
+                    ? "#E5E7EB"
+                    : PRIMARY_PURPLE
+                }
+                iconSize={Platform.OS === "ios" ? 26 : 24}
+                noBorder={true}
                 style={styles.filterButton}
                 accessibilityLabel="Filter memories"
                 accessibilityHint="Opens filter options"
@@ -632,11 +727,13 @@ export default function MemoryTimeline() {
               variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
-              iconColor={colors.text}
-              iconSize={20}
-              style={styles.themeToggle}
+              iconColor={PRIMARY_PURPLE}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
+              noBorder={true}
               accessibilityLabel="Toggle theme"
-              accessibilityHint={`Changes to ${isDarkMode ? "light" : "dark"} mode`}
+              accessibilityHint={`Changes to ${
+                isDarkMode ? "light" : "dark"
+              } mode`}
             />
           </View>
         </View>
@@ -813,51 +910,65 @@ export default function MemoryTimeline() {
                                 ]}
                               >
                                 {/* Delete Button - Wrapped in View to prevent parent TouchableOpacity from blocking */}
-                                <View 
-                                  style={{ 
-                                    position: "absolute", 
-                                    top: 12, 
-                                    right: 12, 
-                                    zIndex: 9999,
-                                    pointerEvents: "box-only"
+                                <TouchableOpacity
+                                  onPress={(e) => {
+                                    e.stopPropagation();
+                                    console.log(
+                                      "🗑️ Delete button pressed for:",
+                                      memory.id
+                                    );
+                                    if (Platform.OS === "ios") {
+                                      Haptics.impactAsync(
+                                        Haptics.ImpactFeedbackStyle.Medium
+                                      );
+                                    }
+                                    confirmDelete(
+                                      memory.id,
+                                      memory.title,
+                                      memory.imageURL
+                                    );
                                   }}
-                                  onStartShouldSetResponder={() => true}
-                                  onResponderTerminationRequest={() => false}
+                                  disabled={isDeleting}
+                                  activeOpacity={0.7}
+                                  hitSlop={{
+                                    top: 15,
+                                    bottom: 15,
+                                    left: 15,
+                                    right: 15,
+                                  }}
+                                  style={[
+                                    styles.deleteBtn,
+                                    {
+                                      position: "absolute",
+                                      top: 12,
+                                      right: 12,
+                                      zIndex: 9999,
+                                      backgroundColor: isDeleting
+                                        ? "rgba(168, 85, 247, 0.5)"
+                                        : "rgba(239, 68, 68, 0.95)",
+                                      opacity: isDeleting ? 0.6 : 1,
+                                    },
+                                  ]}
                                 >
-                                  <TouchableOpacity
-                                    onPress={() => {
-                                      console.log("🗑️ Delete button pressed for:", memory.id);
-                                      if (Platform.OS === "ios") {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                      }
-                                      confirmDelete(memory.id, memory.title, memory.imageURL);
-                                    }}
-                                    disabled={isDeleting}
-                                    activeOpacity={0.7}
-                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                    style={[
-                                      styles.deleteBtn,
-                                      {
-                                        backgroundColor: isDeleting
-                                          ? "rgba(168, 85, 247, 0.5)"
-                                          : "rgba(239, 68, 68, 0.95)",
-                                        opacity: isDeleting ? 0.6 : 1,
-                                      },
-                                    ]}
-                                  >
-                                    {isDeleting ? (
-                                      <Ionicons name="hourglass-outline" size={18} color="#fff" />
-                                    ) : (
-                                      <Ionicons name="trash-outline" size={18} color="#fff" />
-                                    )}
-                                  </TouchableOpacity>
-                                </View>
+                                  {isDeleting ? (
+                                    <Ionicons
+                                      name="hourglass-outline"
+                                      size={18}
+                                      color="#fff"
+                                    />
+                                  ) : (
+                                    <Ionicons
+                                      name="trash-outline"
+                                      size={18}
+                                      color="#fff"
+                                    />
+                                  )}
+                                </TouchableOpacity>
 
                                 {/* Card Content - Touchable for expand/collapse */}
                                 <TouchableOpacity
                                   activeOpacity={0.92}
                                   onPress={() => toggleExpand(memory.id)}
-                                  style={{ flex: 1 }}
                                   onPressIn={() => {
                                     // Scale down animation on press
                                     Animated.spring(anims.cardScale, {
@@ -1093,6 +1204,19 @@ export default function MemoryTimeline() {
                                       {memory.description}
                                     </Text>
 
+                                    {/* Voice Journal Player */}
+                                    {memory.voiceJournal?.audioURL && (
+                                      <VoicePlayer
+                                        audioURL={memory.voiceJournal.audioURL}
+                                        duration={memory.voiceJournal.duration}
+                                        emoji={memory.voiceJournal.emoji}
+                                        feeling={memory.voiceJournal.feeling}
+                                        moodTag={memory.voiceJournal.moodTag}
+                                        prompt={memory.voiceJournal.prompt}
+                                        isDarkMode={isDarkMode}
+                                      />
+                                    )}
+
                                     {/* DateTime & Creator Row */}
                                     <View style={styles.metaRow}>
                                       <View style={styles.dateTimeRow}>
@@ -1207,6 +1331,9 @@ export default function MemoryTimeline() {
           isDarkMode={isDarkMode}
           memories={memories as any[]}
         />
+
+        {/* Bottom Navigation */}
+        <BottomNavBar isDarkMode={isDarkMode} />
       </SafeAreaView>
     </GradientBackground>
   );
@@ -1219,35 +1346,36 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 6,
+    paddingHorizontal: Platform.OS === "ios" ? 14 : 12,
+    paddingTop: Platform.OS === "ios" ? 6 : 4,
+    paddingBottom: Platform.OS === "ios" ? 8 : 6,
+    minHeight: Platform.OS === "ios" ? 50 : 48,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === "ios" ? 17 : 16,
     fontWeight: "600",
+    flexShrink: 1,
   },
   headerSubtitle: {
-    fontSize: 11,
+    fontSize: Platform.OS === "ios" ? 10 : 9,
     marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Platform.OS === "ios" ? 10 : 12,
+    flexShrink: 0,
   },
   themeToggle: {
     width: 40,
     alignItems: "flex-end",
   },
   filterButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
-    position: "relative",
-    shadowColor: PRIMARY_PURPLE,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    backgroundColor: "transparent",
   },
   filterBadge: {
     position: "absolute",
@@ -1259,9 +1387,9 @@ const styles = StyleSheet.create({
   },
 
   scrollContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: Platform.OS === "ios" ? 12 : 16,
     paddingTop: 8,
-    paddingBottom: 40,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
 
   /* Empty State */

@@ -20,14 +20,14 @@ type ImageZoomViewerProps = {
   visible: boolean;
   imageURL: string;
   onClose: () => void;
-  onSave?: () => void;
+  onShare?: () => void;
 };
 
 export default function ImageZoomViewer({
   visible,
   imageURL,
   onClose,
-  onSave,
+  onShare,
 }: ImageZoomViewerProps) {
   const [scale, setScale] = useState(1);
   const [translateX, setTranslateX] = useState(0);
@@ -38,11 +38,18 @@ export default function ImageZoomViewer({
   const scaleAnim = React.useRef(new Animated.Value(1)).current;
   const translateXAnim = React.useRef(new Animated.Value(0)).current;
   const translateYAnim = React.useRef(new Animated.Value(0)).current;
+  
+  // Double tap detection
+  const lastTap = React.useRef<number | null>(null);
+  const doubleTapDelay = 300; // milliseconds
 
   const panResponder = React.useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => scale > 1, // Only capture when zoomed
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only capture if there's significant movement (dragging, not tapping)
+        return scale > 1 && (Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5);
+      },
       onPanResponderGrant: () => {
         setLastTranslate({ x: translateX, y: translateY });
       },
@@ -61,6 +68,26 @@ export default function ImageZoomViewer({
       },
     })
   ).current;
+
+  const handleTap = () => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+
+    if (lastTap.current && now - lastTap.current < DOUBLE_TAP_DELAY) {
+      // Double tap detected
+      handleDoubleTap();
+      lastTap.current = null;
+    } else {
+      // Single tap - wait to see if it's a double tap
+      lastTap.current = now;
+      setTimeout(() => {
+        if (lastTap.current === now) {
+          // It was a single tap, do nothing or handle single tap if needed
+          lastTap.current = null;
+        }
+      }, DOUBLE_TAP_DELAY);
+    }
+  };
 
   const handleDoubleTap = () => {
     if (Platform.OS === "ios") {
@@ -128,20 +155,20 @@ export default function ImageZoomViewer({
           >
             <Ionicons name="close" size={28} color="#FFFFFF" />
           </TouchableOpacity>
-          {onSave && (
+          {onShare && (
             <TouchableOpacity
-              onPress={onSave}
-              style={styles.saveButton}
-              accessibilityLabel="Save image to gallery"
+              onPress={onShare}
+              style={styles.shareButton}
+              accessibilityLabel="Share image"
               accessibilityRole="button"
             >
-              <Ionicons name="download-outline" size={24} color="#FFFFFF" />
+              <Ionicons name="share-outline" size={24} color="#FFFFFF" />
             </TouchableOpacity>
           )}
         </View>
 
         {/* Image */}
-        <View style={styles.imageContainer} {...panResponder.panHandlers}>
+        <View style={styles.imageContainer}>
           <Animated.View
             style={[
               styles.imageWrapper,
@@ -153,11 +180,13 @@ export default function ImageZoomViewer({
                 ],
               },
             ]}
+            {...(scale > 1 ? panResponder.panHandlers : {})}
           >
             <TouchableOpacity
               activeOpacity={1}
-              onPress={handleDoubleTap}
+              onPress={handleTap}
               style={styles.imageTouchable}
+              delayPressIn={0}
             >
               <Image
                 source={{ uri: imageURL }}
@@ -205,7 +234,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  saveButton: {
+  shareButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
