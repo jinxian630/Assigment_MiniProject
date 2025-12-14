@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -14,8 +14,8 @@ import { useRouter } from "expo-router";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
-import { Theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
+import { getMoneyColors, toggleThemeSafe } from "./MoneyUI";
 
 import { getAuth } from "firebase/auth";
 import {
@@ -39,35 +39,59 @@ type TransactionItem = {
   dateTime?: number;
 };
 
+function neonGlowStyle(opts: {
+  isDarkmode: boolean;
+  accent: string;
+  backgroundColor: string;
+  borderColor: string;
+  heavy?: boolean;
+}) {
+  const { isDarkmode, accent, backgroundColor, borderColor, heavy } = opts;
+  const bg = isDarkmode ? "rgba(2,6,23,0.92)" : backgroundColor;
+  const glowA = isDarkmode ? 0.55 : 0.22;
+  const glowB = isDarkmode ? 0.35 : 0.14;
+
+  return {
+    backgroundColor: bg,
+    borderWidth: 1,
+    borderColor: isDarkmode ? `${accent}AA` : borderColor,
+    shadowColor: accent,
+    shadowOpacity: heavy ? glowA : glowB,
+    shadowRadius: heavy ? 16 : 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: heavy ? 10 : 6,
+  } as const;
+}
+
 export default function TransactionListScreen({ navigation }: any) {
   const router = useRouter();
   const nav = navigation ?? { goBack: () => router.back() };
 
-  // ---- THEME HOOK (SAFE) ----
-  const theme = useTheme() as any;
-  const isDarkmode: boolean = !!theme?.isDarkmode;
+  const themeCtx = useTheme() as any;
+  const theme = themeCtx?.theme ?? themeCtx;
+  const isDarkmode = !!themeCtx?.isDarkMode;
+
+  const moneyThemeCtx = useMemo(
+    () => ({
+      ...themeCtx,
+      theme: {
+        ...(themeCtx?.theme ?? {}),
+        isDarkmode,
+        colors: theme?.colors ?? themeCtx?.theme?.colors,
+      },
+    }),
+    [themeCtx, theme, isDarkmode]
+  );
+
+  const ui = getMoneyColors(moneyThemeCtx);
+  const { textPrimary, textSecondary, textMuted, cardBorder, cardBg } = ui;
+  const onToggleTheme = () => toggleThemeSafe(moneyThemeCtx);
 
   const auth = getAuth();
   const db = getFirestore();
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<TransactionItem[]>([]);
-
-  // Dynamic colors for better readability
-  const textPrimary = isDarkmode ? "#F9FAFB" : Theme.colors.textPrimary;
-  const textSecondary = isDarkmode ? "#CBD5E1" : Theme.colors.textSecondary;
-  const mutedText = isDarkmode ? "#9CA3AF" : "#6B7280";
-  const cardBorder = isDarkmode ? "#1F2937" : Theme.colors.border;
-
-  const handleToggleTheme = () => {
-    if (typeof theme?.toggleTheme === "function") {
-      theme.toggleTheme();
-    } else if (typeof theme?.setTheme === "function") {
-      theme.setTheme(isDarkmode ? "light" : "dark");
-    } else {
-      console.warn("No theme toggle function found in useTheme()");
-    }
-  };
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -121,23 +145,27 @@ export default function TransactionListScreen({ navigation }: any) {
     [db]
   );
 
-  const totalIncome = items
-    .filter((i) => i.type === "Income")
-    .reduce((sum, i) => sum + i.amount, 0);
-  const totalExpense = items
-    .filter((i) => i.type === "Expense")
-    .reduce((sum, i) => sum + i.amount, 0);
+  const totalIncome = items.filter((i) => i.type === "Income").reduce((sum, i) => sum + i.amount, 0);
+  const totalExpense = items.filter((i) => i.type === "Expense").reduce((sum, i) => sum + i.amount, 0);
   const balance = totalIncome - totalExpense;
+
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const renderThemeToggle = () => (
     <TouchableOpacity
-      onPress={handleToggleTheme}
-      style={styles.themeToggle}
-      activeOpacity={0.8}
+      onPress={onToggleTheme}
+      style={[
+        styles.themeToggle,
+        {
+          borderColor: "#FFD93D",
+          backgroundColor: isDarkmode ? "rgba(15,23,42,0.65)" : "rgba(255,255,255,0.75)",
+        },
+      ]}
+      activeOpacity={0.85}
     >
       <Ionicons
         name={isDarkmode ? "sunny-outline" : "moon-outline"}
-        size={20}
+        size={18}
         color={isDarkmode ? "#FDE68A" : "#0F172A"}
       />
     </TouchableOpacity>
@@ -145,58 +173,48 @@ export default function TransactionListScreen({ navigation }: any) {
 
   const renderHeader = () => (
     <View style={styles.header}>
-      <IconButton
-        icon="arrow-back"
-        variant="secondary"
-        size="medium"
-        onPress={() => nav.goBack()}
-      />
-      <RNText style={[styles.headerTitle, { color: textPrimary }]}>
-        Transaction List
-      </RNText>
+      <IconButton icon="arrow-back" variant="secondary" size="medium" onPress={() => nav.goBack()} />
+      <RNText style={[styles.headerTitle, { color: textPrimary }]}>Transaction List</RNText>
       {renderThemeToggle()}
     </View>
   );
 
   const renderSummaryCard = () => (
-    <Card style={[styles.summaryCard, { borderColor: cardBorder }]}>
-      <RNText style={[styles.cardTitle, { color: textPrimary }]}>
-        Financial Summary
-      </RNText>
+    <Card
+      style={[
+        neonGlowStyle({
+          isDarkmode,
+          accent: "#38BDF8",
+          backgroundColor: cardBg,
+          borderColor: cardBorder,
+          heavy: true,
+        }),
+        styles.summaryCard,
+      ]}
+    >
+      <RNText style={[styles.cardTitle, { color: textPrimary }]}>Financial Summary</RNText>
+
       <View style={styles.summaryContent}>
         <View style={styles.summaryItem}>
-          <RNText style={[styles.summaryLabel, { color: mutedText }]}>
-            Income
-          </RNText>
+          <RNText style={[styles.summaryLabel, { color: textMuted }]}>Income</RNText>
           <RNText style={[styles.summaryValue, { color: "#22C55E" }]}>
             RM {totalIncome.toFixed(2)}
           </RNText>
         </View>
-        <View
-          style={[
-            styles.summaryDivider,
-            { backgroundColor: isDarkmode ? "#1F2937" : Theme.colors.border },
-          ]}
-        />
+
+        <View style={[styles.summaryDivider, { backgroundColor: isDarkmode ? "rgba(148,163,184,0.25)" : "rgba(15,23,42,0.10)" }]} />
+
         <View style={styles.summaryItem}>
-          <RNText style={[styles.summaryLabel, { color: mutedText }]}>
-            Expenses
-          </RNText>
+          <RNText style={[styles.summaryLabel, { color: textMuted }]}>Expenses</RNText>
           <RNText style={[styles.summaryValue, { color: "#F97316" }]}>
             RM {totalExpense.toFixed(2)}
           </RNText>
         </View>
       </View>
+
       <View style={styles.balanceRow}>
-        <RNText style={[styles.balanceLabel, { color: mutedText }]}>
-          Balance
-        </RNText>
-        <RNText
-          style={[
-            styles.balanceValue,
-            { color: balance >= 0 ? "#22C55E" : "#F97316" },
-          ]}
-        >
+        <RNText style={[styles.balanceLabel, { color: textMuted }]}>Balance</RNText>
+        <RNText style={[styles.balanceValue, { color: balance >= 0 ? "#22C55E" : "#F97316" }]}>
           RM {balance.toFixed(2)}
         </RNText>
       </View>
@@ -207,17 +225,18 @@ export default function TransactionListScreen({ navigation }: any) {
     const item = data.item;
     const isIncome = item.type === "Income";
     const colorBar = isIncome ? "#22C55E" : "#F97316";
-    const dateText = item.dateTime
-      ? new Date(item.dateTime).toLocaleDateString()
-      : "";
+    const dateText = item.dateTime ? new Date(item.dateTime).toLocaleDateString() : "";
 
     return (
       <Card
         style={[
-          styles.rowCard,
-          {
+          neonGlowStyle({
+            isDarkmode,
+            accent: colorBar,
+            backgroundColor: cardBg,
             borderColor: cardBorder,
-          },
+          }),
+          styles.rowCard,
         ]}
       >
         <View style={[styles.rowColorBar, { backgroundColor: colorBar }]} />
@@ -226,27 +245,17 @@ export default function TransactionListScreen({ navigation }: any) {
             <RNText style={[styles.rowCategory, { color: textPrimary }]}>
               {item.category || item.type}
             </RNText>
-            <RNText
-              style={[
-                styles.rowAmount,
-                { color: isIncome ? "#22C55E" : "#F97316" },
-              ]}
-            >
+            <RNText style={[styles.rowAmount, { color: colorBar }]}>
               {isIncome ? "+" : "-"} RM {item.amount.toFixed(2)}
             </RNText>
           </View>
+
           <View style={styles.rowSub}>
-            <RNText style={[styles.rowSubText, { color: mutedText }]}>
+            <RNText style={[styles.rowSubText, { color: textMuted }]}>
               {dateText} · {item.account || "Unknown account"}
             </RNText>
             {item.note ? (
-              <RNText
-                style={[
-                  styles.rowNote,
-                  { color: isDarkmode ? "#9CA3AF" : "#9CA3AF" },
-                ]}
-                numberOfLines={1}
-              >
+              <RNText style={[styles.rowNote, { color: textMuted }]} numberOfLines={1}>
                 {item.note}
               </RNText>
             ) : null}
@@ -302,136 +311,84 @@ export default function TransactionListScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: Theme.spacing.screenPadding,
-    paddingTop: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xxl,
-  },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: Theme.spacing.lg,
-  },
-  headerTitle: {
-    fontSize: Theme.typography.fontSizes.xl,
-    fontWeight: Theme.typography.fontWeights.bold,
-  },
-  themeToggle: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#38BDF8",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(15,23,42,0.7)",
-  },
-  summaryCard: {
-    marginBottom: Theme.spacing.md,
-    borderWidth: 1,
-  },
-  cardTitle: {
-    fontSize: Theme.typography.fontSizes.lg,
-    fontWeight: "bold",
-    marginBottom: Theme.spacing.sm,
-  },
-  summaryContent: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-    paddingVertical: Theme.spacing.sm,
-  },
-  summaryItem: {
-    alignItems: "center",
-    flex: 1,
-  },
-  summaryLabel: {
-    fontSize: Theme.typography.fontSizes.sm,
-    marginBottom: Theme.spacing.xs,
-  },
-  summaryValue: {
-    fontSize: Theme.typography.fontSizes.lg,
-    fontWeight: "bold",
-  },
-  summaryDivider: {
-    width: 1,
-    alignSelf: "stretch",
-  },
-  balanceRow: {
-    marginTop: Theme.spacing.sm,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  balanceLabel: {
-    fontSize: Theme.typography.fontSizes.sm,
-  },
-  balanceValue: {
-    fontSize: Theme.typography.fontSizes.md,
-    fontWeight: "700",
-  },
-  rowCard: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    marginBottom: 8,
-    borderWidth: 1,
-  },
-  rowColorBar: {
-    width: 4,
-    borderTopLeftRadius: 10,
-    borderBottomLeftRadius: 10,
-  },
-  rowContent: {
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  rowMain: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  rowCategory: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  rowAmount: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  rowSub: {
-    marginTop: 3,
-  },
-  rowSubText: {
-    fontSize: 11,
-  },
-  rowNote: {
-    fontSize: 11,
-  },
-  hiddenRow: {
-    alignItems: "flex-end",
-    justifyContent: "center",
-    flex: 1,
-    paddingRight: 16,
-    marginBottom: 8,
-  },
-  hiddenButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  hiddenText: {
-    color: "#fff",
-    marginLeft: 6,
-    fontSize: 12,
-  },
-});
+function makeStyles(theme: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      paddingHorizontal: theme.spacing.screenPadding,
+      paddingTop: theme.spacing.md,
+      paddingBottom: theme.spacing.xxl,
+    },
+    center: { flex: 1, justifyContent: "center", alignItems: "center" },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: theme.spacing.md,
+      gap: theme.spacing.sm,
+    },
+    headerTitle: { fontSize: 18, fontWeight: "900" },
+    themeToggle: {
+      width: 36,
+      height: 36,
+      borderRadius: 999,
+      borderWidth: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    summaryCard: { marginBottom: theme.spacing.md },
+    cardTitle: { fontSize: 15, fontWeight: "900", marginBottom: theme.spacing.sm },
+
+    summaryContent: {
+      flexDirection: "row",
+      justifyContent: "space-around",
+      alignItems: "center",
+      paddingVertical: theme.spacing.sm,
+    },
+    summaryItem: { alignItems: "center", flex: 1 },
+    summaryLabel: { fontSize: 12, marginBottom: theme.spacing.xs },
+    summaryValue: { fontSize: 16, fontWeight: "900" },
+    summaryDivider: { width: 1, alignSelf: "stretch" },
+
+    balanceRow: {
+      marginTop: theme.spacing.sm,
+      flexDirection: "row",
+      justifyContent: "space-between",
+    },
+    balanceLabel: { fontSize: 12 },
+    balanceValue: { fontSize: 14, fontWeight: "900" },
+
+    rowCard: {
+      flexDirection: "row",
+      alignItems: "stretch",
+      marginBottom: 8,
+      borderRadius: 16,
+      overflow: "hidden",
+    },
+    rowColorBar: { width: 4 },
+    rowContent: { flex: 1, paddingHorizontal: 10, paddingVertical: 8 },
+    rowMain: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    rowCategory: { fontSize: 14, fontWeight: "800" },
+    rowAmount: { fontSize: 14, fontWeight: "900" },
+    rowSub: { marginTop: 3 },
+    rowSubText: { fontSize: 11 },
+    rowNote: { fontSize: 11 },
+
+    hiddenRow: {
+      alignItems: "flex-end",
+      justifyContent: "center",
+      flex: 1,
+      paddingRight: 16,
+      marginBottom: 8,
+    },
+    hiddenButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+    },
+    hiddenText: { color: "#fff", marginLeft: 6, fontSize: 12, fontWeight: "800" },
+  });
+}

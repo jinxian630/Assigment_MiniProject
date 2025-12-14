@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -6,18 +6,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   Text as RNText,
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import { useRouter } from "expo-router";
-
 import { Button } from "react-native-rapi-ui";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
-import { Theme } from "@/constants/theme";
+import { useTheme } from "@/hooks/useTheme";
+import { getMoneyColors, toggleThemeSafe } from "./MoneyUI";
 
 import { getAuth } from "firebase/auth";
 import {
@@ -39,9 +40,53 @@ type Tx = {
   dateTime?: number;
 };
 
+function neonGlowStyle(opts: {
+  isDarkmode: boolean;
+  accent: string;
+  backgroundColor: string;
+  borderColor: string;
+  heavy?: boolean;
+}) {
+  const { isDarkmode, accent, backgroundColor, borderColor, heavy } = opts;
+  const bg = isDarkmode ? "rgba(2,6,23,0.92)" : backgroundColor;
+  const glowA = isDarkmode ? 0.55 : 0.22;
+  const glowB = isDarkmode ? 0.35 : 0.14;
+
+  return {
+    backgroundColor: bg,
+    borderWidth: 1,
+    borderColor: isDarkmode ? `${accent}AA` : borderColor,
+    shadowColor: accent,
+    shadowOpacity: heavy ? glowA : glowB,
+    shadowRadius: heavy ? 16 : 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: heavy ? 10 : 6,
+  } as const;
+}
+
 export default function PrintTransactionListScreen({ navigation }: any) {
   const router = useRouter();
   const nav = navigation ?? { goBack: () => router.back() };
+
+  const themeCtx = useTheme() as any;
+  const theme = themeCtx?.theme ?? themeCtx;
+  const isDarkmode = !!themeCtx?.isDarkMode;
+
+  const moneyThemeCtx = useMemo(
+    () => ({
+      ...themeCtx,
+      theme: {
+        ...(themeCtx?.theme ?? {}),
+        isDarkmode,
+        colors: theme?.colors ?? themeCtx?.theme?.colors,
+      },
+    }),
+    [themeCtx, theme, isDarkmode]
+  );
+
+  const ui = getMoneyColors(moneyThemeCtx);
+  const { textPrimary, textSecondary, textMuted, cardBorder, cardBg } = ui;
+  const onToggleTheme = () => toggleThemeSafe(moneyThemeCtx);
 
   const auth = getAuth();
   const db = getFirestore();
@@ -147,55 +192,65 @@ export default function PrintTransactionListScreen({ navigation }: any) {
     }
   };
 
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+
   const header = (
     <View style={styles.header}>
-      <IconButton
-        icon="arrow-back"
-        variant="secondary"
-        size="medium"
-        onPress={() => nav.goBack()}
-      />
-      <RNText style={styles.headerTitle}>Print Transactions</RNText>
-      <View style={{ width: 48 }} />
+      <IconButton icon="arrow-back" variant="secondary" size="medium" onPress={() => nav.goBack()} />
+      <RNText style={[styles.headerTitle, { color: textPrimary }]}>Print Transactions</RNText>
+
+      <TouchableOpacity
+        onPress={onToggleTheme}
+        style={[
+          styles.themeToggle,
+          {
+            borderColor: "#FFD93D",
+            backgroundColor: isDarkmode ? "rgba(15,23,42,0.65)" : "rgba(255,255,255,0.75)",
+          },
+        ]}
+        activeOpacity={0.85}
+      >
+        <Ionicons name={isDarkmode ? "sunny-outline" : "moon-outline"} size={18} color={isDarkmode ? "#FDE68A" : "#0F172A"} />
+      </TouchableOpacity>
     </View>
   );
 
   return (
     <GradientBackground>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.container}>
             {header}
 
-            <Card>
-              <RNText style={styles.cardTitle}>Export to PDF</RNText>
-              <RNText style={styles.infoText}>
-                This will generate a PDF containing all your income and expense
-                records, including type, category, account, note and amount.
+            <Card
+              style={[
+                neonGlowStyle({
+                  isDarkmode,
+                  accent: "#A855F7",
+                  backgroundColor: cardBg,
+                  borderColor: cardBorder,
+                  heavy: true,
+                }),
+              ]}
+            >
+              <RNText style={[styles.cardTitle, { color: textPrimary }]}>Export to PDF</RNText>
+              <RNText style={[styles.infoText, { color: textSecondary }]}>
+                This will generate a PDF containing all your income and expense records, including type, category, account, note and amount.
               </RNText>
 
               {loading ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator />
-                  <RNText style={{ marginLeft: 8 }}>
-                    Loading transactions...
-                  </RNText>
+                  <RNText style={{ marginLeft: 8, color: textSecondary }}>Loading transactions...</RNText>
                 </View>
               ) : (
-                <RNText style={styles.infoText}>
-                  Total records: {txs.length}
-                </RNText>
+                <RNText style={[styles.infoText, { color: textMuted }]}>Total records: {txs.length}</RNText>
               )}
 
               <Button
                 text="Print PDF"
                 disabled={!txs.length || loading}
-                leftContent={
-                  <Ionicons name="print-outline" size={18} color="#fff" />
-                }
+                leftContent={<Ionicons name="print-outline" size={18} color="#fff" />}
                 style={{ marginTop: 16 }}
                 onPress={handlePrint}
               />
@@ -207,37 +262,32 @@ export default function PrintTransactionListScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: Theme.spacing.screenPadding,
-    paddingTop: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xxl,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: Theme.spacing.lg,
-  },
-  headerTitle: {
-    fontSize: Theme.typography.fontSizes.xl,
-    fontWeight: Theme.typography.fontWeights.bold,
-    color: Theme.colors.textPrimary,
-  },
-  cardTitle: {
-    fontSize: Theme.typography.fontSizes.lg,
-    fontWeight: Theme.typography.fontWeights.bold,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.sm,
-  },
-  infoText: {
-    fontSize: 13,
-    marginTop: 4,
-  },
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 8,
-  },
-});
+function makeStyles(theme: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      paddingHorizontal: theme.spacing.screenPadding,
+      paddingTop: theme.spacing.md,
+      paddingBottom: theme.spacing.xxl,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: theme.spacing.md,
+      gap: theme.spacing.sm,
+    },
+    headerTitle: { fontSize: 18, fontWeight: "900" },
+    themeToggle: {
+      width: 36,
+      height: 36,
+      borderRadius: 999,
+      borderWidth: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    cardTitle: { fontSize: 15, fontWeight: "900", marginBottom: theme.spacing.sm },
+    infoText: { fontSize: 13, marginTop: 4 },
+    loadingRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
+  });
+}
