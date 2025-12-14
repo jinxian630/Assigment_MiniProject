@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -44,7 +45,32 @@ const MONTH_LABELS = [
   "Nov",
   "Dec",
 ];
+const createNeonCardShell = (
+  accentColor: string,
+  theme: any,
+  extra: any = {}
+) => {
+  return {
+    borderRadius: 24,
 
+    // ❌ no backgroundColor here – let <Card> / theme handle it
+    // backgroundColor: ...
+
+    borderWidth: 1,
+    borderColor: accentColor + "66",
+
+    // glow
+    shadowColor: accentColor,
+    shadowOpacity: theme.isDark ? 0.9 : 0.5,
+    shadowRadius: theme.isDark ? 30 : 20,
+    shadowOffset: { width: 0, height: 0 },
+
+    // Android elevation
+    elevation: theme.isDark ? 18 : 8,
+
+    ...extra,
+  };
+};
 type YearMap = Record<string, number[]>;
 
 /**
@@ -123,7 +149,7 @@ export default function TaskChart() {
   const { theme, toggleTheme }: any = useTheme();
   const db = getFirestore();
   const auth = getAuth();
-
+  const [showAddMenu, setShowAddMenu] = useState(false);
   const isDark = theme?.isDark === true;
 
   const [taskYearCounts, setTaskYearCounts] = useState<YearMap>({});
@@ -463,6 +489,22 @@ export default function TaskChart() {
           fontSize: 11,
           color: secondaryTextColor,
           flexShrink: 1,
+        },
+        /** neon card shell reused – we give background based on theme */
+        neonShellCard: createNeonCardShell(MODULE_COLOR, theme, {
+          padding: theme.spacing.md,
+          backgroundColor: theme.isDark ? "#020617" : "#F9FAFB",
+        }),
+        chipButton: {
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm,
+          borderRadius: 999,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        chipButtonText: {
+          fontSize: theme.typography.fontSizes.sm,
+          fontWeight: theme.typography.fontWeights.semibold,
         },
 
         // 🔵 Floating Add Button
@@ -1153,6 +1195,88 @@ export default function TaskChart() {
             </>
           )}
         </ScrollView>
+        <Modal
+          visible={showAddMenu}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowAddMenu(false)}
+        >
+          <TouchableOpacity
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.4)",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+            activeOpacity={1}
+            onPressOut={() => setShowAddMenu(false)}
+          >
+            <Card
+              style={[
+                styles.neonShellCard,
+                {
+                  width: "70%",
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.neonBottomLine,
+                  {
+                    backgroundColor: MODULE_COLOR,
+                    shadowColor: MODULE_COLOR,
+                    shadowOpacity: 0.9,
+                    shadowRadius: 12,
+                    shadowOffset: { width: 0, height: 0 },
+                  },
+                ]}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.fontSizes.md,
+                  fontWeight: theme.typography.fontWeights.bold,
+                  marginBottom: theme.spacing.sm,
+                  color: theme.colors.textPrimary,
+                }}
+              >
+                Add...
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAddMenu(false);
+                  router.push("/modules/task-management/TaskAdd");
+                }}
+                style={[
+                  styles.chipButton,
+                  {
+                    backgroundColor: MODULE_COLOR,
+                    marginBottom: theme.spacing.sm,
+                  },
+                ]}
+              >
+                <Text style={[styles.chipButtonText, { color: "#fff" }]}>
+                  Add Task
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAddMenu(false);
+                  router.push("/modules/task-management/EventAdd");
+                }}
+                style={[styles.chipButton, { backgroundColor: "#0256ffff" }]}
+              >
+                <Text
+                  style={[
+                    styles.chipButtonText,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  Add Event
+                </Text>
+              </TouchableOpacity>
+            </Card>
+          </TouchableOpacity>
+        </Modal>
 
         {/* 🔻 Bottom Taskbar (Chart = active) */}
         <View style={styles.bottomBar}>
@@ -1202,9 +1326,7 @@ export default function TaskChart() {
           {/* Productivity */}
           <TouchableOpacity
             style={styles.bottomBarItem}
-            onPress={() =>
-              router.push("/modules/task-management/Gamifications")
-            }
+            onPress={() => router.push("/modules/task-management/Gamification")}
           >
             <View style={styles.bottomBarIconWrapper}>
               <Ionicons
@@ -1221,7 +1343,7 @@ export default function TaskChart() {
             <View
               style={[
                 styles.bottomBarIconWrapper,
-                { backgroundColor: "rgba(56,189,248,0.15)" },
+                { backgroundColor: `${MODULE_COLOR}22` },
               ]}
             >
               <Ionicons

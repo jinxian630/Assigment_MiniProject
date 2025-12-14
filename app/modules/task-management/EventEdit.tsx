@@ -178,7 +178,7 @@ export default function EventEdit() {
       modeChipText: (active: boolean) => ({
         fontSize: 13,
         fontWeight: active ? "600" : "400",
-        color: active ? theme.colors.textPrimary : theme.colors.textSecondary,
+        color: active ? "#0f172a" : theme.colors.textSecondary,
       }),
       guestChip: {
         flexDirection: "row" as const,
@@ -194,7 +194,7 @@ export default function EventEdit() {
       },
       guestChipText: {
         fontSize: 11,
-        color: theme.colors.textPrimary,
+        color: "#0f172a",
       },
       guestRow: {
         flexDirection: "row" as const,
