@@ -2,8 +2,72 @@ import { initializeApp, FirebaseApp, getApps } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
 import { getFirestore, Firestore } from "firebase/firestore";
 import { getStorage, FirebaseStorage } from "firebase/storage";
+<<<<<<< HEAD
+// Firebase configuration from environment variables
+// Previous project: myminiproject-f6d7e (deprecated)
+// Current project: miniprojectgp1-a52e3 (active)
+const firebaseConfig = {
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
+};
 
-// Firebase configuration - Friend's project
+// Comprehensive environment variable validation
+const requiredEnvVars = {
+  apiKey: 'EXPO_PUBLIC_FIREBASE_API_KEY',
+  authDomain: 'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN',
+  projectId: 'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
+  storageBucket: 'EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET',
+  messagingSenderId: 'EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
+  appId: 'EXPO_PUBLIC_FIREBASE_APP_ID',
+} as const;
+
+const missingVars: string[] = [];
+const presentVars: string[] = [];
+
+// Check each required variable
+for (const [key, envVarName] of Object.entries(requiredEnvVars)) {
+  const value = firebaseConfig[key as keyof typeof firebaseConfig];
+  if (!value || value === 'undefined' || value === '') {
+    missingVars.push(envVarName);
+  } else {
+    presentVars.push(envVarName);
+  }
+}
+
+// If any variables are missing, throw detailed error
+if (missingVars.length > 0) {
+  console.error('❌ Firebase Configuration Error:');
+  console.error('Missing environment variables:', missingVars);
+  console.error('\nPresent environment variables:', presentVars);
+  console.error('\n📋 Setup Instructions:');
+  console.error('1. Ensure you have a .env file in the project root');
+  console.error('2. Add the following variables:');
+  missingVars.forEach(varName => {
+    console.error(`   ${varName}=your_value_here`);
+  });
+  console.error('3. Restart your development server (npx expo start -c)');
+  console.error('\n💡 Tip: Check .env.example for reference');
+
+  throw new Error(
+    `Missing Firebase environment variables: ${missingVars.join(', ')}. ` +
+    `Please check your .env file and restart the development server.`
+  );
+}
+
+// Validate format of critical fields
+if (firebaseConfig.projectId && !firebaseConfig.authDomain?.includes(firebaseConfig.projectId)) {
+  console.warn(
+    '⚠️  Warning: authDomain does not match projectId. ' +
+    `Expected authDomain to include '${firebaseConfig.projectId}' but got '${firebaseConfig.authDomain}'`
+  );
+=======
+
+// Firebase configuration - MyMiniProjectNkk
 const firebaseConfig = {
   apiKey: "AIzaSyDaXlRP4lPsW566s41jfeoo1UpsJSBOvCw",
   authDomain: "myminiproject-f6d7e.firebaseapp.com",
