@@ -1,23 +1,20 @@
 import chromadb
 
-
-"""Insert (or reset + insert) ONLY task-assistant rule documents into ChromaDB.
-
-Why this exists:
-- Your RAG endpoint (/search_rag_model) retrieves from ChromaDB.
-- If you insert demo data (e.g., US presidents), the model will keep mentioning it.
-
-Run this file once whenever you want to reset your vector DB content.
 """
+Merged Insert_Data.py for BOTH Task + Money rules.
 
+- Stores everything in the SAME ChromaDB collection.
+- Adds metadata so your merged API can filter by module/type/userId.
+- Optional reset (dangerous) is OFF by default.
+"""
 
 PERSIST_PATH = "./vectordb"
 COLLECTION_NAME = "my_data"
 
-# Set True to remove any old/demo content (Obama/Trump/etc.)
-RESET_COLLECTION = False
+RESET_COLLECTION = False   # set True only when you want to wipe everything
+RULE_USER_ID = "__global__"
 
-# ✅ NEW (non-breaking): keep default False so teammate flow stays the same
+INSERT_TASK_RULES = True
 INSERT_MONEY_RULES = True
 
 
@@ -34,11 +31,11 @@ def main() -> None:
     collection = chroma_client.get_or_create_collection(name=COLLECTION_NAME)
 
     # -----------------------------
-    # ✅ Existing Task Assistant Docs (KEEP EXACTLY)
+    # TASK RULES
     # -----------------------------
-    docs = [
-        # Core contract (aligned with your TaskDashboard prompt)
-        """You are an AI task coach inside a university student's mobile task management app.
+    if INSERT_TASK_RULES:
+        task_docs = [
+            """You are an AI task coach inside a university student's mobile task management app.
 Rules:
 - NEVER invent tasks that are not in the list.
 - Ignore tasks that are already Completed: Yes.
@@ -49,31 +46,32 @@ Rules:
 Output must include: Immediate focus / This week / Can postpone.
 Keep the answer short (<= 180 words).
 """,
-
-        # Prioritization heuristics
-        """Prioritization:
+            """Prioritization:
 - Clear overdue tasks first.
 - Then tasks due today.
 - Then tasks due within 7 days.
 - Use PriorityScore as a tie-breaker (higher first).
 - If the user asks about 'this week', only include tasks where DaysUntilDue is between 0 and 7.
 """,
-
-        # Safety: stop unrelated 'current events' suggestions
-        """Safety & relevance:
+            """Safety & relevance:
 - Do NOT mention politics, presidents, elections, or 'current events' unless they appear in the task list.
 - Do NOT suggest creating unrelated tasks.
 - If there are no overdue tasks, say so plainly.
 """,
-    ]
+        ]
 
-    collection.add(
-        ids=["task_rules_v1", "priority_rules_v1", "relevance_rules_v1"],
-        documents=docs,
-    )
+        task_ids = ["task_rules_v1", "priority_rules_v1", "relevance_rules_v1"]
+        task_metas = [
+            {"module": "task-management", "type": "rule", "userId": RULE_USER_ID},
+            {"module": "task-management", "type": "rule", "userId": RULE_USER_ID},
+            {"module": "task-management", "type": "rule", "userId": RULE_USER_ID},
+        ]
+
+        collection.add(ids=task_ids, documents=task_docs, metadatas=task_metas)
+        print(f"✅ Inserted task rules: {len(task_docs)}")
 
     # -----------------------------
-    # ✅ NEW: Money Coach Rules (APPEND ONLY)
+    # MONEY RULES
     # -----------------------------
     if INSERT_MONEY_RULES:
         money_docs = [
@@ -128,29 +126,38 @@ Keep response <= 200 words unless user asks for details.
             "money_output_format_v1",
         ]
 
-        # Non-breaking: this only adds new ids/docs to same collection
-        collection.add(ids=money_ids, documents=money_docs)
-        print(f"✅ Added money coach docs: {len(money_docs)}")
+        money_metas = [
+            {"module": "money-management", "type": "rule", "userId": RULE_USER_ID}
+            for _ in money_docs
+        ]
+
+        collection.add(ids=money_ids, documents=money_docs, metadatas=money_metas)
+        print(f"✅ Inserted money rules: {len(money_docs)}")
 
     # -----------------------------
-    # ✅ Existing sanity test (KEEP)
+    # SANITY TESTS (optional)
     # -----------------------------
-    results = collection.query(query_texts=["How should I prioritize my tasks?"], n_results=3)
-    print("\n🔎 Retrieval test:")
-    for i, doc in enumerate(results.get("documents", [[]])[0]):
-        print(f"--- doc #{i+1} ---")
-        print((doc or "")[:250])
+    if INSERT_TASK_RULES:
+        t = collection.query(
+            query_texts=["How should I prioritize tasks due this week?"],
+            n_results=3,
+            where={"module": "task-management", "type": "rule", "userId": RULE_USER_ID},
+        )
+        print("\n🔎 Task retrieval test:")
+        for i, doc in enumerate(t.get("documents", [[]])[0]):
+            print(f"--- task doc #{i+1} ---")
+            print((doc or "")[:200])
 
-    # ✅ NEW optional sanity test for money
     if INSERT_MONEY_RULES:
-        money_test = collection.query(
+        m = collection.query(
             query_texts=["I spent more than I earned this month. What should I do?"],
             n_results=3,
+            where={"module": "money-management", "type": "rule", "userId": RULE_USER_ID},
         )
         print("\n💰 Money retrieval test:")
-        for i, doc in enumerate(money_test.get("documents", [[]])[0]):
+        for i, doc in enumerate(m.get("documents", [[]])[0]):
             print(f"--- money doc #{i+1} ---")
-            print((doc or "")[:250])
+            print((doc or "")[:200])
 
 
 if __name__ == "__main__":

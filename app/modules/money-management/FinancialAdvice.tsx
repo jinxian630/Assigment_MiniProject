@@ -54,11 +54,14 @@ type Tx = {
 const MODULE_ACCENT = "#FFD93D";
 
 // ✅ Since you're running WEB, localhost is safest (still editable via settings)
-const DEFAULT_RAG_HOST = "http://localhost:8000";
+const DEFAULT_RAG_HOST =
+  Platform.OS === "web"
+    ? "http://127.0.0.1:8000" // FastAPI on your PC
+    : "http://10.10.19.245:8000"; // <== use your laptop's IP
 const RAG_HOST_STORAGE_KEY = "@money_rag_host_v1";
 
 // ✅ Your installed Ollama model
-const DEFAULT_LLM_MODEL = "gemma3:1b";
+const DEFAULT_LLM_MODEL = "deepseek-r1:7b";
 
 function neonGlowStyle(opts: {
   isDarkmode: boolean;
@@ -428,7 +431,7 @@ Keep it <= 180 words.`;
     setAiLoading(true);
     try {
       const resp = await fetchWithTimeout(
-        `${host}/search_rag_model`,
+        `${host}/money-ai/search_rag_model`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -609,7 +612,9 @@ Keep it <= 180 words.`;
               <RNText style={[styles.cardTitle, { color: textPrimary }]}>
                 Server Settings
               </RNText>
-              <RNText style={{ color: textSecondary, marginTop: 6, fontSize: 12 }}>
+              <RNText
+                style={{ color: textSecondary, marginTop: 6, fontSize: 12 }}
+              >
                 For WEB, use{" "}
                 <RNText style={{ fontWeight: "900" }}>localhost:8000</RNText>.
               </RNText>
@@ -653,7 +658,11 @@ Keep it <= 180 words.`;
                   ]}
                   activeOpacity={0.85}
                 >
-                  <Ionicons name="save-outline" size={16} color={MODULE_ACCENT} />
+                  <Ionicons
+                    name="save-outline"
+                    size={16}
+                    color={MODULE_ACCENT}
+                  />
                   <RNText
                     style={{
                       color: textPrimary,
@@ -684,7 +693,11 @@ Keep it <= 180 words.`;
                     <ActivityIndicator />
                   ) : (
                     <>
-                      <Ionicons name="pulse-outline" size={16} color="#38BDF8" />
+                      <Ionicons
+                        name="pulse-outline"
+                        size={16}
+                        color="#38BDF8"
+                      />
                       <RNText
                         style={{
                           color: textPrimary,
@@ -700,12 +713,16 @@ Keep it <= 180 words.`;
               </View>
 
               {!!ragTestMsg && (
-                <RNText style={{ color: textMuted, marginTop: 10, fontSize: 12 }}>
+                <RNText
+                  style={{ color: textMuted, marginTop: 10, fontSize: 12 }}
+                >
                   {ragTestMsg}
                 </RNText>
               )}
 
-              <RNText style={{ color: textSecondary, marginTop: 8, fontSize: 12 }}>
+              <RNText
+                style={{ color: textSecondary, marginTop: 8, fontSize: 12 }}
+              >
                 In use:{" "}
                 <RNText style={{ color: textPrimary, fontWeight: "900" }}>
                   {normalizeHost(ragHost)}
@@ -731,7 +748,9 @@ Keep it <= 180 words.`;
                   <RNText style={[styles.cardTitle, { color: textPrimary }]}>
                     AI Money Coach
                   </RNText>
-                  <RNText style={{ color: textSecondary, marginTop: 4, fontSize: 12 }}>
+                  <RNText
+                    style={{ color: textSecondary, marginTop: 4, fontSize: 12 }}
+                  >
                     Model:{" "}
                     <RNText style={{ fontWeight: "900" }}>
                       {DEFAULT_LLM_MODEL}
@@ -756,7 +775,11 @@ Keep it <= 180 words.`;
                     ]}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="copy-outline" size={16} color={textPrimary} />
+                    <Ionicons
+                      name="copy-outline"
+                      size={16}
+                      color={textPrimary}
+                    />
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -774,7 +797,11 @@ Keep it <= 180 words.`;
                     ]}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="expand-outline" size={16} color={textPrimary} />
+                    <Ionicons
+                      name="expand-outline"
+                      size={16}
+                      color={textPrimary}
+                    />
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -817,7 +844,9 @@ Keep it <= 180 words.`;
               </View>
 
               {!!copyMsg && (
-                <RNText style={{ color: textMuted, marginTop: 8, fontSize: 12 }}>
+                <RNText
+                  style={{ color: textMuted, marginTop: 8, fontSize: 12 }}
+                >
                   {copyMsg}
                 </RNText>
               )}
@@ -971,7 +1000,11 @@ Keep it <= 180 words.`;
                     ]}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="copy-outline" size={16} color={textPrimary} />
+                    <Ionicons
+                      name="copy-outline"
+                      size={16}
+                      color={textPrimary}
+                    />
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -987,7 +1020,11 @@ Keep it <= 180 words.`;
                     ]}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="close-outline" size={18} color={textPrimary} />
+                    <Ionicons
+                      name="close-outline"
+                      size={18}
+                      color={textPrimary}
+                    />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -999,7 +1036,9 @@ Keep it <= 180 words.`;
                 keyboardShouldPersistTaps="handled"
               >
                 <RNText style={[styles.aiText, { color: textPrimary }]}>
-                  {aiError ? `AI Error:\n${aiError}` : aiAnswer || "No AI advice yet."}
+                  {aiError
+                    ? `AI Error:\n${aiError}`
+                    : aiAnswer || "No AI advice yet."}
                 </RNText>
               </ScrollView>
             </Pressable>

@@ -721,7 +721,7 @@ export default function TaskDashboard() {
     setAiLoading(true);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
+    const timeout = setTimeout(() => controller.abort(), 120000);
     try {
       const tasksContext = buildTasksContextForAI();
 
@@ -775,7 +775,7 @@ ${q}
         { role: "user", content: q },
       ];
 
-      const response = await fetch(RAG_API_HOST + "/chat_rag", {
+      const response = await fetch(RAG_API_HOST + "/task-ai/chat_rag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
@@ -784,8 +784,7 @@ ${q}
           text: q,
           userId: uid,
           history: updatedHistory,
-          tasksContext: tasksContext,
-          systemPrompt: fullPrompt,
+          tasksContext,
           n_results: 4,
           temperature: 0.2,
           num_ctx: 4096,
