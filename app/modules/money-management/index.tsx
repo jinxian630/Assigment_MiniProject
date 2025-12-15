@@ -319,7 +319,6 @@ export default function MoneyManagementScreen() {
       const q = query(
         collection(db, TX_COLLECTION),
         where(FIELD_USER_ID as any, "==", user.uid),
-        orderBy(FIELD_DATE_TIME as any, "desc"),
         limit(200)
       );
 
@@ -330,6 +329,13 @@ export default function MoneyManagementScreen() {
             id: d.id,
             ...(d.data() as any),
           }));
+
+          // ✅ Local sort by dateTime (desc) — replaces Firestore orderBy
+          rows.sort((a, b) => {
+            const ta = Number((a as any)?.[FIELD_DATE_TIME] ?? 0);
+            const tb = Number((b as any)?.[FIELD_DATE_TIME] ?? 0);
+            return tb - ta;
+          });
 
           let bal = 0;
           let mIncome = 0;
@@ -367,13 +373,7 @@ export default function MoneyManagementScreen() {
         (err) => {
           console.log("Money index onSnapshot error:", err);
           setIsLoading(false);
-
-          const msg =
-            (err as any)?.message?.includes("index") ||
-            (err as any)?.message?.includes("FAILED_PRECONDITION")
-              ? "Firestore index required for this query.\nOpen the console link shown in your logs and create the index."
-              : "Failed to load transactions. Check Firestore rules / internet.";
-          Alert.alert("Load failed", msg);
+          // ❌ no Alert, fail silently (UI already shows Syncing / Live)
         }
       );
     });

@@ -54,13 +54,16 @@ type Tx = {
 const MODULE_ACCENT = "#FFD93D";
 
 // ✅ Since you're running WEB, localhost is safest (still editable via settings)
+// This screen talks to the backend in fastapi_chroma_Money (root-level endpoints).
+// We use port 8002 by default so it doesn't clash with the Task AI backend.
 const DEFAULT_RAG_HOST =
   Platform.OS === "web"
-    ? "http://127.0.0.1:8000" // FastAPI on your PC
-    : "http://192.168.0.8:8000"; // <== use your laptop's IP
+    ? "http://127.0.0.1:8002" // Money FastAPI on your PC
+    : "http://192.168.0.14:8002"; // <== use your laptop's IP with port 8002
 const RAG_HOST_STORAGE_KEY = "@money_rag_host_v1";
 
-// ✅ Your installed Ollama model
+// ✅ Money backend default model (see fastapi_chroma_Money/api.py)
+// Use the same model as TaskDashboard: "deepseek-r1:7b".
 const DEFAULT_LLM_MODEL = "deepseek-r1:7b";
 
 function neonGlowStyle(opts: {
@@ -213,11 +216,8 @@ export default function FinancialAdviceScreen({ navigation }: any) {
         : "Connected ✅";
       setRagTestMsg(msg);
     } catch (e: any) {
-      setRagTestMsg(
-        `Failed ❌. Ensure backend is running: uvicorn api:app --host 0.0.0.0 --port 8000 (${
-          e?.message || "error"
-        })`
-      );
+      const msg = e?.message || "error";
+      setRagTestMsg(`Failed ❌. Backend not reachable at ${h}/ (${msg}).`);
     } finally {
       setRagTestLoading(false);
     }
@@ -430,8 +430,10 @@ Keep it <= 180 words.`;
 
     setAiLoading(true);
     try {
+      // ✅ Money module uses the standalone FastAPI at fastapi_chroma_Money,
+      // which exposes /search_rag_model at ROOT (no /money-ai prefix).
       const resp = await fetchWithTimeout(
-        `${host}/money-ai/search_rag_model`,
+        `${host}/search_rag_model`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -615,8 +617,12 @@ Keep it <= 180 words.`;
               <RNText
                 style={{ color: textSecondary, marginTop: 6, fontSize: 12 }}
               >
-                For WEB, use{" "}
-                <RNText style={{ fontWeight: "900" }}>localhost:8000</RNText>.
+                Default for WEB:{" "}
+                <RNText style={{ fontWeight: "900" }}>
+                  http://127.0.0.1:8002
+                </RNText>
+                . You can change this if you run the money backend on a
+                different port.
               </RNText>
 
               <RNText style={[styles.inputLabel, { color: textMuted }]}>

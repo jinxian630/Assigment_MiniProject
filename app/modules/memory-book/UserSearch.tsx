@@ -18,12 +18,21 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "@/config/firebase";
+import {
+  collection,
+  onSnapshot,
+  doc,
+  setDoc,
+  deleteDoc,
+  query,
+  where,
+} from "firebase/firestore";
+import { db, auth } from "@/config/firebase";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/hooks/useAuth";
 import BottomNavBar from "./components/BottomNavBar";
 import InteractiveButton from "./components/InteractiveButton";
 
@@ -60,12 +69,14 @@ type User = {
 export default function UserSearch() {
   const router = useRouter();
   const { theme, isDarkMode, toggleTheme } = useTheme();
+  const { user: authUser } = useAuth();
 
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
 
   // Animation refs
   const cardScales = useRef<Record<string, Animated.Value>>({}).current;
@@ -136,6 +147,35 @@ export default function UserSearch() {
     };
   }, []);
 
+  // Subscribe to list of users the current user follows
+  useEffect(() => {
+    const currentUserId = auth.currentUser?.uid || authUser?.id;
+    if (!currentUserId) {
+      setFollowingIds([]);
+      return;
+    }
+
+    const followsRef = collection(db, "follows");
+    const q = query(followsRef, where("followerId", "==", currentUserId));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const ids: string[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          if (data.followingId) ids.push(data.followingId);
+        });
+        setFollowingIds(Array.from(new Set(ids)));
+      },
+      () => {
+        setFollowingIds([]);
+      }
+    );
+
+    return () => unsub();
+  }, [authUser?.id]);
+
   useEffect(() => {
     // Use lowercase "users" (correct collection name per firestore service and rules)
     const usersRef = collection(db, "users");
@@ -162,6 +202,35 @@ export default function UserSearch() {
 
     return () => unsub();
   }, []);
+
+  const currentUserId = auth.currentUser?.uid || authUser?.id;
+
+  const isFollowingUser = (userId: string) => {
+    return followingIds.includes(userId);
+  };
+
+  const toggleFollowUser = async (targetUserId: string) => {
+    if (!currentUserId || !targetUserId || currentUserId === targetUserId) {
+      return;
+    }
+
+    const followDocId = `${currentUserId}_${targetUserId}`;
+    const followRef = doc(db, "follows", followDocId);
+
+    try {
+      if (isFollowingUser(targetUserId)) {
+        await deleteDoc(followRef);
+      } else {
+        await setDoc(followRef, {
+          followerId: currentUserId,
+          followingId: targetUserId,
+          createdAt: Date.now(),
+        });
+      }
+    } catch (err) {
+      console.error("UserSearch toggleFollowUser error:", err);
+    }
+  };
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -544,13 +613,43 @@ export default function UserSearch() {
                             )}
                           </View>
 
-                          {/* Arrow */}
-                          <Ionicons
-                            name="chevron-forward"
-                            size={20}
-                            color={MODULE_PURPLE}
-                            style={styles.chevron}
-                          />
+                          {/* Follow / Following + Arrow */}
+                          <View style={{ alignItems: "flex-end" }}>
+                            <TouchableOpacity
+                              onPress={() => toggleFollowUser(user.id)}
+                              activeOpacity={0.8}
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                borderRadius: 999,
+                                borderWidth: isFollowingUser(user.id) ? 1.5 : 0,
+                                borderColor: MODULE_PURPLE,
+                                backgroundColor: isFollowingUser(user.id)
+                                  ? "transparent"
+                                  : MODULE_PURPLE,
+                                marginBottom: 4,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: "700",
+                                  color: isFollowingUser(user.id)
+                                    ? MODULE_PURPLE
+                                    : "#FFFFFF",
+                                }}
+                              >
+                                {isFollowingUser(user.id) ? "Following" : "Follow"}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <Ionicons
+                              name="chevron-forward"
+                              size={20}
+                              color={MODULE_PURPLE}
+                              style={styles.chevron}
+                            />
+                          </View>
                         </View>
                       </Animated.View>
                     </TouchableOpacity>

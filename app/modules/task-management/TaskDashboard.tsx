@@ -775,7 +775,8 @@ ${q}
         { role: "user", content: q },
       ];
 
-      const response = await fetch(RAG_API_HOST + "/task-ai/chat_rag", {
+      // ✅ Task backend exposes /chat_rag at the root (see fastapi_chroma_fixed/api.py)
+      const response = await fetch(RAG_API_HOST + "/chat_rag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,

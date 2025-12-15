@@ -110,6 +110,7 @@ INTENT_TOP_TODAY = "top_today"
 INTENT_PLAN_WEEK = "plan_week"
 INTENT_CLEAR_OVERDUE = "clear_overdue"
 INTENT_COUNT_OVERDUE = "count_overdue"
+INTENT_CAN_DELAY = "can_delay"
 INTENT_OTHER = "other"
 
 
@@ -125,8 +126,12 @@ def detect_intent(user_text: str) -> str:
         return INTENT_CLEAR_OVERDUE
 
     # plan week
-    if ("next 7 days" in t) or ("plan my week" in t) or ("schedule over the next" in t):
+    if ("next 7 days" in t) or ("plan my week" in t) or ("schedule over the next" in t) or ("weekly schedule" in t):
         return INTENT_PLAN_WEEK
+
+    # which tasks can I delay / postpone
+    if ("can i delay" in t) or ("which tasks can i delay" in t) or ("what can i delay" in t) or ("postpone" in t) or ("can wait" in t):
+        return INTENT_CAN_DELAY
 
     # top today
     if ("top" in t and "today" in t) or ("what should i do today" in t) or ("most urgent today" in t):
@@ -254,6 +259,7 @@ def _reason_for_task(t: ParsedTask) -> str:
 def _suggested_plan(intent: str, selected: List[ParsedTask], all_tasks: List[ParsedTask]) -> List[str]:
     overdue_tasks = [t for t in all_tasks if t.get("daysUntilDue") is not None and t["daysUntilDue"] < 0]
     due_week = [t for t in all_tasks if t.get("daysUntilDue") is not None and 0 <= t["daysUntilDue"] <= 7]
+    later_tasks = [t for t in all_tasks if t.get("daysUntilDue") is not None and t["daysUntilDue"] > 7]
 
     plan: List[str] = []
     if intent == INTENT_CLEAR_OVERDUE:
@@ -279,6 +285,28 @@ def _suggested_plan(intent: str, selected: List[ParsedTask], all_tasks: List[Par
             plan.append("No tasks due within 7 days — use this week to clear overdue work or set due dates/steps.")
         return plan
 
+    if intent == INTENT_CAN_DELAY:
+        # tasks with due date > 7 days away or no due date + low priority
+        safe: List[ParsedTask] = []
+        for t in all_tasks:
+            d = t.get("daysUntilDue")
+            pr = t.get("priority", 0)
+            if d is None:
+                # no due date but very low priority
+                if pr <= 40:
+                    safe.append(t)
+            elif d > 7 and pr <= 80:
+                safe.append(t)
+        if not safe:
+            plan.append("Right now, there are no clearly safe tasks to delay — most items are close in due date or important.")
+        else:
+            safe_sorted = sorted(safe, key=lambda x: (x.get("daysUntilDue") or 9999, x.get("priority", 0)))
+            top_safe = safe_sorted[:5]
+            names = ", ".join([s['title'] for s in top_safe])
+            plan.append("You can consider delaying these lower‑impact tasks: " + names + ".")
+            plan.append("If you need more time this week, move them to later dates or keep them in a 'Later / Someday' list.")
+        return plan
+
     # top today
     if selected:
         plan.append(f"Do **{selected[0]['title']}** first, then move to the next item if time allows.")
@@ -293,6 +321,7 @@ def answer_by_intent(intent: str, user_text: str, tasks: List[ParsedTask]) -> st
     total_active = len(tasks)
     overdue_tasks = [t for t in tasks if t.get("daysUntilDue") is not None and t["daysUntilDue"] < 0]
     due_week = [t for t in tasks if t.get("daysUntilDue") is not None and 0 <= t["daysUntilDue"] <= 7]
+    later_tasks = [t for t in tasks if t.get("daysUntilDue") is not None and t["daysUntilDue"] > 7]
 
     if total_active == 0:
         return "No active tasks found. Add tasks (with due dates) and ask again."
@@ -304,7 +333,7 @@ def answer_by_intent(intent: str, user_text: str, tasks: List[ParsedTask]) -> st
             return f"You have {len(overdue_tasks)} overdue task(s) out of {total_active} active task(s): {names}. Please do it ASAP."
         return f"You have 0 overdue task(s) out of {total_active} active task(s). You're on track."
 
-    # For the 3 main intents, use same safe format
+    # For the main intents, use same safe format
     top = _pick_top3(tasks)
 
     lines: List[str] = []
@@ -333,23 +362,33 @@ def answer_by_intent(intent: str, user_text: str, tasks: List[ParsedTask]) -> st
         else:
             lines.append(f"1. {t1['title']} — due in {d} day(s) due on {due}. {_reason_for_task(t1)}")
 
-    # This week block
+    # This week block (also used for weekly schedule intent)
     lines.append("")
-    lines.append("This week:")
+    if intent == INTENT_PLAN_WEEK:
+        lines.append("This week (suggested schedule):")
+    else:
+        lines.append("This week:")
+
     week_sorted = _sort_by_urgency(due_week)
     # exclude tasks already used as #1
     used_title = immediate[0]["title"] if immediate else top[0]["title"]
     week_sorted = [t for t in week_sorted if t["title"] != used_title]
 
     if week_sorted:
-        # output up to 2 items (#2 and #3)
-        for idx, t in enumerate(week_sorted[:2], start=2):
+        # output up to 3 items (#2, #3, #4) with clearer schedule wording
+        for idx, t in enumerate(week_sorted[:3], start=2):
             d = t.get("daysUntilDue")
             due = t.get("due") or "-"
             if d is None:
                 lines.append(f"{idx}. {t['title']} — no due date. {_reason_for_task(t)}")
             else:
-                lines.append(f"{idx}. {t['title']} — due in {d} day(s) due on {due}. {_reason_for_task(t)}")
+                if intent == INTENT_PLAN_WEEK:
+                    when = "today" if d == 0 else f"in ~{d} day(s)"
+                    lines.append(
+                        f"{idx}. {t['title']} — schedule one focused block {when} (due on {due}). {_reason_for_task(t)}"
+                    )
+                else:
+                    lines.append(f"{idx}. {t['title']} — due in {d} day(s) due on {due}. {_reason_for_task(t)}")
     else:
         lines.append("No tasks due within the next 7 days. Use this time to clear overdue work or prepare ahead.")
 
@@ -411,8 +450,14 @@ def chat_rag(request: ChatRequest):
     # Intent detection
     intent = detect_intent(user_text)
 
-    # If it's one of your 3 main questions (or overdue count), answer locally (NO LLM needed)
-    if intent in (INTENT_TOP_TODAY, INTENT_PLAN_WEEK, INTENT_CLEAR_OVERDUE, INTENT_COUNT_OVERDUE):
+    # If it's one of your main questions (or overdue count / can delay), answer locally (NO LLM needed)
+    if intent in (
+        INTENT_TOP_TODAY,
+        INTENT_PLAN_WEEK,
+        INTENT_CLEAR_OVERDUE,
+        INTENT_COUNT_OVERDUE,
+        INTENT_CAN_DELAY,
+    ):
         answer = answer_by_intent(intent, user_text, tasks)
         return {
             "intent": intent,

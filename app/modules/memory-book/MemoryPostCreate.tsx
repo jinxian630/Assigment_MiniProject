@@ -367,7 +367,7 @@ export default function MemoryPostCreate() {
           } else {
             // Mobile: use XMLHttpRequest to create Blob (same approach as images)
             console.log("📱 Using XMLHttpRequest for mobile platform");
-            
+
             // Use XMLHttpRequest to load the file as a Blob (works with file:// URIs)
             fileData = await new Promise<Blob>((resolve, reject) => {
               const xhr = new XMLHttpRequest();
@@ -376,7 +376,11 @@ export default function MemoryPostCreate() {
                   // Status 0 is for file:// URIs
                   resolve(xhr.response);
                 } else {
-                  reject(new Error(`Failed to load audio: ${xhr.status} ${xhr.statusText}`));
+                  reject(
+                    new Error(
+                      `Failed to load audio: ${xhr.status} ${xhr.statusText}`
+                    )
+                  );
                 }
               };
               xhr.onerror = () => {
@@ -386,9 +390,9 @@ export default function MemoryPostCreate() {
               xhr.open("GET", fileUri, true);
               xhr.send();
             });
-            
+
             console.log("✅ Loaded audio blob, size:", fileData.size, "bytes");
-            
+
             // Validate file size (max 10MB)
             const maxSizeBytes = 10 * 1024 * 1024; // 10MB
             if (fileData.size > maxSizeBytes) {

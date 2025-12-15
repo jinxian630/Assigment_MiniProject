@@ -20,8 +20,14 @@ import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { auth, db } from "@/config/firebase";
-import { doc, getDoc } from "firebase/firestore";
-import { subscribeToUserMemories } from "./utils/firebaseHelpers";
+import {
+  doc,
+  getDoc,
+  collection,
+  query,
+  where,
+  onSnapshot,
+} from "firebase/firestore";
 import type { Memory } from "./utils/memoryHelpers";
 import PostCard from "./components/PostCard";
 import BottomNavBar from "./components/BottomNavBar";
@@ -47,6 +53,9 @@ export default function MemoryBookScreen() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [showAIInsights, setShowAIInsights] = useState(true);
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -136,29 +145,107 @@ export default function MemoryBookScreen() {
     loadUserProfile();
   }, [authUser]);
 
+  // Subscribe to follow relationships for current user
   useEffect(() => {
-    const currentUserId = user?.id || authUser?.id || auth.currentUser?.uid;
+    const currentUserId = auth.currentUser?.uid || authUser?.id || user?.id;
+    if (!currentUserId) {
+      setFollowingIds([]);
+      setFollowersCount(0);
+      setFollowingCount(0);
+      return;
+    }
+
+    const followsRef = collection(db, "follows");
+
+    // People I follow
+    const qFollowing = query(followsRef, where("followerId", "==", currentUserId));
+    const unsubFollowing = onSnapshot(
+      qFollowing,
+      (snap) => {
+        const ids: string[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          if (data.followingId) ids.push(data.followingId);
+        });
+        const uniqueIds = Array.from(new Set(ids));
+        setFollowingIds(uniqueIds);
+        setFollowingCount(uniqueIds.length);
+      },
+      () => {
+        setFollowingIds([]);
+        setFollowingCount(0);
+      }
+    );
+
+    // People who follow me
+    const qFollowers = query(followsRef, where("followingId", "==", currentUserId));
+    const unsubFollowers = onSnapshot(
+      qFollowers,
+      (snap) => {
+        setFollowersCount(snap.size);
+      },
+      () => {
+        setFollowersCount(0);
+      }
+    );
+
+    return () => {
+      unsubFollowing();
+      unsubFollowers();
+    };
+  }, [authUser?.id, user?.id]);
+
+  // Subscribe to memories from current user + followed users
+  useEffect(() => {
+    const currentUserId = auth.currentUser?.uid || authUser?.id || user?.id;
     if (!currentUserId) {
       console.log("⚠️ No user ID available, skipping memory subscription");
       setMemories([]);
       return;
     }
 
-    console.log("🔄 Setting up memory subscription for user:", currentUserId);
-    const unsubscribe = subscribeToUserMemories(currentUserId, (memoriesList) => {
-      console.log("📦 Memory feed: Received", memoriesList.length, "memories for user", currentUserId);
-      console.log(
-        "📋 Memory IDs:",
-        memoriesList.map((m) => m.id)
-      );
-      setMemories(memoriesList);
-    });
+    const allUserIds = Array.from(new Set([currentUserId, ...followingIds]));
+    if (allUserIds.length === 0) {
+      setMemories([]);
+      return;
+    }
 
-    return () => {
-      console.log("🛑 Unsubscribing from memories");
-      unsubscribe();
-    };
-  }, [user?.id, authUser?.id]);
+    console.log("🔄 Setting up memory feed for users:", allUserIds);
+
+    const postsRef = collection(db, "MemoryPosts");
+    let q;
+
+    // Firestore 'in' query supports up to 10 values; if more, fetch all and filter client-side
+    if (allUserIds.length <= 10) {
+      q = query(postsRef, where("userId", "in", allUserIds));
+    } else {
+      q = query(postsRef);
+    }
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        const list: Memory[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          if (!data.userId) return;
+          if (allUserIds.length > 10 && !allUserIds.includes(data.userId)) {
+            return;
+          }
+          list.push({ id: d.id, ...(data as any) });
+        });
+        list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
+        console.log("📦 Memory feed: total posts from self + followed:", list.length);
+        setMemories(list);
+      },
+      (err) => {
+        console.error("Error loading combined memory feed:", err);
+        setMemories([]);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.id, authUser?.id, followingIds]);
 
   // Pulsing glow animation for profile card
   useEffect(() => {
@@ -242,8 +329,8 @@ export default function MemoryBookScreen() {
 
   const stats = {
     posts: memories.length,
-    following: 0, // Can be implemented later
-    followers: 0, // Can be implemented later
+    following: followingCount,
+    followers: followersCount,
   };
 
   return (
