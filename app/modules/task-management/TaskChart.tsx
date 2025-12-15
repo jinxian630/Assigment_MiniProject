@@ -28,8 +28,14 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
 import { useTheme } from "@/hooks/useTheme";
-
-const MODULE_COLOR = "#38BDF8";
+import {
+  MODULE_COLOR,
+  createNeonCardShell,
+  NeonBottomLine,
+} from "./TS FILE/TaskSharedUI";
+import { createChartStyles } from "./styles/chartStyles";
+import { getSegmentButtonConfig, ViewMode } from "./utils/chartUtils";
+import { belongsToCurrentUser } from "./utils/chartDataUtils";
 
 const MONTH_LABELS = [
   "Jan",
@@ -46,91 +52,7 @@ const MONTH_LABELS = [
   "Dec",
 ];
 
-const createNeonCardShell = (
-  accentColor: string,
-  theme: any,
-  extra: any = {}
-) => {
-  return {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: accentColor + "66",
-    shadowColor: accentColor,
-    shadowOpacity: theme.isDark ? 0.9 : 0.5,
-    shadowRadius: theme.isDark ? 30 : 20,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: theme.isDark ? 18 : 8,
-    ...extra,
-  };
-};
-
 type YearMap = Record<string, number[]>;
-
-function belongsToCurrentUser(
-  data: any,
-  uid: string | null,
-  email: string | null
-): boolean {
-  let seenAnyUserField = false;
-  let matched = false;
-
-  const creator =
-    data?.CreatedUser ||
-    data?.createdBy ||
-    data?.owner ||
-    data?.ownerUser ||
-    null;
-
-  if (creator && typeof creator === "object") {
-    seenAnyUserField = true;
-    const creatorId = creator.id ?? creator.uid ?? null;
-    const creatorEmail = creator.email ?? null;
-
-    if (uid && creatorId === uid) matched = true;
-    if (email && creatorEmail === email) matched = true;
-  }
-
-  if (data?.assignedTo) {
-    seenAnyUserField = true;
-    const assigned = data.assignedTo;
-
-    if (typeof assigned === "string") {
-      if (email && assigned === email) matched = true;
-      if (uid && assigned === uid) matched = true;
-    } else if (Array.isArray(assigned)) {
-      if (email && assigned.includes(email)) matched = true;
-      if (uid && assigned.includes(uid)) matched = true;
-    } else if (typeof assigned === "object") {
-      const aId = assigned.id ?? assigned.uid ?? null;
-      const aEmail = assigned.email ?? null;
-      if (uid && aId === uid) matched = true;
-      if (email && aEmail === email) matched = true;
-    }
-  }
-
-  if (Array.isArray(data?.guests)) {
-    seenAnyUserField = true;
-
-    for (const g of data.guests) {
-      if (typeof g === "string") {
-        if (email && g === email) {
-          matched = true;
-          break;
-        }
-      } else if (g && typeof g === "object") {
-        const gId = g.id ?? g.uid ?? null;
-        const gEmail = g.email ?? null;
-        if ((uid && gId === uid) || (email && gEmail === email)) {
-          matched = true;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!seenAnyUserField) return false;
-  return matched;
-}
 
 export default function TaskChart() {
   const router = useRouter();
@@ -148,299 +70,14 @@ export default function TaskChart() {
   const [eventsReady, setEventsReady] = useState(false);
 
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"combined" | "tasks" | "events">(
-    "combined"
-  );
+  const [viewMode, setViewMode] = useState<ViewMode>("combined");
 
   const primaryTextColor = isDark ? "#F9FAFB" : "#0f172a";
   const secondaryTextColor = isDark ? "#9CA3AF" : "#6B7280";
 
   const styles = useMemo(
     () =>
-      StyleSheet.create({
-        container: { flex: 1 },
-
-        headerRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: theme.spacing.screenPadding,
-          paddingTop: theme.spacing.md,
-          paddingBottom: theme.spacing.sm,
-        },
-        headerTitle: {
-          fontSize: theme.typography.fontSizes.xl,
-          fontWeight: theme.typography.fontWeights.bold,
-          color: theme.colors.textPrimary,
-        },
-        headerRight: { flexDirection: "row", alignItems: "center" },
-
-        contentWrapper: {
-          flex: 1,
-          paddingHorizontal: theme.spacing.screenPadding,
-          paddingTop: 10,
-        },
-        contentContainer: { paddingBottom: 140, flexGrow: 1 },
-
-        centerWrapper: {
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-        },
-        emptyText: {
-          marginTop: 8,
-          fontSize: 13,
-          color: secondaryTextColor,
-          textAlign: "center",
-        },
-
-        heroWrapper: { alignItems: "center", marginTop: 12, marginBottom: 18 },
-        heroOrbOuter: {
-          width: 120,
-          height: 120,
-          borderRadius: 60,
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: theme.spacing.md,
-          backgroundColor: `${MODULE_COLOR}10`,
-          shadowColor: MODULE_COLOR,
-          shadowOpacity: isDark ? 0.7 : 0.3,
-          shadowRadius: 20,
-          shadowOffset: { width: 0, height: 10 },
-          elevation: 12,
-        },
-        heroTitleText: {
-          marginTop: 2,
-          fontSize: theme.typography.fontSizes.xl,
-          fontWeight: "700",
-          color: theme.colors.textPrimary,
-        },
-        heroSubtitleText: {
-          marginTop: 4,
-          fontSize: 12,
-          textAlign: "center",
-          color: theme.colors.textSecondary,
-        },
-
-        yearRowLabel: {
-          marginTop: 4,
-          marginLeft: 4,
-          marginBottom: 4,
-          fontSize: 12,
-          color: theme.colors.textPrimary,
-        },
-        yearFilterRow: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          marginBottom: 8,
-        },
-        yearChip: {
-          paddingHorizontal: 14,
-          paddingVertical: 8,
-          borderRadius: 999,
-          borderWidth: 1,
-          marginRight: 8,
-          marginTop: 6,
-          backgroundColor: isDark ? "#020617" : "#F1F5F9",
-          borderColor: isDark ? "#1F2937" : "#CBD5E1",
-        },
-        yearChipActive: {
-          paddingHorizontal: 14,
-          paddingVertical: 8,
-          borderRadius: 999,
-          borderWidth: 1,
-          marginRight: 8,
-          marginTop: 6,
-          backgroundColor: isDark ? "#082F49" : "#DBEAFE",
-          borderColor: MODULE_COLOR,
-        },
-        yearChipText: {
-          fontSize: 13,
-          fontWeight: "500",
-          color: secondaryTextColor,
-        },
-        yearChipTextActive: {
-          fontSize: 13,
-          fontWeight: "600",
-          color: MODULE_COLOR,
-        },
-
-        summaryRow: {
-          flexDirection: "row",
-          justifyContent: "space-between",
-          marginTop: 4,
-        },
-        summaryBox: {
-          flex: 1,
-          marginHorizontal: 4,
-          borderRadius: 14,
-          paddingVertical: 8,
-          paddingHorizontal: 10,
-          backgroundColor: isDark ? "#020617" : "#E0F2FE",
-          borderWidth: 1,
-          borderColor: isDark ? "#1E3A8A" : "#93C5FD",
-          position: "relative",
-          overflow: "hidden",
-        },
-        summaryLabel: { fontSize: 11, color: secondaryTextColor },
-        summaryValue: {
-          marginTop: 2,
-          fontSize: 18,
-          fontWeight: "700",
-          color: primaryTextColor,
-        },
-        summarySub: { marginTop: 2, fontSize: 11, color: secondaryTextColor },
-        neonBottomLine: {
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 3,
-          borderBottomLeftRadius: 14,
-          borderBottomRightRadius: 14,
-        },
-
-        segmentRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          marginTop: 12,
-        },
-        segmentButton: {
-          paddingHorizontal: 14,
-          paddingVertical: 6,
-          borderRadius: 999,
-          borderWidth: 1,
-          borderColor: isDark ? "#4B5563" : "#E5E7EB",
-          backgroundColor: isDark ? "#020617" : "#FFFFFF",
-          marginHorizontal: 4,
-        },
-        segmentButtonActive: {
-          paddingHorizontal: 14,
-          paddingVertical: 6,
-          borderRadius: 999,
-          borderWidth: 1,
-          borderColor: MODULE_COLOR,
-          backgroundColor: isDark ? "#0369A1" : "#DBEAFE",
-          marginHorizontal: 4,
-        },
-        segmentButtonText: { fontSize: 12, color: secondaryTextColor },
-        segmentButtonTextActive: {
-          fontSize: 12,
-          color: MODULE_COLOR,
-          fontWeight: "600",
-        },
-
-        sectionHeaderRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          marginTop: 10,
-          marginLeft: 4,
-        },
-        sectionHeaderIconWrapper: {
-          width: 22,
-          height: 22,
-          borderRadius: 11,
-          alignItems: "center",
-          justifyContent: "center",
-          marginRight: 6,
-          backgroundColor: isDark ? "#0B1120" : "#DBEAFE",
-        },
-        sectionHeaderText: {
-          fontSize: 13,
-          fontWeight: "600",
-          color: theme.colors.textPrimary,
-        },
-
-        chartCard: {
-          borderRadius: 20,
-          paddingVertical: 14,
-          paddingHorizontal: 12,
-          marginTop: 10,
-          backgroundColor: theme.colors.card,
-          borderWidth: 1,
-          borderColor: isDark ? "#1E3A8A" : MODULE_COLOR,
-          shadowColor: MODULE_COLOR,
-          shadowOpacity: isDark ? 0.45 : 0.35,
-          shadowRadius: 20,
-          shadowOffset: { width: 0, height: 8 },
-          elevation: 12,
-        },
-        titleText: {
-          textAlign: "center",
-          marginBottom: 4,
-          fontSize: 16,
-          fontWeight: "700",
-          color: theme.colors.textPrimary,
-        },
-        subtitleText: {
-          textAlign: "center",
-          marginBottom: 8,
-          fontSize: 12,
-          color: secondaryTextColor,
-        },
-
-        legendRow: {
-          flexDirection: "row",
-          justifyContent: "center",
-          marginTop: 4,
-        },
-        legendItem: {
-          flexDirection: "row",
-          alignItems: "center",
-          marginHorizontal: 8,
-        },
-        legendDotTasks: {
-          width: 10,
-          height: 10,
-          borderRadius: 5,
-          marginRight: 4,
-          backgroundColor: "rgba(56, 189, 248, 1)",
-        },
-        legendDotEvents: {
-          width: 10,
-          height: 10,
-          borderRadius: 5,
-          marginRight: 4,
-          backgroundColor: "rgba(34, 197, 94, 1)",
-        },
-        legendLabel: { fontSize: 11, color: secondaryTextColor },
-
-        insightsCard: {
-          marginTop: 10,
-          borderRadius: 18,
-          paddingVertical: 10,
-          paddingHorizontal: 12,
-          backgroundColor: isDark ? "#020617" : "#F9FAFB",
-          borderWidth: 1,
-          borderColor: isDark ? "#1F2937" : "#E5E7EB",
-        },
-        insightsTitleRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          marginBottom: 6,
-        },
-        insightsTitleText: {
-          marginLeft: 6,
-          fontSize: 14,
-          fontWeight: "600",
-          color: primaryTextColor,
-        },
-        insightsHintText: {
-          fontSize: 11,
-          color: secondaryTextColor,
-          marginBottom: 4,
-        },
-        bulletRow: { flexDirection: "row", alignItems: "center", marginTop: 2 },
-        bulletDot: {
-          width: 5,
-          height: 5,
-          borderRadius: 2.5,
-          backgroundColor: MODULE_COLOR,
-          marginRight: 6,
-        },
-        bulletText: { fontSize: 11, color: secondaryTextColor, flexShrink: 1 },
-      }),
+      createChartStyles(theme, isDark, primaryTextColor, secondaryTextColor),
     [theme, isDark, primaryTextColor, secondaryTextColor]
   );
 
@@ -716,11 +353,11 @@ export default function TaskChart() {
         <View style={styles.headerRow}>
           <IconButton
             icon="arrow-back"
-            onPress={() => router.push("/modules/task-management")}
+            onPress={() => router.back()}
             variant="secondary"
             size="medium"
           />
-          <Text style={styles.headerTitle}>Task & Event Analytics</Text>
+          <Text style={styles.headerTitle}>My Chart</Text>
           <View style={styles.headerRight}>
             <IconButton
               icon={isDark ? "moon" : "sunny"}
@@ -744,7 +381,7 @@ export default function TaskChart() {
               <Ionicons
                 name="calendar-outline"
                 size={32}
-                color={secondaryTextColor}
+                color={MODULE_COLOR}
               />
               <Text style={styles.emptyText}>
                 No tasks or events found yet.{"\n"}Create some items to see your
@@ -756,7 +393,7 @@ export default function TaskChart() {
               <Ionicons
                 name="stats-chart-outline"
                 size={32}
-                color={secondaryTextColor}
+                color={MODULE_COLOR}
               />
               <Text style={styles.emptyText}>
                 No data recorded for {activeYear}.{"\n"}Try selecting another
@@ -870,33 +507,49 @@ export default function TaskChart() {
               </View>
 
               <View style={styles.segmentRow}>
-                {(["combined", "tasks", "events"] as const).map((m) => {
+                {(["combined", "tasks", "events"] as ViewMode[]).map((m) => {
                   const active = viewMode === m;
-                  const label =
-                    m === "combined"
-                      ? "Combined"
-                      : m === "tasks"
-                      ? "Tasks"
-                      : "Events";
+                  const config = getSegmentButtonConfig(m);
+
                   return (
                     <TouchableOpacity
                       key={m}
-                      style={
-                        active
-                          ? styles.segmentButtonActive
-                          : styles.segmentButton
-                      }
+                      style={[
+                        styles.segmentButton,
+                        active && styles.segmentButtonActive,
+                        active && {
+                          backgroundColor: config.activeBgColor,
+                          shadowColor: config.activeColor,
+                          shadowOpacity: isDark ? 0.5 : 0.3,
+                        },
+                      ]}
                       onPress={() => setViewMode(m)}
+                      activeOpacity={0.7}
                     >
-                      <Text
-                        style={
-                          active
-                            ? styles.segmentButtonTextActive
-                            : styles.segmentButtonText
-                        }
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
                       >
-                        {label}
-                      </Text>
+                        <Ionicons
+                          name={config.iconName as any}
+                          size={16}
+                          color={
+                            active ? "#0F172A" : isDark ? "#9CA3AF" : "#6B7280"
+                          }
+                        />
+                        <Text
+                          style={
+                            active
+                              ? styles.segmentButtonTextActive
+                              : styles.segmentButtonText
+                          }
+                        >
+                          {config.label}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -940,11 +593,7 @@ export default function TaskChart() {
               {/* INSIGHTS */}
               <Card style={styles.insightsCard}>
                 <View style={styles.insightsTitleRow}>
-                  <Ionicons
-                    name="bulb-outline"
-                    size={18}
-                    color={MODULE_COLOR}
-                  />
+                  <Ionicons name="bulb" size={20} color={MODULE_COLOR} />
                   <Text style={styles.insightsTitleText}>
                     Insights for {activeYear}
                   </Text>
@@ -958,43 +607,34 @@ export default function TaskChart() {
                 <View style={styles.bulletRow}>
                   <View style={styles.bulletDot} />
                   <Text style={styles.bulletText}>
-                    Busiest month:{" "}
-                    <Text
-                      style={{ fontWeight: "600", color: primaryTextColor }}
-                    >
-                      {busiestMonthLabel}
-                    </Text>{" "}
-                    with{" "}
-                    <Text
-                      style={{ fontWeight: "600", color: primaryTextColor }}
-                    >
-                      {busiestMonthTotal}
-                    </Text>{" "}
-                    items.
+                    <Text style={{ fontWeight: "600", color: MODULE_COLOR }}>
+                      Busiest month: {busiestMonthLabel}
+                    </Text>
+                    {" with "}
+                    <Text style={{ fontWeight: "600", color: MODULE_COLOR }}>
+                      {busiestMonthTotal} item
+                      {busiestMonthTotal !== 1 ? "s" : ""}
+                    </Text>
+                    .
                   </Text>
                 </View>
 
                 <View style={styles.bulletRow}>
                   <View style={styles.bulletDot} />
                   <Text style={styles.bulletText}>
-                    Task vs event balance:{" "}
-                    <Text
-                      style={{ fontWeight: "600", color: primaryTextColor }}
-                    >
-                      {tasksSharePercent}%
-                    </Text>{" "}
-                    of your activity is tasks. {workloadBalanceLabel}
+                    <Text style={{ fontWeight: "600", color: MODULE_COLOR }}>
+                      Task vs event balance: {tasksSharePercent}%
+                    </Text>
+                    {" of your activity is tasks. "}
+                    {workloadBalanceLabel}
                   </Text>
                 </View>
 
                 <View style={styles.bulletRow}>
                   <View style={styles.bulletDot} />
                   <Text style={styles.bulletText}>
-                    Average items per month:{" "}
-                    <Text
-                      style={{ fontWeight: "600", color: primaryTextColor }}
-                    >
-                      {avgTotalPerMonth}
+                    <Text style={{ fontWeight: "600", color: MODULE_COLOR }}>
+                      Average items per month: {avgTotalPerMonth}
                     </Text>
                     .
                   </Text>
@@ -1004,10 +644,7 @@ export default function TaskChart() {
           )}
         </ScrollView>
 
-        <TaskBottomBar
-          active="Chart"
-          onPressAdd={() => setShowAddMenu(true)} // only if you keep the add menu
-        />
+        <TaskBottomBar active="Chart" useAddMenu />
       </SafeAreaView>
     </GradientBackground>
   );

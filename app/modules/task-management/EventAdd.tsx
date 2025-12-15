@@ -6,9 +6,10 @@ import {
   Image,
   Platform,
   ScrollView,
+  Text,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Text, TextInput, Button } from "react-native-rapi-ui";
+import { TextInput, Button } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 
@@ -34,6 +35,7 @@ import {
   DatePickerModal,
   formatDateGB,
 } from "../task-management/TS FILE/TaskSharedUI";
+import { createTaskFormStyles } from "./styles/taskFormStyles";
 
 type ModeType = "physical" | "online";
 
@@ -55,77 +57,34 @@ export default function AddEventScreen() {
 
   const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
 
-  const styles = useMemo(() => {
-    const inputShadow = {
-      borderRadius: 10,
-      backgroundColor: theme.colors.card,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      shadowColor: MODULE_COLOR,
-      shadowOpacity: isDark ? 0.55 : 0.2,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 8,
-    };
+  const styles = useMemo(
+    () => createTaskFormStyles(theme, MODULE_COLOR),
+    [theme, MODULE_COLOR]
+  );
 
-    return {
-      label: { fontSize: 13, color: theme.colors.textSecondary },
-
-      inputShadow,
-
-      dateBox: {
-        padding: 12,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        borderRadius: 10,
-        marginTop: 2,
-        backgroundColor: theme.colors.card,
-        flexDirection: "row" as const,
-        alignItems: "center" as const,
-        justifyContent: "space-between" as const,
-        shadowColor: MODULE_COLOR,
-        shadowOpacity: isDark ? 0.55 : 0.35,
-        shadowRadius: 18,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 10,
-      },
-
-      chipRow: {
-        flexDirection: "row" as const,
-        flexWrap: "wrap" as const,
-        marginTop: 4,
-      },
-
-      chip: {
-        flexDirection: "row" as const,
-        alignItems: "center" as const,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 999,
-        backgroundColor: isDark ? "#0f172a" : "#E5F3FF",
-        borderWidth: 1,
-        borderColor: isDark ? "#1f2937" : "#BFDBFE",
-        marginRight: 8,
-        marginBottom: 8,
-      },
-
-      chipText: { fontSize: 11, color: theme.colors.textColor },
-
+  const customStyles = useMemo(
+    () => ({
       thumbsWrap: {
-        marginTop: 10,
+        marginTop: 12,
         flexDirection: "row" as const,
         flexWrap: "wrap" as const,
       },
-
       thumb: {
-        width: 80,
-        height: 80,
-        borderRadius: 10,
-        marginRight: 10,
-        marginBottom: 10,
+        width: 90,
+        height: 90,
+        borderRadius: 12,
+        marginRight: 12,
+        marginBottom: 12,
+        borderWidth: 2,
+        borderColor: theme.colors.border,
       },
-    };
-  }, [isDark, theme]);
+      modeButton: {
+        flex: 1,
+        marginHorizontal: 6,
+      },
+    }),
+    [theme]
+  );
 
   useEffect(() => {
     (async () => {
@@ -288,159 +247,294 @@ export default function AddEventScreen() {
             contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
             keyboardShouldPersistTaps="handled"
           >
-            {/* IMPORTANT: no style arrays on rapi-ui Text (web crash fix) */}
-            <Text style={{ ...styles.label, marginBottom: 4 }}>
-              Event Title
-            </Text>
-            <TextInput
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Meeting, Birthday, Workshop..."
-              containerStyle={styles.inputShadow}
-            />
-
-            <Text style={{ ...styles.label, marginTop: 18, marginBottom: 4 }}>
-              Guests (Gmail)
-            </Text>
-
-            <View style={styles.chipRow}>
-              {guestList.map((guest, index) => (
-                <View key={`${guest}-${index}`} style={styles.chip}>
-                  <Ionicons
-                    name="person-circle-outline"
-                    size={14}
-                    color={MODULE_COLOR}
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text style={styles.chipText}>{guest}</Text>
-                  <TouchableOpacity
-                    onPress={() => handleRemoveGuest(index)}
-                    style={{ marginLeft: 6 }}
-                  >
-                    <Ionicons name="close" size={14} color="#6B7280" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-
-            <View
-              style={{
-                flexDirection: "row",
-                marginTop: 10,
-                alignItems: "center",
-              }}
-            >
-              <View style={{ flex: 1, marginRight: 10 }}>
-                <TextInput
-                  value={guestInput}
-                  onChangeText={setGuestInput}
-                  placeholder="guest@example.com"
-                  containerStyle={styles.inputShadow}
+            {/* Event Information Section */}
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={20}
+                  color={MODULE_COLOR}
+                  style={styles.sectionIcon}
                 />
+                <Text style={styles.sectionTitle}>Event Information</Text>
               </View>
-              <Button
-                text="Add"
-                status="info"
-                onPress={handleAddGuest}
-                style={{ alignSelf: "stretch", paddingHorizontal: 8 }}
+
+              <Text style={styles.label}>Event Title *</Text>
+              <TextInput
+                value={title}
+                onChangeText={setTitle}
+                placeholder="Meeting, Birthday, Workshop..."
+                containerStyle={styles.inputContainer}
+                style={{ fontSize: 14 }}
+              />
+
+              <Text style={[styles.label, { marginTop: 16 }]}>
+                Description (optional)
+              </Text>
+              <TextInput
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Add event details and notes..."
+                multiline
+                numberOfLines={4}
+                containerStyle={styles.inputContainer}
+                style={{ fontSize: 14, minHeight: 80 }}
               />
             </View>
 
-            <Text style={{ ...styles.label, marginTop: 18, marginBottom: 4 }}>
-              Location
-            </Text>
-            <TextInput
-              value={location}
-              onChangeText={setLocation}
-              placeholder="Location / Online link"
-              containerStyle={styles.inputShadow}
-            />
-
-            <Text style={{ ...styles.label, marginTop: 18, marginBottom: 4 }}>
-              Mode
-            </Text>
-            <View style={{ flexDirection: "row", marginVertical: 10 }}>
-              <View style={{ flex: 1, marginRight: 10 }}>
-                <Button
-                  text="Physical"
-                  status={mode === "physical" ? "primary" : "info"}
-                  onPress={() => setMode("physical")}
+            {/* Location & Mode Section */}
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons
+                  name="location-outline"
+                  size={20}
+                  color={MODULE_COLOR}
+                  style={styles.sectionIcon}
                 />
+                <Text style={styles.sectionTitle}>Location & Type</Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Button
-                  text="Online"
-                  status={mode === "online" ? "primary" : "info"}
-                  onPress={() => setMode("online")}
-                />
-              </View>
-            </View>
 
-            <Text style={{ ...styles.label, marginTop: 4, marginBottom: 4 }}>
-              Description
-            </Text>
-            <TextInput
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Event details..."
-              multiline
-              numberOfLines={3}
-              containerStyle={styles.inputShadow}
-            />
+              <Text style={styles.label}>Location *</Text>
+              <TextInput
+                value={location}
+                onChangeText={setLocation}
+                placeholder="Physical address or online meeting link..."
+                containerStyle={styles.inputContainer}
+                style={{ fontSize: 14 }}
+              />
 
-            <Text style={{ ...styles.label, marginTop: 18, marginBottom: 4 }}>
-              Date
-            </Text>
-            <TouchableOpacity
-              onPress={() => setShowCalendar(true)}
-              style={styles.dateBox}
-            >
-              <Text
+              <Text style={[styles.label, { marginTop: 16 }]}>Event Type</Text>
+              <View
                 style={{
-                  color: dueDate
-                    ? theme.colors.textPrimary
-                    : theme.colors.textSecondary,
-                  fontSize: 13,
+                  flexDirection: "row",
+                  marginTop: 8,
+                  justifyContent: "space-between",
                 }}
               >
-                {dueDate ? formatDateGB(dueDate) : "Select date"}
-              </Text>
-              <Ionicons
-                name="calendar-outline"
-                size={18}
-                color={MODULE_COLOR}
-              />
-            </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setMode("physical")}
+                  style={[
+                    customStyles.modeButton,
+                    {
+                      padding: 14,
+                      borderRadius: 12,
+                      borderWidth: 2,
+                      borderColor:
+                        mode === "physical"
+                          ? MODULE_COLOR
+                          : theme.colors.border,
+                      backgroundColor:
+                        mode === "physical"
+                          ? theme.isDark
+                            ? "rgba(56, 189, 248, 0.1)"
+                            : "rgba(56, 189, 248, 0.05)"
+                          : theme.colors.card,
+                      alignItems: "center",
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="location"
+                    size={20}
+                    color={
+                      mode === "physical"
+                        ? MODULE_COLOR
+                        : theme.colors.textSecondary
+                    }
+                  />
+                  <Text
+                    style={{
+                      marginTop: 6,
+                      fontSize: 14,
+                      fontWeight: "600",
+                      color:
+                        mode === "physical"
+                          ? MODULE_COLOR
+                          : theme.colors.textSecondary,
+                    }}
+                  >
+                    Physical
+                  </Text>
+                </TouchableOpacity>
 
-            <DatePickerModal
-              visible={showCalendar}
-              onClose={() => setShowCalendar(false)}
-              selectedDate={dueDate}
-              onSelectDate={setDueDate}
-              theme={theme}
-              title="Select Event Date"
-            />
+                <TouchableOpacity
+                  onPress={() => setMode("online")}
+                  style={[
+                    customStyles.modeButton,
+                    {
+                      padding: 14,
+                      borderRadius: 12,
+                      borderWidth: 2,
+                      borderColor:
+                        mode === "online" ? MODULE_COLOR : theme.colors.border,
+                      backgroundColor:
+                        mode === "online"
+                          ? theme.isDark
+                            ? "rgba(56, 189, 248, 0.1)"
+                            : "rgba(56, 189, 248, 0.05)"
+                          : theme.colors.card,
+                      alignItems: "center",
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="videocam"
+                    size={20}
+                    color={
+                      mode === "online"
+                        ? MODULE_COLOR
+                        : theme.colors.textSecondary
+                    }
+                  />
+                  <Text
+                    style={{
+                      marginTop: 6,
+                      fontSize: 14,
+                      fontWeight: "600",
+                      color:
+                        mode === "online"
+                          ? MODULE_COLOR
+                          : theme.colors.textSecondary,
+                    }}
+                  >
+                    Online
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
-            <Text style={{ ...styles.label, marginTop: 22, marginBottom: 6 }}>
-              Attachments (optional)
-            </Text>
-            <Button text="Add Attachment" onPress={pickAttachment} />
-
-            <View style={styles.thumbsWrap}>
-              {attachments.map((uri, index) => (
-                <Image
-                  key={`${uri}-${index}`}
-                  source={{ uri }}
-                  style={styles.thumb}
+            {/* Guests Section */}
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons
+                  name="people-outline"
+                  size={20}
+                  color={MODULE_COLOR}
+                  style={styles.sectionIcon}
                 />
-              ))}
+                <Text style={styles.sectionTitle}>Guests</Text>
+              </View>
+
+              {guestList.length > 0 && (
+                <View style={styles.chipContainer}>
+                  {guestList.map((guest, index) => (
+                    <View key={`${guest}-${index}`} style={styles.chip}>
+                      <Ionicons
+                        name="person-circle-outline"
+                        size={16}
+                        color={MODULE_COLOR}
+                      />
+                      <Text style={styles.chipText}>{guest}</Text>
+                      <TouchableOpacity
+                        onPress={() => handleRemoveGuest(index)}
+                        style={styles.chipClose}
+                      >
+                        <Ionicons
+                          name="close-circle"
+                          size={18}
+                          color="#6B7280"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.addInputRow}>
+                <View style={styles.addInputContainer}>
+                  <TextInput
+                    value={guestInput}
+                    onChangeText={setGuestInput}
+                    placeholder="Enter guest's Gmail address..."
+                    containerStyle={styles.inputContainer}
+                    style={{ fontSize: 14 }}
+                  />
+                </View>
+                <Button
+                  text="Add"
+                  status="info"
+                  onPress={handleAddGuest}
+                  style={{ paddingHorizontal: 20, minWidth: 80 }}
+                />
+              </View>
+            </View>
+
+            {/* Date & Attachments Section */}
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons
+                  name="time-outline"
+                  size={20}
+                  color={MODULE_COLOR}
+                  style={styles.sectionIcon}
+                />
+                <Text style={styles.sectionTitle}>Schedule & Media</Text>
+              </View>
+
+              <Text style={styles.label}>Event Date *</Text>
+              <TouchableOpacity
+                onPress={() => setShowCalendar(true)}
+                style={styles.dateButton}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.dateButtonText,
+                    {
+                      color: dueDate
+                        ? theme.colors.textPrimary
+                        : theme.colors.textSecondary,
+                    },
+                  ]}
+                >
+                  {dueDate ? formatDateGB(dueDate) : "Select event date"}
+                </Text>
+                <Ionicons
+                  name="calendar-outline"
+                  size={20}
+                  color={MODULE_COLOR}
+                />
+              </TouchableOpacity>
+
+              <DatePickerModal
+                visible={showCalendar}
+                onClose={() => setShowCalendar(false)}
+                selectedDate={dueDate}
+                onSelectDate={setDueDate}
+                theme={theme}
+                title="Select Event Date"
+              />
+
+              <Text style={[styles.label, { marginTop: 16 }]}>
+                Attachments (optional)
+              </Text>
+              <Button
+                text="Add Images"
+                status="info"
+                onPress={pickAttachment}
+                style={{ marginTop: 8 }}
+              />
+
+              {attachments.length > 0 && (
+                <View style={customStyles.thumbsWrap}>
+                  {attachments.map((uri, index) => (
+                    <Image
+                      key={`${uri}-${index}`}
+                      source={{ uri }}
+                      style={customStyles.thumb}
+                    />
+                  ))}
+                </View>
+              )}
             </View>
 
             <Button
               text="Create Event"
               status="primary"
               onPress={handleAddEvent}
-              style={{ marginTop: 30 }}
+              style={styles.submitButton}
             />
           </ScrollView>
         </SafeAreaView>

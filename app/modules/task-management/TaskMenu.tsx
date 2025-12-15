@@ -48,8 +48,11 @@ import {
   awardSubtaskCompletion,
   removeSubtaskCompletion,
 } from "./taskGamifications";
-
-const MODULE_COLOR = "#38BDF8";
+import {
+  MODULE_COLOR,
+  createNeonCardShell,
+  NeonBottomLine,
+} from "./TS FILE/TaskSharedUI";
 
 // ------------ TYPES ------------
 

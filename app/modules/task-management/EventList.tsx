@@ -317,76 +317,136 @@ export default function EventListScreen() {
         },
         eventLeftColumn: {
           alignItems: "center",
-          marginRight: theme.spacing.md,
+          marginRight: 14,
         },
         eventDateBubble: {
-          borderRadius: 12,
-          paddingHorizontal: 10,
-          paddingVertical: 4,
+          borderRadius: 14,
+          paddingHorizontal: 12,
+          paddingVertical: 8,
           alignItems: "center",
           justifyContent: "center",
-          marginBottom: 6,
+          marginBottom: 8,
+          minWidth: 64,
         },
-        eventDateDay: { fontSize: 18, fontWeight: "700" },
-        eventDateMonth: { fontSize: 10, letterSpacing: 1 },
+        eventDateDay: {
+          fontSize: 22,
+          fontWeight: "700",
+          letterSpacing: -0.5,
+        },
+        eventDateMonth: {
+          fontSize: 11,
+          fontWeight: "600",
+          letterSpacing: 0.8,
+          marginTop: 2,
+        },
         eventModeTag: {
-          borderRadius: 999,
-          paddingHorizontal: 8,
-          paddingVertical: 3,
+          borderRadius: 12,
+          paddingHorizontal: 10,
+          paddingVertical: 5,
         },
-        eventModeText: { fontSize: 10, fontWeight: "600" },
-        eventMain: { flex: 1 },
+        eventModeText: {
+          fontSize: 10,
+          fontWeight: "700",
+          letterSpacing: 0.3,
+        },
+        eventMain: {
+          flex: 1,
+        },
         eventTitleRow: {
           flexDirection: "row",
           justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 4,
+          alignItems: "flex-start",
+          marginBottom: 8,
         },
         eventTitle: {
           flex: 1,
           marginRight: 8,
-          fontSize: theme.typography.fontSizes.md,
-          fontWeight: theme.typography.fontWeights.semibold,
+          fontSize: 16,
+          fontWeight: "700",
+          letterSpacing: 0.2,
         },
         statusTag: {
-          borderRadius: 999,
+          borderRadius: 12,
           paddingHorizontal: 10,
-          paddingVertical: 3,
+          paddingVertical: 5,
         },
-        statusText: { fontSize: 10, fontWeight: "700" },
+        statusText: {
+          fontSize: 10,
+          fontWeight: "700",
+          letterSpacing: 0.5,
+        },
         metaRow: {
           flexDirection: "row",
           alignItems: "flex-start",
-          marginTop: 2,
+          marginBottom: 6,
         },
         metaLabel: {
+          fontSize: 12,
+          fontWeight: "600",
+          color: theme.colors.textSecondary,
+          minWidth: 90,
+          marginRight: 8,
+        },
+        metaValue: {
+          fontSize: 12,
+          fontWeight: "400",
+          color: theme.colors.textPrimary,
+          flex: 1,
+          lineHeight: 18,
+        },
+        infoRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          marginBottom: 8,
+        },
+        infoIcon: {
+          marginRight: 8,
+        },
+        descriptionText: {
+          fontSize: 13,
+          fontWeight: "400",
+          color: theme.colors.textPrimary,
+          lineHeight: 20,
+          marginTop: 4,
+        },
+        createdByText: {
           fontSize: 11,
           color: theme.colors.textSecondary,
-          marginRight: 4,
-        },
-        metaValue: { fontSize: 11, color: theme.colors.textPrimary },
-        createdByText: {
-          fontSize: 10,
-          color: theme.colors.textSecondary,
-          marginTop: 6,
+          marginTop: 12,
           fontStyle: "italic",
         },
-        eventImageContainer: { marginTop: 6, marginBottom: 2 },
+        eventImageContainer: {
+          marginTop: 10,
+          marginBottom: 10,
+        },
         eventImage: {
-          width: 70,
-          height: 70,
+          width: 80,
+          height: 80,
           borderRadius: 12,
           backgroundColor: isDark ? "#020617" : "#E5E7EB",
         },
         noImageBox: {
-          width: 70,
-          height: 70,
+          width: 80,
+          height: 80,
           borderRadius: 12,
           backgroundColor: isDark ? "#020617" : "#E5E7EB",
           justifyContent: "center",
           alignItems: "center",
           borderWidth: 1,
           borderColor: isDark ? "#1F2937" : "#E5E7EB",
+        },
+        guestPill: {
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderRadius: 12,
+          borderWidth: 1,
+          alignSelf: "flex-start",
+        },
+        guestPillText: {
+          fontSize: 11,
+          fontWeight: "600",
         },
       }),
     [theme, isDark]
@@ -675,7 +735,13 @@ body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe U
       const isOnline = (item.mode || "").toLowerCase() === "online";
       const locationLabel = isOnline ? "Online Link" : "Location";
       const locationValue = item.location || "—";
-      const guestLabel = normalizeGuests(item.guests);
+
+      // Calculate guest count
+      const guestCount = Array.isArray(item.guests)
+        ? item.guests.length
+        : typeof item.guests === "string" && item.guests.trim()
+        ? item.guests.split(",").filter((g: string) => g.trim()).length
+        : 0;
 
       const past = isEventPast(item.date);
       const neonColor = past ? "rgba(148,163,184,0.45)" : MODULE_COLOR;
@@ -755,7 +821,7 @@ body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe U
             <View style={styles.eventMain}>
               <View style={styles.eventTitleRow}>
                 <Text
-                  numberOfLines={1}
+                  numberOfLines={2}
                   style={[
                     styles.eventTitle,
                     {
@@ -774,70 +840,90 @@ body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe U
                 </View>
               </View>
 
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>Date:</Text>
+              {/* Date with icon */}
+              <View style={styles.infoRow}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={16}
+                  color={MODULE_COLOR}
+                  style={styles.infoIcon}
+                />
                 <Text style={styles.metaValue}>
                   {item.date ? formatDateGB(item.date) : "—"}
                 </Text>
               </View>
 
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>{locationLabel}:</Text>
-                <Text style={[styles.metaValue, { flexShrink: 1 }]}>
-                  {locationValue}
-                </Text>
-                {locationValue !== "—" && (
+              {/* Location with icon */}
+              {locationValue !== "—" && (
+                <View style={styles.infoRow}>
+                  <Ionicons
+                    name={isOnline ? "link-outline" : "location-outline"}
+                    size={16}
+                    color={MODULE_COLOR}
+                    style={styles.infoIcon}
+                  />
+                  <Text
+                    style={[styles.metaValue, { flex: 1 }]}
+                    numberOfLines={1}
+                  >
+                    {locationValue}
+                  </Text>
                   <TouchableOpacity
                     onPress={() => handleCopyLocation(locationValue)}
+                    style={{ marginLeft: 6, padding: 4 }}
+                    activeOpacity={0.7}
                   >
                     <Ionicons
                       name="copy-outline"
-                      size={13}
+                      size={16}
                       color={MODULE_COLOR}
-                      style={{ marginLeft: 6 }}
                     />
                   </TouchableOpacity>
-                )}
-              </View>
-
-              <View style={styles.eventImageContainer}>
-                {firstImage ? (
-                  <Image
-                    source={{ uri: firstImage }}
-                    style={styles.eventImage}
-                  />
-                ) : (
-                  <View style={styles.noImageBox}>
-                    <Ionicons
-                      name="image-outline"
-                      size={24}
-                      color={theme.colors.textSecondary}
-                    />
-                  </View>
-                )}
-              </View>
-
-              {!!item.description && (
-                <View style={styles.metaRow}>
-                  <Text style={styles.metaLabel}>Details:</Text>
-                  <Text
-                    style={[styles.metaValue, { flexShrink: 1 }]}
-                    numberOfLines={2}
-                  >
-                    {item.description}
-                  </Text>
                 </View>
               )}
 
-              <View style={styles.metaRow}>
-                <Text style={styles.metaLabel}>Guest Email:</Text>
-                <Text
-                  style={[styles.metaValue, { flexShrink: 1 }]}
-                  numberOfLines={1}
-                >
-                  {guestLabel}
+              {/* Description */}
+              {!!item.description && (
+                <Text style={styles.descriptionText} numberOfLines={3}>
+                  {item.description}
                 </Text>
-              </View>
+              )}
+
+              {/* Image */}
+              {firstImage && (
+                <View style={styles.eventImageContainer}>
+                  <Image
+                    source={{ uri: firstImage }}
+                    style={styles.eventImage}
+                    resizeMode="cover"
+                  />
+                </View>
+              )}
+
+              {/* Guest pill */}
+              {guestCount > 0 && (
+                <View
+                  style={[
+                    styles.guestPill,
+                    {
+                      borderColor: `${MODULE_COLOR}55`,
+                      backgroundColor: `${MODULE_COLOR}14`,
+                      marginTop: 8,
+                      alignSelf: "flex-start",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="people-outline"
+                    size={12}
+                    color={MODULE_COLOR}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.guestPillText, { color: MODULE_COLOR }]}>
+                    {guestCount} guest{guestCount !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+              )}
 
               <Text style={styles.createdByText}>
                 Created By: {item.createdBy?.name || "Unknown"}

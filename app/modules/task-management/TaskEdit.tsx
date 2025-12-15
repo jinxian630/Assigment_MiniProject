@@ -2,19 +2,17 @@ import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
   KeyboardAvoidingView,
-  Modal,
   ScrollView,
   Platform,
-  Pressable,
   TouchableOpacity,
   Text,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { TextInput, Button } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
-import { getFirestore, addDoc, collection } from "firebase/firestore";
-import { getAuth, User } from "firebase/auth";
-import { Calendar } from "react-native-calendars";
+import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
@@ -24,26 +22,30 @@ import {
   MODULE_COLOR,
   DatePickerModal,
   formatDateGB,
-} from "../task-management/TS FILE/TaskSharedUI";
+} from "./TS FILE/TaskSharedUI";
 import { createTaskFormStyles } from "./styles/taskFormStyles";
 
-/* ------------------------Add Task Screen-------------------------------- */
-
-export default function AddTaskScreen() {
+export default function TaskEditScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id?: string }>();
   const { theme, toggleTheme }: any = useTheme();
+
+  const db = getFirestore();
+  const isDark = theme.isDark;
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const [taskName, setTaskName] = useState("");
   const [details, setDetails] = useState("");
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [startDate, setStartDate] = useState<Date | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [showStartCalendar, setShowStartCalendar] = useState(false);
 
   const [assignedInput, setAssignedInput] = useState("");
   const [assignedList, setAssignedList] = useState<string[]>([]);
+
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showStartCalendar, setShowStartCalendar] = useState(false);
 
   const gmailPattern = useMemo(() => /^[a-zA-Z0-9._%+-]+@gmail\.com$/, []);
 
@@ -62,21 +64,68 @@ export default function AddTaskScreen() {
     []
   );
 
-  const emptyState = useCallback(() => {
-    setTaskName("");
-    setDetails("");
-    setDueDate(null);
-    setStartDate(null);
-    setAssignedInput("");
-    setAssignedList([]);
-  }, []);
+  /* -------------------- HANDLE MISSING ID SAFELY -------------------- */
+  useEffect(() => {
+    if (id) return;
+    Alert.alert("Error", "No task selected");
+    router.back();
+  }, [id, router]);
 
+  /* -------------------------- LOAD TASK -------------------------- */
+  useEffect(() => {
+    if (!id) return;
+
+    const load = async () => {
+      try {
+        const refDoc = doc(db, "Tasks", id);
+        const snap = await getDoc(refDoc);
+
+        if (!snap.exists()) {
+          Alert.alert("Error", "Task not found");
+          router.back();
+          return;
+        }
+
+        const data: any = snap.data();
+
+        setTaskName(data.taskName || "");
+        setDetails(data.details || "");
+
+        if (data.assignedTo) {
+          const assigned = Array.isArray(data.assignedTo)
+            ? data.assignedTo
+            : typeof data.assignedTo === "string"
+            ? [data.assignedTo]
+            : [];
+          setAssignedList(assigned);
+        }
+
+        if (data.startDate) {
+          setStartDate(new Date(data.startDate));
+        }
+
+        if (data.dueDate) {
+          setDueDate(new Date(data.dueDate));
+        }
+      } catch (e) {
+        console.error(e);
+        Alert.alert("Error", "Failed to load task");
+        router.back();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [id, db, router]);
+
+  /* --------------------------- HANDLERS --------------------------- */
   const handleAddAssignee = useCallback(() => {
     const trimmed = assignedInput.trim();
     if (!trimmed) return;
 
     if (!gmailPattern.test(trimmed)) {
-      alert("Please enter a valid Gmail address");
+      Alert.alert("Validation", "Please enter a valid Gmail address");
       return;
     }
 
@@ -84,7 +133,7 @@ export default function AddTaskScreen() {
       (email) => email.toLowerCase() === trimmed.toLowerCase()
     );
     if (exists) {
-      alert("This Gmail is already added");
+      Alert.alert("Info", "This Gmail is already added");
       return;
     }
 
@@ -96,58 +145,104 @@ export default function AddTaskScreen() {
     setAssignedList((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleAddTask = useCallback(async () => {
-    if (!taskName.trim()) return alert("Task name is required");
-    if (!dueDate) return alert("Please select a due date");
-    if (assignedList.length === 0)
-      return alert("Please add at least one user's Gmail");
+  const handleSaveTask = useCallback(async () => {
+    if (!id) return;
+
+    if (!taskName.trim()) {
+      Alert.alert("Validation", "Task name is required");
+      return;
+    }
+    if (!dueDate) {
+      Alert.alert("Validation", "Please select a due date");
+      return;
+    }
+    if (assignedList.length === 0) {
+      Alert.alert("Validation", "Please add at least one user's Gmail");
+      return;
+    }
 
     if (startDate && dueDate && startDate.getTime() > dueDate.getTime()) {
-      return alert("Start date cannot be after due date.");
+      Alert.alert("Validation", "Start date cannot be after due date");
+      return;
     }
-
-    setLoading(true);
-    const auth = getAuth();
-    const db = getFirestore();
-
-    if (!auth.currentUser) {
-      setLoading(false);
-      return alert("You must be logged in to add a task.");
-    }
-
-    const currentUser: User = auth.currentUser;
-    const createdAt = Date.now();
 
     try {
-      await addDoc(collection(db, "Tasks"), {
+      setSaving(true);
+      const refDoc = doc(db, "Tasks", id);
+
+      await updateDoc(refDoc, {
         taskName: taskName.trim(),
         details: details.trim(),
         assignedTo: assignedList,
         startDate: startDate ? startDate.getTime() : null,
         dueDate: dueDate.getTime(),
-        completed: false,
-        createdAt,
-        updatedAt: createdAt,
-        reminderSet: true,
-        CreatedUser: {
-          id: currentUser.uid,
-          name: currentUser.displayName,
-          photo: currentUser.photoURL,
-          email: currentUser.email || "",
-        },
-        reminderIds: [],
+        updatedAt: Date.now(),
       });
 
-      emptyState();
-      setLoading(false);
-      alert("Task added!");
+      Alert.alert("Success", "Task updated successfully!");
       router.back();
     } catch (err: any) {
-      setLoading(false);
-      alert("Error adding task: " + (err?.message || "Unknown error"));
+      console.error(err);
+      Alert.alert("Error", err?.message || "Failed to update task");
+    } finally {
+      setSaving(false);
     }
-  }, [taskName, details, dueDate, startDate, assignedList, emptyState, router]);
+  }, [id, db, taskName, details, dueDate, startDate, assignedList, router]);
 
+  /* ------------------------- LOADING UI -------------------------- */
+  if (loading) {
+    return (
+      <GradientBackground>
+        <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 16,
+              paddingTop: 8,
+              paddingBottom: 6,
+            }}
+          >
+            <IconButton
+              icon="arrow-back"
+              onPress={() => router.back()}
+              variant="secondary"
+              size="medium"
+            />
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: "700",
+                color: theme.colors.textPrimary,
+              }}
+            >
+              Edit Task
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <IconButton
+                icon={isDark ? "moon" : "sunny"}
+                onPress={() => toggleTheme && toggleTheme()}
+                variant="secondary"
+                size="small"
+              />
+            </View>
+          </View>
+          <View
+            style={{
+              flex: 1,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <ActivityIndicator size="large" color={MODULE_COLOR} />
+          </View>
+        </SafeAreaView>
+      </GradientBackground>
+    );
+  }
+
+  /* --------------------------- MAIN UI --------------------------- */
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -178,11 +273,11 @@ export default function AddTaskScreen() {
                 color: theme.colors.textPrimary,
               }}
             >
-              Add Task
+              Edit Task
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <IconButton
-                icon={theme.isDark ? "moon" : "sunny"}
+                icon={isDark ? "moon" : "sunny"}
                 onPress={() => toggleTheme && toggleTheme()}
                 variant="secondary"
                 size="small"
@@ -351,10 +446,11 @@ export default function AddTaskScreen() {
             </View>
 
             <Button
-              text={loading ? "Saving..." : "Create Task"}
-              onPress={handleAddTask}
+              text={saving ? "Saving..." : "Save Task"}
+              status="primary"
+              onPress={handleSaveTask}
               style={styles.submitButton}
-              disabled={loading}
+              disabled={saving}
             />
           </ScrollView>
 
