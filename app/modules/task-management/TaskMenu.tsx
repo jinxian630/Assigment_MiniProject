@@ -47,14 +47,14 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   awardSubtaskCompletion,
   removeSubtaskCompletion,
-} from "./taskGamifications";
+} from "./utils/gamification";
 import {
   MODULE_COLOR,
   createNeonCardShell,
   NeonBottomLine,
-} from "./TS FILE/TaskSharedUI";
+} from "./utils/sharedUI";
 
-// ------------ TYPES ------------
+// Type definitions
 
 type TaskType = {
   id: string;
@@ -118,7 +118,7 @@ const canUserSeeTask = (task: TaskType, user: any | null): boolean => {
   return false;
 };
 
-// ------------ PRIORITY HELPER ------------
+// Priority calculation
 
 const computePriorityScore = (params: {
   dueDate?: number | null;
@@ -166,7 +166,7 @@ const computePriorityScore = (params: {
   return Math.round(score);
 };
 
-// ------------ MAIN COMPONENT ------------
+// Main component
 
 export default function TaskMenuScreen() {
   const router = useRouter();
@@ -531,7 +531,7 @@ export default function TaskMenuScreen() {
       year: "numeric",
     });
 
-  // ---------- FIRESTORE LOADERS ----------
+  // Data loading
 
   useEffect(() => {
     const q = query(collection(db, "Tasks"), orderBy("createdAt", "desc"));
@@ -619,7 +619,7 @@ export default function TaskMenuScreen() {
     }
   }, [selectedTask]);
 
-  // ---------- OVERDUE & FILTER ----------
+  // Filtering and overdue tasks
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -671,7 +671,7 @@ export default function TaskMenuScreen() {
   const activeCount = filteredTasks.filter((t) => !t.completed).length;
   const completedCount = filteredTasks.filter((t) => t.completed).length;
 
-  // ---------- MAIN ASSIGNEE HANDLERS ----------
+  // Assignee management
 
   const handleAddMainAssignee = () => {
     const trimmed = mainAssignedInput.trim();
@@ -804,7 +804,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- SUBTASKS ----------
+  // Subtask operations
 
   const handleCompleteSubtask = async (subtask: TaskType) => {
     if (!selectedTask) return;
@@ -915,7 +915,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- COMMENTS ----------
+  // Comment management
 
   const handleDeleteComment = async (commentId: string) => {
     if (!selectedTask) return;
@@ -940,7 +940,7 @@ export default function TaskMenuScreen() {
     setCommentText("");
   };
 
-  // ---------- PRINT ----------
+  // PDF generation
 
   const handlePrintTasks = async () => {
     try {
@@ -1272,7 +1272,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- UI HELPERS ----------
+  // UI helper functions
 
   const renderFilterChip = (mode: FilterType, label: string) => {
     const isActive = filter === mode;
@@ -1345,7 +1345,7 @@ export default function TaskMenuScreen() {
     );
   };
 
-  // ---------- RENDER ----------
+  // Rendering
 
   return (
     <GradientBackground>

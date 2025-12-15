@@ -30,7 +30,7 @@ import {
   awardTaskCompletionOnce,
   awardSubtaskCompletion,
   removeSubtaskCompletion,
-} from "./taskGamifications";
+} from "./utils/gamification";
 import {
   getFirestore,
   collection,
@@ -54,11 +54,11 @@ import {
   MODULE_COLOR,
   DatePickerModal,
   createNeonCardShell,
-} from "../task-management/TS FILE/TaskSharedUI";
+} from "./utils/sharedUI";
 import { buildTaskIndexStyles } from "./TaskStyles";
-import { buildTaskPdfHtml } from "../task-management/TS FILE/taskPdf";
+import { buildTaskPdfHtml } from "./utils/pdfUtils";
 
-// ------------ TYPES ------------
+// Type definitions
 
 type TaskType = {
   id: string;
@@ -104,7 +104,7 @@ type CalendarTarget =
   | "newDue"
   | null;
 
-// ------------ PERMISSION ------------
+// Permission checks
 
 const canUserSeeTask = (task: TaskType, user: any | null): boolean => {
   if (!user) return false;
@@ -142,7 +142,7 @@ const canUserCommentOnTask = (task: TaskType, user: any | null): boolean => {
   return canUserSeeTask(task, user);
 };
 
-// ------------ PRIORITY HELPER ------------
+// Priority calculation
 
 const computePriorityScore = (params: {
   dueDate?: number | null;
@@ -216,7 +216,7 @@ const extractMentions = (text: string): string[] => {
 const escapeHtml = (s: string) =>
   (s || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// ------------ THREAD TREE ------------
+// Comment thread handling
 
 const buildThreadTree = (items: CommentType[]): CommentNode[] => {
   const map = new Map<string, CommentNode>();
@@ -239,7 +239,7 @@ const buildThreadTree = (items: CommentType[]): CommentNode[] => {
   return roots;
 };
 
-// ------------ MAIN COMPONENT ------------
+// Main component
 
 export default function TaskMenuScreen() {
   const router = useRouter();
@@ -317,7 +317,7 @@ export default function TaskMenuScreen() {
     return d.toLocaleString();
   };
 
-  // ---------- FIRESTORE LOADERS ----------
+  // Data loading
 
   useEffect(() => {
     const q = query(collection(db, "Tasks"), orderBy("createdAt", "desc"));
@@ -431,7 +431,7 @@ export default function TaskMenuScreen() {
     }
   }, [selectedTask]);
 
-  // ---------- OVERDUE & FILTER ----------
+  // Filtering and overdue tasks
 
   const today = useMemo(() => {
     const t = new Date();
@@ -483,7 +483,7 @@ export default function TaskMenuScreen() {
   const activeCount = filteredTasks.filter((t) => !t.completed).length;
   const completedCount = filteredTasks.filter((t) => t.completed).length;
 
-  // ---------- MAIN ASSIGNEE HANDLERS ----------
+  // Assignee management
 
   const handleAddMainAssignee = () => {
     const trimmed = mainAssignedInput.trim();
@@ -595,7 +595,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- SUBTASKS ----------
+  // Subtask operations
 
   const handleCompleteSubtask = async (subtask: any) => {
     if (!selectedTask) return;
@@ -693,7 +693,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- COMMENTS ----------
+  // Comment management
 
   const isMyComment = (c: CommentType) => {
     const user = auth.currentUser;
@@ -838,7 +838,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- MENTION CANDIDATES ----------
+  // User mentions
 
   const getMentionCandidates = useCallback(() => {
     const emails = new Set<string>();
@@ -923,7 +923,7 @@ export default function TaskMenuScreen() {
     );
   };
 
-  // ---------- TASK CHAT ----------
+  // Task chat
 
   const handleSendChat = async () => {
     if (!selectedTask) return;
@@ -960,7 +960,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- PRINT ----------
+  // PDF generation
 
   const handlePrintTasks = async () => {
     try {
@@ -1045,7 +1045,7 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // ---------- UI HELPERS ----------
+  // UI helper functions
 
   const renderFilterChip = (
     mode: FilterType,
@@ -1084,13 +1084,13 @@ export default function TaskMenuScreen() {
 
   const threadRoots = useMemo(() => buildThreadTree(comments), [comments]);
 
-  // ---------- STYLES ----------
+  // Component styles
 
   const isDark = theme?.isDark === true;
 
   const styles = useMemo(() => buildTaskIndexStyles(theme), [theme, isDark]);
 
-  // ---------- COMMENT RENDER (recursive) ----------
+  // Comment rendering
   const renderCommentNode = (node: CommentNode, depth: number) => {
     const isMine = isMyComment(node);
 
@@ -1215,7 +1215,7 @@ export default function TaskMenuScreen() {
     );
   };
 
-  // ---------- RENDER ----------
+  // Rendering
   return (
     <GradientBackground>
       <SafeAreaView style={styles.container} edges={["top"]}>

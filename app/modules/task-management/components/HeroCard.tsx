@@ -6,7 +6,7 @@ import { Card } from "@/components/common/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { TaskType } from "../utils/types";
 import { formatDate } from "../utils/taskUtils";
-import { MODULE_COLOR } from "../TS FILE/TaskSharedUI";
+import { MODULE_COLOR } from "../utils/sharedUI";
 
 interface HeroCardProps {
   topFocusTasks: TaskType[];

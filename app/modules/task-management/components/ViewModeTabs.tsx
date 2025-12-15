@@ -2,7 +2,7 @@ import React from "react";
 import { View, TouchableOpacity, StyleSheet, Text } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import { ViewMode } from "../utils/types";
-import { MODULE_COLOR } from "../TS FILE/TaskSharedUI";
+import { MODULE_COLOR } from "../utils/sharedUI";
 
 interface ViewModeTabsProps {
   viewMode: ViewMode;

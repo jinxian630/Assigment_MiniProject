@@ -13,17 +13,13 @@ import {
   runTransaction,
 } from "firebase/firestore";
 
-/* ------------------------------------------------------------------ */
-/*  CONFIG                                                            */
-/* ------------------------------------------------------------------ */
+// Configuration
 
 const XP_PER_LEVEL = 100;
 const MAIN_TASK_XP = 10;
 const SUBTASK_XP = 5;
 
-/* ------------------------------------------------------------------ */
-/*  TYPES                                                             */
-/* ------------------------------------------------------------------ */
+// Type definitions
 
 export type UserStats = {
   xp: number; // XP inside current level (0–XP_PER_LEVEL-1)
@@ -75,9 +71,7 @@ export function computeLevelFromPoints(points: number): number {
   return Math.floor(points / XP_PER_LEVEL) + 1;
 }
 
-/* ------------------------------------------------------------------ */
-/*  FIRESTORE PATHS (MERGED DESIGN)                                   */
-/* ------------------------------------------------------------------ */
+// Firestore data paths
 /**
  * ✅ We store stats inside:
  *   users/{uid}.stats
@@ -97,9 +91,7 @@ function normalizeStats(data: any): UserStats {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/*  LOW-LEVEL HELPERS                                                 */
-/* ------------------------------------------------------------------ */
+// Helper functions
 
 export async function getUserStats(userId: string): Promise<UserStats> {
   const db = getFirestore();
@@ -190,9 +182,7 @@ export async function getGamificationStats(
   return mapUserStatsToGamificationStats(stats);
 }
 
-/* ------------------------------------------------------------------ */
-/*  REALTIME SUBSCRIBE                                                */
-/* ------------------------------------------------------------------ */
+// Realtime subscriptions
 
 export function subscribeGamificationStats(
   uid: string,
@@ -230,9 +220,7 @@ export function subscribeGamificationStats(
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  OVERDUE CHECK                                                     */
-/* ------------------------------------------------------------------ */
+// Overdue task checking
 
 /** Check if user has ANY overdue tasks (not completed and due date < today) */
 export async function checkUserHasOverdueTasks(
@@ -254,9 +242,7 @@ export async function checkUserHasOverdueTasks(
   });
 }
 
-/* ------------------------------------------------------------------ */
-/*  MAIN XP / STREAK LOGIC                                            */
-/* ------------------------------------------------------------------ */
+// XP and streak management
 
 /**
  * ✅ Award XP only ONCE per TASK:

@@ -23,18 +23,14 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
 
-import {
-  MODULE_COLOR,
-  DatePickerModal,
-  formatDateGB,
-} from "./TS FILE/TaskSharedUI";
+import { MODULE_COLOR, DatePickerModal, formatDateGB } from "./utils/sharedUI";
 import { createTaskFormStyles } from "./styles/taskFormStyles";
 import {
   isValidGmail,
   addUniqueEmail,
   pickImagesFromLibrary,
   uploadUrisToFirebaseStorage,
-} from "./TS FILE/taskSharedForm";
+} from "./utils/formUtils";
 
 type ModeType = "physical" | "online";
 

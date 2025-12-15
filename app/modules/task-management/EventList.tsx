@@ -17,8 +17,8 @@ import {
   MODULE_COLOR,
   createNeonCardShell,
   NeonBottomLine,
-} from "../task-management/TS FILE/TaskSharedUI";
-import TaskBottomBar from "../task-management/TS FILE/TaskBottomBar";
+} from "./utils/sharedUI";
+import TaskBottomBar from "./components/TaskBottomBar";
 import { Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import { shareAsync } from "expo-sharing";
@@ -49,7 +49,7 @@ import {
   normalizeAttachments,
   normalizeGuests,
   resolveStorageRef,
-} from "../task-management/TS FILE/taskEventShared";
+} from "./utils/eventUtils";
 
 type FilterType = "all" | "upcoming" | "past";
 

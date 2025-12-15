@@ -28,13 +28,9 @@ import {
   removeAtIndex,
   pickImagesFromLibrary,
   uploadUrisToFirebaseStorage,
-} from "../task-management/TS FILE/taskSharedForm";
+} from "./utils/formUtils";
 
-import {
-  MODULE_COLOR,
-  DatePickerModal,
-  formatDateGB,
-} from "../task-management/TS FILE/TaskSharedUI";
+import { MODULE_COLOR, DatePickerModal, formatDateGB } from "./utils/sharedUI";
 import { createTaskFormStyles } from "./styles/taskFormStyles";
 
 type ModeType = "physical" | "online";

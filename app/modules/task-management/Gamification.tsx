@@ -20,7 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getAuth } from "firebase/auth";
-import TaskBottomBar from "../task-management/TS FILE/TaskBottomBar";
+import TaskBottomBar from "./components/TaskBottomBar";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
@@ -29,13 +29,13 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   GamificationStats,
   subscribeGamificationStats,
-} from "../task-management/taskGamifications";
+} from "./utils/gamification";
 const XP_ACCENT = "#ff00ffff";
 import {
   MODULE_COLOR,
   createNeonCardShell,
   NeonBottomLine,
-} from "../task-management/TS FILE/TaskSharedUI";
+} from "./utils/sharedUI";
 export default function GamificationsScreen() {
   const router = useRouter();
   const { theme, toggleTheme }: any = useTheme();

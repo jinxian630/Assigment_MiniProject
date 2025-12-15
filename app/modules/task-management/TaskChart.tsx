@@ -14,7 +14,7 @@ import { useRouter } from "expo-router";
 import { Text } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
-import TaskBottomBar from "../task-management/TS FILE/TaskBottomBar";
+import TaskBottomBar from "./components/TaskBottomBar";
 
 import {
   getFirestore,
@@ -32,7 +32,7 @@ import {
   MODULE_COLOR,
   createNeonCardShell,
   NeonBottomLine,
-} from "./TS FILE/TaskSharedUI";
+} from "./utils/sharedUI";
 import { createChartStyles } from "./styles/chartStyles";
 import { getSegmentButtonConfig, ViewMode } from "./utils/chartUtils";
 import { belongsToCurrentUser } from "./utils/chartDataUtils";

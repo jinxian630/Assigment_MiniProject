@@ -1,5 +1,5 @@
 import { StyleSheet } from "react-native";
-import { MODULE_COLOR } from "../TS FILE/TaskSharedUI";
+import { MODULE_COLOR } from "../utils/sharedUI";
 
 export const createChartStyles = (
   theme: any,

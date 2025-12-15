@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { getAuth } from "firebase/auth";
-import { RAG_API_HOST } from "../localRag";
+import { RAG_API_HOST } from "../config/api";
 import { TaskType, ChatMsg } from "../utils/types";
 import { formatDate, calculateDaysUntilDue } from "../utils/taskUtils";
 

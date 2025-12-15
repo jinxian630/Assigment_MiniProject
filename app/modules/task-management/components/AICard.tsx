@@ -3,7 +3,7 @@ import { View, ScrollView, StyleSheet } from "react-native";
 import { Text, TextInput, Button } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
-import { MODULE_COLOR } from "../TS FILE/TaskSharedUI";
+import { MODULE_COLOR } from "../utils/sharedUI";
 import { ChatMsg } from "../utils/types";
 
 interface AICardProps {

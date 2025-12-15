@@ -16,7 +16,7 @@ import { getAuth } from "firebase/auth";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
-import { MODULE_COLOR } from "./TS FILE/TaskSharedUI";
+import { MODULE_COLOR } from "./utils/sharedUI";
 import { TaskType, ViewMode } from "./utils/types";
 import { useTasks } from "./hooks/useTasks";
 import { useAIAssistant } from "./hooks/useAIAssistant";

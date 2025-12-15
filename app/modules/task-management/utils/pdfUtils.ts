@@ -1,6 +1,6 @@
-// app/modules/task-management/utils/taskPdfBuilder.ts
+// app/modules/task-management/utils/pdfUtils.ts
 
-import { MODULE_COLOR } from "./TaskSharedUI";
+import { MODULE_COLOR } from "./sharedUI";
 
 type Task = {
   taskName: string;
