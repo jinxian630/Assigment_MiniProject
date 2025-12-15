@@ -31,6 +31,7 @@ import {
   query,
   where,
   onSnapshot,
+  getDocs,
 } from "firebase/firestore";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
@@ -131,6 +132,14 @@ export default function UserProfile() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("posts");
   const [tabAnim] = useState(new Animated.Value(0));
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followListVisible, setFollowListVisible] = useState(false);
+  const [followListType, setFollowListType] = useState<
+    "followers" | "following"
+  >("followers");
+  const [followList, setFollowList] = useState<User[]>([]);
+  const [followListLoading, setFollowListLoading] = useState(false);
 
   // Edit profile modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -307,6 +316,34 @@ export default function UserProfile() {
     };
   }, [memories]);
 
+  // Subscribe to followers / following counts for this profile
+  useEffect(() => {
+    if (!userId) return;
+
+    const followsRef = collection(db, "follows");
+
+    // followers of this user
+    const followersQ = query(followsRef, where("followingId", "==", userId));
+    const unsubFollowers = onSnapshot(
+      followersQ,
+      (snap) => setFollowersCount(snap.size),
+      () => setFollowersCount(0)
+    );
+
+    // users this profile follows
+    const followingQ = query(followsRef, where("followerId", "==", userId));
+    const unsubFollowing = onSnapshot(
+      followingQ,
+      (snap) => setFollowingCount(snap.size),
+      () => setFollowingCount(0)
+    );
+
+    return () => {
+      unsubFollowers();
+      unsubFollowing();
+    };
+  }, [userId]);
+
   // Tab animation
   useEffect(() => {
     Animated.spring(tabAnim, {
@@ -340,6 +377,59 @@ export default function UserProfile() {
     setEditBio(user?.bio || "");
     setEditPhotoURI(null);
     setEditModalVisible(true);
+  };
+
+  const openFollowList = async (type: "followers" | "following") => {
+    setFollowListType(type);
+    setFollowListVisible(true);
+    setFollowListLoading(true);
+    setFollowList([]);
+
+    try {
+      if (!userId) {
+        // No user id – just show empty list
+        setFollowListLoading(false);
+        return;
+      }
+      const followsRef = collection(db, "follows");
+      const q =
+        type === "followers"
+          ? query(followsRef, where("followingId", "==", userId))
+          : query(followsRef, where("followerId", "==", userId));
+
+      const snap = await getDocs(q);
+      const ids: string[] = [];
+      snap.forEach((d) => {
+        const data = d.data() as any;
+        const uid = type === "followers" ? data.followerId : data.followingId;
+        if (uid) ids.push(uid);
+      });
+
+      const uniqueIds = Array.from(new Set(ids));
+      if (uniqueIds.length === 0) {
+        setFollowList([]);
+        return;
+      }
+
+      const results: User[] = [];
+      for (const uid of uniqueIds) {
+        try {
+          const uRef = doc(db, "users", uid);
+          const uSnap = await getDoc(uRef);
+          if (uSnap.exists()) {
+            results.push({ id: uSnap.id, ...(uSnap.data() as any) });
+          }
+        } catch (err) {
+          console.log("Follow list user load error:", err);
+        }
+      }
+      setFollowList(results);
+    } catch (err) {
+      console.error("Error loading follow list:", err);
+      setFollowList([]);
+    } finally {
+      setFollowListLoading(false);
+    }
   };
 
   const pickProfileImage = async () => {
@@ -488,7 +578,10 @@ export default function UserProfile() {
   };
 
   const openMemoryDetail = (id: string) => {
-    router.push(`/modules/memory-book/MemoryPostDetail?id=${id}`);
+    router.push({
+      pathname: "/modules/memory-book/MemoryPostDetail",
+      params: { id },
+    } as any);
   };
 
   const tabIndicatorPosition = tabAnim.interpolate({
@@ -817,6 +910,38 @@ export default function UserProfile() {
                     style={[styles.statLabel, { color: colors.textSecondary }]}
                   >
                     Comments
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Followers / Following row */}
+              <View style={[styles.statsRow, { marginTop: 12 }]}>
+                <TouchableOpacity
+                  style={[styles.statCard, { paddingVertical: 10 }]}
+                  onPress={() => openFollowList("followers")}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.statValue, { color: colors.textMain }]}>
+                    {followersCount}
+                  </Text>
+                  <Text
+                    style={[styles.statLabel, { color: colors.textSecondary }]}
+                  >
+                    Followers
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.statCard, { paddingVertical: 10 }]}
+                  onPress={() => openFollowList("following")}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.statValue, { color: colors.textMain }]}>
+                    {followingCount}
+                  </Text>
+                  <Text
+                    style={[styles.statLabel, { color: colors.textSecondary }]}
+                  >
+                    Following
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1818,20 +1943,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   backButton: {
-    minWidth: Platform.OS === "ios" ? 40 : 36,
-    minHeight: Platform.OS === "ios" ? 40 : 36,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "transparent",
-  },
-  themeButton: {
-    minWidth: Platform.OS === "ios" ? 40 : 36,
-    minHeight: Platform.OS === "ios" ? 40 : 36,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "transparent",
-  },
-  editButton: {
     minWidth: Platform.OS === "ios" ? 40 : 36,
     minHeight: Platform.OS === "ios" ? 40 : 36,
     alignItems: "center",
