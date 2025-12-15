@@ -1,5 +1,10 @@
-// src/screens/Task/Gamifications.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   ScrollView,
@@ -15,7 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getAuth } from "firebase/auth";
-
+import TaskBottomBar from "../task-management/TS FILE/TaskBottomBar";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
@@ -24,53 +29,38 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   GamificationStats,
   subscribeGamificationStats,
-  awardTaskCompletionOnce,
 } from "../task-management/taskGamifications";
-
-const MODULE_COLOR = "#38BDF8";
-
-/** 🔧 Neon card: border + glow only (NO background here) */
-const createNeonCardShell = (
-  accentColor: string,
-  theme: any,
-  extra: any = {}
-) => {
-  return {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: accentColor + "66",
-
-    shadowColor: accentColor,
-    shadowOpacity: theme.isDark ? 0.9 : 0.5,
-    shadowRadius: theme.isDark ? 30 : 20,
-    shadowOffset: { width: 0, height: 0 },
-
-    elevation: theme.isDark ? 18 : 8,
-    ...extra,
-  };
-};
-
+const XP_ACCENT = "#ff00ffff";
+import {
+  MODULE_COLOR,
+  createNeonCardShell,
+  NeonBottomLine,
+} from "../task-management/TS FILE/TaskSharedUI";
 export default function GamificationsScreen() {
   const router = useRouter();
   const { theme, toggleTheme }: any = useTheme();
   const auth = getAuth();
 
   const [stats, setStats] = useState<GamificationStats | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAddMenu, setShowAddMenu] = useState(false);
 
   const isDark = theme?.isDark === true;
 
-  // ✅ Animated XP bar
   const progressAnim = useRef(new Animated.Value(0)).current;
   const [trackWidth, setTrackWidth] = useState(0);
+
+  const percentText = useMemo(() => {
+    if (!stats) return "0%";
+    const pct = Math.round((stats.progressToNextLevel || 0) * 100);
+    return `${Math.max(0, Math.min(100, pct))}%`;
+  }, [stats]);
 
   const styles = useMemo(
     () =>
       StyleSheet.create({
         container: { flex: 1 },
-
+        /* -------------------------- Styles -------------------------- */
         headerRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -91,11 +81,10 @@ export default function GamificationsScreen() {
 
         contentScroll: {
           flex: 1,
-          paddingHorizontal: 16,
+          paddingHorizontal: theme.spacing.screenPadding,
           paddingTop: 10,
         },
 
-        // ===== HERO ORB (same as EventList icon) =====
         heroWrapper: {
           alignItems: "center",
           marginTop: 12,
@@ -134,7 +123,7 @@ export default function GamificationsScreen() {
           color: theme.colors.textSecondary,
         },
 
-        // XP progress
+        // Titles
         sectionTitleRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -151,7 +140,7 @@ export default function GamificationsScreen() {
           color: theme.colors.textSecondary,
         },
 
-        neonShellCard: createNeonCardShell("#ff00ffff", theme, {
+        neonShellCard: createNeonCardShell(XP_ACCENT, theme, {
           backgroundColor: theme.colors.cardBackground,
           paddingVertical: 12,
           paddingHorizontal: 14,
@@ -184,7 +173,7 @@ export default function GamificationsScreen() {
         progressBarFill: {
           height: 8,
           borderRadius: 999,
-          backgroundColor: "#ff00ffff",
+          backgroundColor: XP_ACCENT,
         },
 
         chipRow: {
@@ -207,17 +196,6 @@ export default function GamificationsScreen() {
         chipText: {
           fontSize: 11,
           color: theme.colors.textSecondary,
-        },
-        chipButton: {
-          paddingHorizontal: theme.spacing.md,
-          paddingVertical: theme.spacing.sm,
-          borderRadius: 999,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        chipButtonText: {
-          fontSize: theme.typography.fontSizes.sm,
-          fontWeight: theme.typography.fontWeights.semibold,
         },
 
         smallCardsRow: {
@@ -258,73 +236,13 @@ export default function GamificationsScreen() {
           fontSize: 13,
           color: "#FCA5A5",
         },
-        floatingAdd: {
-          position: "absolute",
-          top: -34,
-          alignSelf: "center",
-          zIndex: 10,
-          elevation: 10,
-        },
-        floatingAddButton: {
-          width: 52,
-          height: 52,
-          borderRadius: 26,
-          backgroundColor: MODULE_COLOR,
-          justifyContent: "center",
-          alignItems: "center",
-          borderWidth: 3,
-          borderColor: MODULE_COLOR + "AA",
-          shadowColor: MODULE_COLOR,
-          shadowOpacity: 0.9,
-          shadowRadius: 5,
-          shadowOffset: { width: 0, height: 0 },
-          elevation: 25,
-          zIndex: 400,
-        },
-        bottomBar: {
-          position: "absolute",
-          left: 16,
-          right: 16,
-          bottom: Platform.OS === "ios" ? 16 : 12,
-          flexDirection: "row",
-          justifyContent: "space-around",
-          alignItems: "center",
-          paddingHorizontal: 24,
-          paddingVertical: 10,
-          backgroundColor: isDark
-            ? "rgba(10,10,15,0.98)"
-            : "rgba(15,23,42,0.95)",
-          borderRadius: 26,
-          borderWidth: 1,
-          borderColor: isDark ? "#1F2937" : "#111827",
-          shadowColor: "#000",
-          shadowOpacity: 0.4,
-          shadowRadius: 16,
-          shadowOffset: { width: 0, height: -2 },
-          zIndex: 10,
-          elevation: 10,
-        },
-        bottomBarItem: {
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        bottomBarIconWrapper: {
-          padding: 6,
-          borderRadius: 999,
-        },
-        bottomBarLabel: {
-          fontSize: 11,
-          marginTop: 2,
-          color: theme.colors.textSecondary,
-        },
       }),
     [theme, isDark]
   );
 
-  // ✅ Real-time subscription + animated bar update
   useEffect(() => {
     const user = auth.currentUser;
+
     if (!user) {
       setError("You need to be logged in to see your gamification stats.");
       setLoading(false);
@@ -341,9 +259,9 @@ export default function GamificationsScreen() {
         setLoading(false);
 
         Animated.timing(progressAnim, {
-          toValue: s.progressToNextLevel,
+          toValue: Math.max(0, Math.min(1, s.progressToNextLevel || 0)),
           duration: 650,
-          useNativeDriver: false, // width animation needs false
+          useNativeDriver: false,
         }).start();
       },
       (err) => {
@@ -354,13 +272,16 @@ export default function GamificationsScreen() {
     );
 
     return () => unsub();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, progressAnim]);
+
+  const onTrackLayout = useCallback((e: any) => {
+    const w = e?.nativeEvent?.layout?.width ?? 0;
+    setTrackWidth(w);
   }, []);
 
   return (
     <GradientBackground>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        {/* HEADER */}
         <View style={styles.headerRow}>
           <IconButton
             icon="arrow-back"
@@ -398,7 +319,6 @@ export default function GamificationsScreen() {
             </View>
           ) : (
             <>
-              {/* HERO ORB */}
               <View style={styles.heroWrapper}>
                 <View style={styles.heroOrbOuter}>
                   <Ionicons
@@ -416,7 +336,7 @@ export default function GamificationsScreen() {
                 </Text>
               </View>
 
-              {/* XP PROGRESS – neon card */}
+              {/* XP PROGRESS */}
               <View style={{ marginBottom: 8 }}>
                 <View style={styles.sectionTitleRow}>
                   <Text style={styles.sectionTitle}>XP Progress</Text>
@@ -431,15 +351,13 @@ export default function GamificationsScreen() {
                       Total points: {stats.totalPoints}
                     </Text>
                     <Text style={styles.sectionSubtitle}>
-                      {Math.round(stats.progressToNextLevel * 100)}% to next
-                      level
+                      {percentText} to next level
                     </Text>
                   </View>
 
-                  {/* ✅ Animated progress bar */}
                   <View
                     style={styles.progressBarTrack}
-                    onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+                    onLayout={onTrackLayout}
                   >
                     <Animated.View
                       style={[
@@ -447,7 +365,7 @@ export default function GamificationsScreen() {
                         {
                           width: progressAnim.interpolate({
                             inputRange: [0, 1],
-                            outputRange: [0, trackWidth || 0],
+                            outputRange: [0, Math.max(0, trackWidth)],
                           }),
                         },
                       ]}
@@ -466,6 +384,7 @@ export default function GamificationsScreen() {
                         +10 XP per completed task
                       </Text>
                     </View>
+
                     <View style={styles.chip}>
                       <Ionicons
                         name="checkbox-outline"
@@ -477,6 +396,7 @@ export default function GamificationsScreen() {
                         +5 XP per completed subtask
                       </Text>
                     </View>
+
                     <View style={styles.chip}>
                       <Ionicons
                         name="flame-outline"
@@ -490,25 +410,14 @@ export default function GamificationsScreen() {
                     </View>
                   </View>
 
-                  {/* neon bottom glow line */}
-                  <View
-                    style={[
-                      styles.neonBottomLine,
-                      {
-                        backgroundColor: "#ff00ffff",
-                        shadowColor: MODULE_COLOR,
-                        shadowOpacity: 0.9,
-                        shadowRadius: 12,
-                        shadowOffset: { width: 0, height: 0 },
-                      },
-                    ]}
+                  <NeonBottomLine
+                    color={XP_ACCENT}
+                    style={styles.neonBottomLine}
                   />
                 </Card>
               </View>
 
-              {/* SMALL STAT CARDS – with neon bottom lines */}
               <View style={styles.smallCardsRow}>
-                {/* Streak */}
                 <Card
                   style={[
                     createNeonCardShell("#F97316", theme, {
@@ -519,22 +428,12 @@ export default function GamificationsScreen() {
                 >
                   <Text style={styles.smallCardLabel}>Daily streak</Text>
                   <Text style={styles.smallCardValue}>{stats.streak} 🔥</Text>
-
-                  <View
-                    style={[
-                      styles.neonBottomLine,
-                      {
-                        backgroundColor: "#F97316",
-                        shadowColor: "#F97316",
-                        shadowOpacity: 0.9,
-                        shadowRadius: 12,
-                        shadowOffset: { width: 0, height: 0 },
-                      },
-                    ]}
+                  <NeonBottomLine
+                    color="#F97316"
+                    style={styles.neonBottomLine}
                   />
                 </Card>
 
-                {/* Completed tasks */}
                 <Card
                   style={[
                     createNeonCardShell("#22C55E", theme, {
@@ -547,22 +446,12 @@ export default function GamificationsScreen() {
                   <Text style={styles.smallCardValue}>
                     {stats.completedTasks}
                   </Text>
-
-                  <View
-                    style={[
-                      styles.neonBottomLine,
-                      {
-                        backgroundColor: "#22C55E",
-                        shadowColor: "#22C55E",
-                        shadowOpacity: 0.9,
-                        shadowRadius: 12,
-                        shadowOffset: { width: 0, height: 0 },
-                      },
-                    ]}
+                  <NeonBottomLine
+                    color="#22C55E"
+                    style={styles.neonBottomLine}
                   />
                 </Card>
 
-                {/* Level / Rank */}
                 <Card
                   style={[
                     createNeonCardShell(MODULE_COLOR, theme, {
@@ -573,18 +462,9 @@ export default function GamificationsScreen() {
                 >
                   <Text style={styles.smallCardLabel}>Rank</Text>
                   <Text style={styles.smallCardValue}>{stats.rankTitle}</Text>
-
-                  <View
-                    style={[
-                      styles.neonBottomLine,
-                      {
-                        backgroundColor: MODULE_COLOR,
-                        shadowColor: MODULE_COLOR,
-                        shadowOpacity: 0.9,
-                        shadowRadius: 12,
-                        shadowOffset: { width: 0, height: 0 },
-                      },
-                    ]}
+                  <NeonBottomLine
+                    color={MODULE_COLOR}
+                    style={styles.neonBottomLine}
                   />
                 </Card>
               </View>
@@ -596,207 +476,7 @@ export default function GamificationsScreen() {
             </>
           )}
         </ScrollView>
-
-        <Modal
-          visible={showAddMenu}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowAddMenu(false)}
-        >
-          <TouchableOpacity
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.4)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-            activeOpacity={1}
-            onPressOut={() => setShowAddMenu(false)}
-          >
-            <Card
-              style={[
-                styles.neonShellCard,
-                {
-                  width: "70%",
-                  backgroundColor: theme.isDark ? "#020617" : "#0B1220",
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.neonBottomLine,
-                  {
-                    backgroundColor: MODULE_COLOR,
-                    shadowColor: MODULE_COLOR,
-                    shadowOpacity: 0.9,
-                    shadowRadius: 12,
-                    shadowOffset: { width: 0, height: 0 },
-                  },
-                ]}
-              />
-              <Text
-                style={{
-                  fontSize: theme.typography.fontSizes.md,
-                  fontWeight: theme.typography.fontWeights.bold,
-                  marginBottom: theme.spacing.sm,
-                  color: theme.colors.textPrimary,
-                }}
-              >
-                Add...
-              </Text>
-
-              <TouchableOpacity
-                onPress={() => {
-                  setShowAddMenu(false);
-                  router.push("/modules/task-management/TaskAdd");
-                }}
-                style={[
-                  styles.chipButton,
-                  {
-                    backgroundColor: MODULE_COLOR,
-                    marginBottom: theme.spacing.sm,
-                  },
-                ]}
-              >
-                <Text style={[styles.chipButtonText, { color: "#fff" }]}>
-                  Add Task
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => {
-                  setShowAddMenu(false);
-                  router.push("/modules/task-management/EventAdd");
-                }}
-                style={[styles.chipButton, { backgroundColor: "#0256ffff" }]}
-              >
-                <Text style={[styles.chipButtonText, { color: "#fff" }]}>
-                  Add Event
-                </Text>
-              </TouchableOpacity>
-            </Card>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* 🔻 BOTTOM TASKBAR NAVIGATION */}
-        <View style={styles.bottomBar}>
-          {/* Center FAB attached to bar */}
-          <View style={styles.floatingAdd}>
-            <View
-              style={{
-                width: 65,
-                height: 65,
-                borderRadius: 32,
-                borderColor: MODULE_COLOR,
-                justifyContent: "center",
-                alignItems: "center",
-                backgroundColor: "#000",
-                shadowColor: MODULE_COLOR,
-                shadowOpacity: 1,
-                shadowRadius: 5,
-                shadowOffset: { width: 0, height: 0 },
-              }}
-            >
-              <TouchableOpacity
-                style={styles.floatingAddButton}
-                onPress={() => setShowAddMenu(true)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="add" size={34} color="#000" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* My Task */}
-          <TouchableOpacity
-            style={styles.bottomBarItem}
-            onPress={() => router.push("/modules/task-management")}
-          >
-            <View style={styles.bottomBarIconWrapper}>
-              <Ionicons
-                name="checkmark-done-outline"
-                size={20}
-                color={theme.colors.textSecondary}
-              />
-            </View>
-            <Text
-              style={[
-                styles.bottomBarLabel,
-                { color: theme.colors.textSecondary },
-              ]}
-            >
-              Task
-            </Text>
-          </TouchableOpacity>
-
-          {/* My Event */}
-          <TouchableOpacity
-            style={styles.bottomBarItem}
-            onPress={() => router.push("/modules/task-management/EventList")}
-          >
-            <View style={styles.bottomBarIconWrapper}>
-              <Ionicons
-                name="calendar-outline"
-                size={20}
-                color={theme.colors.textSecondary}
-              />
-            </View>
-            <Text
-              style={[
-                styles.bottomBarLabel,
-                { color: theme.colors.textSecondary },
-              ]}
-            >
-              Event
-            </Text>
-          </TouchableOpacity>
-
-          {/* Productivity (current) */}
-          <TouchableOpacity style={styles.bottomBarItem} disabled>
-            <View
-              style={[
-                styles.bottomBarIconWrapper,
-                { backgroundColor: `${MODULE_COLOR}22` },
-              ]}
-            >
-              <Ionicons
-                name="game-controller-outline"
-                size={20}
-                color={MODULE_COLOR}
-              />
-            </View>
-            <Text
-              style={[
-                styles.bottomBarLabel,
-                { color: MODULE_COLOR, fontWeight: "600" },
-              ]}
-            >
-              Productivity
-            </Text>
-          </TouchableOpacity>
-
-          {/* Chart */}
-          <TouchableOpacity
-            style={styles.bottomBarItem}
-            onPress={() => router.push("/modules/task-management/TaskChart")}
-          >
-            <View style={styles.bottomBarIconWrapper}>
-              <Ionicons
-                name="stats-chart-outline"
-                size={20}
-                color={theme.colors.textSecondary}
-              />
-            </View>
-            <Text
-              style={[
-                styles.bottomBarLabel,
-                { color: theme.colors.textSecondary },
-              ]}
-            >
-              Chart
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TaskBottomBar active="Productivity" useAddMenu />
       </SafeAreaView>
     </GradientBackground>
   );

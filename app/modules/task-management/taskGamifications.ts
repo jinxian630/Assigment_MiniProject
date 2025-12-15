@@ -76,27 +76,63 @@ export function computeLevelFromPoints(points: number): number {
 }
 
 /* ------------------------------------------------------------------ */
+/*  FIRESTORE PATHS (MERGED DESIGN)                                   */
+/* ------------------------------------------------------------------ */
+/**
+ * ✅ We store stats inside:
+ *   users/{uid}.stats
+ */
+function userDocRef(db: any, uid: string) {
+  return doc(db, "users", uid);
+}
+
+function normalizeStats(data: any): UserStats {
+  const s = (data?.stats || {}) as any;
+  return {
+    xp: s.xp ?? 0,
+    level: s.level ?? 1,
+    streak: s.streak ?? 0,
+    completedTasks: s.completedTasks ?? 0,
+    lastStreakDate: s.lastStreakDate,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /*  LOW-LEVEL HELPERS                                                 */
 /* ------------------------------------------------------------------ */
 
 export async function getUserStats(userId: string): Promise<UserStats> {
   const db = getFirestore();
-  const ref = doc(db, "UserStats", userId);
+  const ref = userDocRef(db, userId);
   const snap = await getDoc(ref);
 
+  // If user doc doesn't exist yet, create it with stats (minimal)
   if (!snap.exists()) {
-    await setDoc(ref, DEFAULT_STATS);
+    await setDoc(
+      ref,
+      {
+        stats: { ...DEFAULT_STATS },
+      },
+      { merge: true } as any
+    );
     return { ...DEFAULT_STATS };
   }
 
   const data = snap.data() as any;
-  return {
-    xp: data.xp ?? 0,
-    level: data.level ?? 1,
-    streak: data.streak ?? 0,
-    completedTasks: data.completedTasks ?? 0,
-    lastStreakDate: data.lastStreakDate,
-  };
+
+  // If stats missing, initialize only stats
+  if (!data?.stats) {
+    await setDoc(
+      ref,
+      {
+        stats: { ...DEFAULT_STATS },
+      },
+      { merge: true } as any
+    );
+    return { ...DEFAULT_STATS };
+  }
+
+  return normalizeStats(data);
 }
 
 /** Derive rank title from level – for your UI badge */
@@ -164,25 +200,30 @@ export function subscribeGamificationStats(
   onError?: (err: any) => void
 ) {
   const db = getFirestore();
-  const ref = doc(db, "UserStats", uid);
+  const ref = userDocRef(db, uid);
 
-  // Ensure doc exists once
+  // Ensure stats exists once
   (async () => {
     const snap = await getDoc(ref);
-    if (!snap.exists()) await setDoc(ref, DEFAULT_STATS);
+    if (!snap.exists()) {
+      await setDoc(ref, { stats: { ...DEFAULT_STATS } }, {
+        merge: true,
+      } as any);
+      return;
+    }
+    const data = snap.data() as any;
+    if (!data?.stats) {
+      await setDoc(ref, { stats: { ...DEFAULT_STATS } }, {
+        merge: true,
+      } as any);
+    }
   })().catch(() => {});
 
   return onSnapshot(
     ref,
     (snap) => {
       const data = (snap.data() || {}) as any;
-      const raw: UserStats = {
-        xp: data.xp ?? 0,
-        level: data.level ?? 1,
-        streak: data.streak ?? 0,
-        completedTasks: data.completedTasks ?? 0,
-        lastStreakDate: data.lastStreakDate,
-      };
+      const raw = normalizeStats(data);
       onData(mapUserStatsToGamificationStats(raw));
     },
     (err) => onError?.(err)
@@ -225,7 +266,7 @@ export async function checkUserHasOverdueTasks(
  */
 export async function awardTaskCompletionOnce(userId: string, taskId: string) {
   const db = getFirestore();
-  const userRef = doc(db, "UserStats", userId);
+  const userRef = userDocRef(db, userId);
   const taskRef = doc(db, "Tasks", taskId);
 
   const todayStr = getTodayString();
@@ -240,17 +281,9 @@ export async function awardTaskCompletionOnce(userId: string, taskId: string) {
       tx.get(taskRef),
     ]);
 
-    const userData = (
-      userSnap.exists() ? userSnap.data() : DEFAULT_STATS
-    ) as any;
-
-    const stats: UserStats = {
-      xp: userData.xp ?? 0,
-      level: userData.level ?? 1,
-      streak: userData.streak ?? 0,
-      completedTasks: userData.completedTasks ?? 0,
-      lastStreakDate: userData.lastStreakDate,
-    };
+    // Ensure we have a user doc to write into
+    const userData = userSnap.exists() ? (userSnap.data() as any) : {};
+    const stats = normalizeStats(userData);
 
     if (!taskSnap.exists()) return;
     const task = taskSnap.data() as any;
@@ -271,9 +304,22 @@ export async function awardTaskCompletionOnce(userId: string, taskId: string) {
     // ✅ only once per task
     const newCompletedTasks = (stats.completedTasks || 0) + 1;
 
+    // If user doc doesn't exist, create minimal shape (profile fields stay untouched)
+    if (!userSnap.exists()) {
+      tx.set(userRef, { stats: { ...DEFAULT_STATS } }, { merge: true });
+    }
+
     // Overdue task → no XP, no streak increment
     if (isOverdueTask) {
-      tx.set(userRef, { completedTasks: newCompletedTasks }, { merge: true });
+      tx.set(
+        userRef,
+        {
+          stats: {
+            completedTasks: newCompletedTasks,
+          },
+        },
+        { merge: true }
+      );
       return;
     }
 
@@ -298,21 +344,23 @@ export async function awardTaskCompletionOnce(userId: string, taskId: string) {
     tx.set(
       userRef,
       {
-        xp: newXp,
-        level: newLevel,
-        streak: newStreak,
-        completedTasks: newCompletedTasks,
-        lastStreakDate: todayStr,
+        stats: {
+          xp: newXp,
+          level: newLevel,
+          streak: newStreak,
+          completedTasks: newCompletedTasks,
+          lastStreakDate: todayStr,
+        },
       },
       { merge: true }
     );
   });
 }
 
-/** XP for subtasks (unchanged — you can also convert to "once" logic if you want) */
+/** XP for subtasks */
 export async function awardSubtaskCompletion(userId: string) {
   const db = getFirestore();
-  const ref = doc(db, "UserStats", userId);
+  const ref = userDocRef(db, userId);
   const stats = await getUserStats(userId);
 
   const gainedXp = SUBTASK_XP;
@@ -324,5 +372,8 @@ export async function awardSubtaskCompletion(userId: string) {
     newLevel += 1;
   }
 
-  await updateDoc(ref, { xp: newXp, level: newLevel });
+  await updateDoc(ref, {
+    "stats.xp": newXp,
+    "stats.level": newLevel,
+  });
 }

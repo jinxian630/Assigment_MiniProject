@@ -26,8 +26,11 @@ import { useRouter } from "expo-router";
 import * as Print from "expo-print";
 import { shareAsync } from "expo-sharing";
 import { Ionicons } from "@expo/vector-icons";
-import { Calendar } from "react-native-calendars";
-import { awardTaskCompletionOnce } from "./taskGamifications";
+import {
+  awardTaskCompletionOnce,
+  awardSubtaskCompletion,
+  removeSubtaskCompletion,
+} from "./taskGamifications";
 import {
   getFirestore,
   collection,
@@ -45,275 +48,14 @@ import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
 import { useTheme } from "@/hooks/useTheme";
-import {
-  awardSubtaskCompletion,
-  removeSubtaskCompletion,
-} from "./taskGamifications";
 
-import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
-import Constants from "expo-constants";
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
-const MODULE_COLOR = "#38BDF8";
 const { width: SCREEN_W } = Dimensions.get("window");
-
-// ------------ DATE MODAL (from TaskAdd.tsx) ------------
-
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
-
-type DatePickerModalProps = {
-  visible: boolean;
-  onClose: () => void;
-  selectedDate: Date | null;
-  onSelectDate: (date: Date) => void;
-  theme: any;
-  title?: string;
-};
-
-const DatePickerModal: React.FC<DatePickerModalProps> = ({
-  visible,
-  onClose,
-  selectedDate,
-  onSelectDate,
-  theme,
-  title,
-}) => {
-  const initial = selectedDate || new Date();
-  const [year, setYear] = useState(initial.getFullYear());
-  const [month, setMonth] = useState(initial.getMonth() + 1);
-  const [calendarCurrent, setCalendarCurrent] = useState(
-    `${year}-${pad2(month)}-01`
-  );
-
-  useEffect(() => {
-    if (visible) {
-      const base = selectedDate || new Date();
-      const y = base.getFullYear();
-      const m = base.getMonth() + 1;
-      setYear(y);
-      setMonth(m);
-      setCalendarCurrent(`${y}-${pad2(m)}-01`);
-    }
-  }, [visible, selectedDate]);
-
-  useEffect(() => {
-    setCalendarCurrent(`${year}-${pad2(month)}-01`);
-  }, [year, month]);
-
-  const goToPrevMonth = () => {
-    setMonth((prev) => {
-      if (prev === 1) {
-        setYear((y) => y - 1);
-        return 12;
-      }
-      return prev - 1;
-    });
-  };
-
-  const goToNextMonth = () => {
-    setMonth((prev) => {
-      if (prev === 12) {
-        setYear((y) => y + 1);
-        return 1;
-      }
-      return prev + 1;
-    });
-  };
-
-  const goToPrevYear = () => setYear((y) => y - 1);
-  const goToNextYear = () => setYear((y) => y + 1);
-
-  const handleDayPress = (day: any) => {
-    const d = new Date(day.dateString);
-    onSelectDate(d);
-    onClose();
-  };
-
-  const selectedKey =
-    selectedDate != null ? selectedDate.toISOString().split("T")[0] : undefined;
-
-  const markedDates =
-    selectedKey != null
-      ? {
-          [selectedKey]: {
-            selected: true,
-            selectedColor: MODULE_COLOR,
-            selectedTextColor: "#0f172a",
-          },
-        }
-      : {};
-
-  return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="fade"
-      presentationStyle="overFullScreen"
-      statusBarTranslucent
-      hardwareAccelerated
-      onRequestClose={onClose}
-    >
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "rgba(0,0,0,0.95)",
-          justifyContent: "center",
-          alignItems: "center",
-          paddingHorizontal: 16,
-        }}
-      >
-        <View
-          style={{
-            width: "100%",
-            maxWidth: 420,
-            borderRadius: 20,
-            padding: 20,
-            backgroundColor: theme.colors.card,
-            borderWidth: 1,
-            borderColor: theme.isDark ? "#1f2937" : "#d1d5db",
-            shadowColor: MODULE_COLOR,
-            shadowOpacity: theme.isDark ? 0.4 : 0.25,
-            shadowRadius: 20,
-            shadowOffset: { width: 0, height: 8 },
-            elevation: 10,
-          }}
-        >
-          {title && (
-            <Text
-              style={{
-                fontSize: 17,
-                fontWeight: "700",
-                marginBottom: 12,
-                textAlign: "center",
-                color: theme.colors.textPrimary,
-              }}
-            >
-              {title}
-            </Text>
-          )}
-
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 14,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              borderRadius: 12,
-              backgroundColor: "#0f172a",
-              borderWidth: 1,
-              borderColor: theme.isDark ? "#1e293b" : "#cbd5e1",
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <TouchableOpacity onPress={goToPrevYear} style={{ padding: 4 }}>
-                <Ionicons
-                  name="play-back"
-                  size={19}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={goToPrevMonth} style={{ padding: 4 }}>
-                <Ionicons
-                  name="chevron-back"
-                  size={22}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <Text
-              style={{
-                fontSize: 16,
-                fontWeight: "600",
-                color: theme.colors.textPrimary,
-              }}
-            >
-              {MONTH_NAMES[month - 1]} {year}
-            </Text>
-
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <TouchableOpacity onPress={goToNextMonth} style={{ padding: 4 }}>
-                <Ionicons
-                  name="chevron-forward"
-                  size={22}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={goToNextYear} style={{ padding: 4 }}>
-                <Ionicons
-                  name="play-forward"
-                  size={19}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <Calendar
-            current={calendarCurrent}
-            hideArrows
-            onDayPress={handleDayPress}
-            markedDates={markedDates}
-            theme={{
-              backgroundColor: theme.colors.card,
-              calendarBackground: theme.colors.card,
-              textSectionTitleColor: theme.colors.textSecondary,
-              selectedDayBackgroundColor: MODULE_COLOR,
-              selectedDayTextColor: "#0f172a",
-              todayTextColor: MODULE_COLOR,
-              dayTextColor: theme.colors.textPrimary,
-              textDisabledColor: "#6b7280",
-              monthTextColor: theme.colors.textPrimary,
-            }}
-          />
-
-          <TouchableOpacity
-            onPress={onClose}
-            style={{
-              marginTop: 16,
-              padding: 12,
-              backgroundColor: MODULE_COLOR,
-              borderRadius: 999,
-              alignItems: "center",
-            }}
-          >
-            <Text style={{ color: "#0f172a", fontSize: 14, fontWeight: "700" }}>
-              Close
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-};
+import {
+  MODULE_COLOR,
+  DatePickerModal,
+  createNeonCardShell,
+} from "../task-management/TS FILE/TaskSharedUI";
+import { buildTaskPdfHtml } from "../task-management/TS FILE/taskPdf";
 
 // ------------ TYPES ------------
 
@@ -330,8 +72,6 @@ type TaskType = {
   CreatedUser: { id: string; name: string; email?: string };
   priorityScore?: number;
   guests?: string[];
-  notifStartId?: string | null;
-  notifDueId?: string | null;
 };
 
 type CommentType = {
@@ -353,6 +93,15 @@ type ChatMessageType = {
 
 type FilterType = "all" | "active" | "completed" | "overdue";
 type CommentNode = CommentType & { replies: CommentNode[] };
+
+type CalendarTarget =
+  | "taskStart"
+  | "taskDue"
+  | "subtaskStart"
+  | "subtaskDue"
+  | "newStart"
+  | "newDue"
+  | null;
 
 // ------------ PERMISSION ------------
 
@@ -437,26 +186,6 @@ const computePriorityScore = (params: {
   return Math.round(score);
 };
 
-// ------------ UI HELPERS ------------
-
-const createNeonCardShell = (
-  accentColor: string,
-  theme: any,
-  extra: any = {}
-) => {
-  return {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: accentColor + "66",
-    shadowColor: accentColor,
-    shadowOpacity: theme.isDark ? 0.9 : 0.5,
-    shadowRadius: theme.isDark ? 30 : 20,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: theme.isDark ? 18 : 8,
-    ...extra,
-  };
-};
-
 const summaryCardStyle = (
   theme: any,
   type: "overdue" | "active" | "completed"
@@ -509,71 +238,6 @@ const buildThreadTree = (items: CommentType[]): CommentNode[] => {
   return roots;
 };
 
-// ------------ NOTIFICATIONS HELPERS ------------
-
-const getProjectIdForExpoPush = (): string | undefined => {
-  const anyConst: any = Constants as any;
-  return (
-    anyConst?.easConfig?.projectId ||
-    anyConst?.expoConfig?.extra?.eas?.projectId ||
-    anyConst?.expoConfig?.projectId
-  );
-};
-
-async function registerForPushNotificationsAsync(): Promise<string> {
-  let token = "";
-
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("task-reminders", {
-      name: "Task Reminders",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: MODULE_COLOR,
-    });
-  }
-
-  if (!Device.isDevice) {
-    Alert.alert("Device needed", "Push Notifications need a physical device.");
-    return token;
-  }
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== "granted") {
-    Alert.alert("Permission denied", "Notifications permission not granted.");
-    return token;
-  }
-
-  try {
-    const projectId = getProjectIdForExpoPush();
-    if (!projectId) throw new Error("Project ID not found in Constants (EAS)");
-
-    token = (
-      await Notifications.getExpoPushTokenAsync({
-        projectId,
-      })
-    ).data;
-  } catch (e: any) {
-    console.log("Push token error:", e?.message || e);
-  }
-
-  return token;
-}
-
-const to9AM = (ms: number) => {
-  const d = new Date(ms);
-  d.setHours(9, 0, 0, 0);
-  return d.getTime();
-};
-
-const isFuture = (ms: number) => ms > Date.now() + 30 * 1000;
-
 // ------------ MAIN COMPONENT ------------
 
 export default function TaskMenuScreen() {
@@ -594,13 +258,6 @@ export default function TaskMenuScreen() {
   const [newStartDate, setNewStartDate] = useState<Date | null>(null);
   const [newDueDate, setNewDueDate] = useState<Date | null>(null);
 
-  // ✅ Notifications
-  const [expoPushToken, setExpoPushToken] = useState("");
-  const notificationListener = useRef<Notifications.EventSubscription | null>(
-    null
-  );
-  const responseListener = useRef<Notifications.EventSubscription | null>(null);
-
   // main task editing
   const [editingTaskName, setEditingTaskName] = useState("");
   const [editingTaskDetails, setEditingTaskDetails] = useState("");
@@ -619,6 +276,7 @@ export default function TaskMenuScreen() {
   const [subtaskDueDate, setSubtaskDueDate] = useState<Date | null>(null);
 
   const [calendarTarget, setCalendarTarget] = useState<CalendarTarget>(null);
+
   // comments
   const [comments, setComments] = useState<CommentType[]>([]);
   const [commentText, setCommentText] = useState<string>("");
@@ -633,14 +291,6 @@ export default function TaskMenuScreen() {
 
   // filter mode
   const [filter, setFilter] = useState<FilterType>("all");
-  type CalendarTarget =
-    | "taskStart"
-    | "taskDue"
-    | "subtaskStart"
-    | "subtaskDue"
-    | "newStart"
-    | "newDue"
-    | null;
 
   // ✅ Task chat drawer
   const [chatOpen, setChatOpen] = useState(false);
@@ -651,7 +301,6 @@ export default function TaskMenuScreen() {
   const [showMentionBox, setShowMentionBox] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
 
-  const todayStr = new Date().toISOString().split("T")[0];
   const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
 
   const formatDate = (date: Date) =>
@@ -665,126 +314,6 @@ export default function TaskMenuScreen() {
     if (!ms) return "";
     const d = new Date(ms);
     return d.toLocaleString();
-  };
-
-  // ---------- NOTIFICATIONS INIT ----------
-
-  useEffect(() => {
-    registerForPushNotificationsAsync().then((token) => {
-      if (token) setExpoPushToken(token);
-    });
-
-    notificationListener.current =
-      Notifications.addNotificationReceivedListener(() => {});
-
-    responseListener.current =
-      Notifications.addNotificationResponseReceivedListener(() => {});
-
-    return () => {
-      notificationListener.current?.remove();
-      responseListener.current?.remove();
-    };
-  }, []);
-
-  const cancelNotificationSafe = async (id?: string | null) => {
-    if (!id) return;
-    try {
-      await Notifications.cancelScheduledNotificationAsync(id);
-    } catch {}
-  };
-
-  const scheduleAtTime = async (params: {
-    title: string;
-    body: string;
-    atMs: number;
-    data?: any;
-  }) => {
-    const { title, body, atMs, data } = params;
-    if (!isFuture(atMs)) return null;
-
-    const trigger = new Date(atMs);
-
-    const id = await Notifications.scheduleNotificationAsync({
-      content: { title, body, data: data || {} },
-      trigger,
-    });
-
-    return id;
-  };
-
-  const upsertTaskReminders = async (
-    taskId: string,
-    payload: {
-      taskName: string;
-      startMs?: number | null;
-      dueMs?: number | null;
-      prevStartId?: string | null;
-      prevDueId?: string | null;
-    }
-  ) => {
-    const { taskName, startMs, dueMs, prevStartId, prevDueId } = payload;
-
-    await cancelNotificationSafe(prevStartId);
-    await cancelNotificationSafe(prevDueId);
-
-    let notifStartId: string | null = null;
-    let notifDueId: string | null = null;
-
-    if (typeof startMs === "number") {
-      const at = to9AM(startMs);
-      notifStartId = await scheduleAtTime({
-        title: "Task starts today",
-        body: `🟦 ${taskName}`,
-        atMs: at,
-        data: { taskId, type: "start" },
-      });
-    }
-
-    if (typeof dueMs === "number") {
-      const at = to9AM(dueMs);
-      notifDueId = await scheduleAtTime({
-        title: "Task due today",
-        body: `⏰ ${taskName}`,
-        atMs: at,
-        data: { taskId, type: "due" },
-      });
-    }
-
-    await updateDoc(doc(db, "Tasks", taskId), {
-      notifStartId,
-      notifDueId,
-    });
-
-    return { notifStartId, notifDueId };
-  };
-
-  const upsertSubtaskDueReminder = async (
-    taskId: string,
-    subtaskId: string,
-    payload: {
-      subtaskName: string;
-      dueMs?: number | null;
-      prevDueId?: string | null;
-    }
-  ) => {
-    await cancelNotificationSafe(payload.prevDueId);
-
-    let notifDueId: string | null = null;
-    if (typeof payload.dueMs === "number") {
-      const at = to9AM(payload.dueMs);
-      notifDueId = await scheduleAtTime({
-        title: "Subtask due today",
-        body: `✅ ${payload.subtaskName}`,
-        atMs: at,
-        data: { taskId, subtaskId, type: "subtask_due" },
-      });
-    }
-
-    await updateDoc(doc(db, "Tasks", taskId, "Subtasks", subtaskId), {
-      notifDueId,
-    });
-
-    return notifDueId;
   };
 
   // ---------- FIRESTORE LOADERS ----------
@@ -1010,40 +539,12 @@ export default function TaskMenuScreen() {
         updatedAt: Date.now(),
       });
 
-      if (!selectedTask.completed) {
-        const ids = await upsertTaskReminders(selectedTask.id, {
-          taskName: trimmedName,
-          startMs: startTimestamp,
-          dueMs: dueTimestamp,
-          prevStartId: selectedTask.notifStartId ?? null,
-          prevDueId: selectedTask.notifDueId ?? null,
-        });
-
-        setSelectedTask((prev) =>
-          prev
-            ? {
-                ...prev,
-                taskName: trimmedName,
-                details: editingTaskDetails,
-                startDate: startTimestamp ?? undefined,
-                dueDate: dueTimestamp ?? undefined,
-                assignedTo: mainAssignedList,
-                priorityScore,
-                notifStartId: ids.notifStartId,
-                notifDueId: ids.notifDueId,
-              }
-            : prev
-        );
-      }
-
       Alert.alert("Saved", "Task updated successfully.");
     } catch (error) {
       console.error("Failed to update task:", error);
       Alert.alert("Error", "Failed to update task");
     }
   };
-
-  // ✅ keep date calculations, just change modal UI
 
   const handleCompleteTaskToggle = async (task: TaskType) => {
     if (!task) return;
@@ -1057,45 +558,13 @@ export default function TaskMenuScreen() {
     try {
       const newCompleted = !task.completed;
 
+      await updateDoc(doc(db, "Tasks", task.id), {
+        completed: newCompleted,
+        updatedAt: Date.now(),
+      });
+
       if (newCompleted) {
-        await cancelNotificationSafe(task.notifStartId ?? null);
-        await cancelNotificationSafe(task.notifDueId ?? null);
-
-        await updateDoc(doc(db, "Tasks", task.id), {
-          completed: true,
-          notifStartId: null,
-          notifDueId: null,
-          updatedAt: Date.now(),
-        });
-
-        await updateDoc(doc(db, "Tasks", task.id), {
-          completed: true,
-          notifStartId: null,
-          notifDueId: null,
-          updatedAt: Date.now(),
-        });
-        if (newCompleted) {
-          await cancelNotificationSafe(task.notifStartId ?? null);
-          await cancelNotificationSafe(task.notifDueId ?? null);
-
-          await updateDoc(doc(db, "Tasks", task.id), {
-            completed: true,
-            notifStartId: null,
-            notifDueId: null,
-            updatedAt: Date.now(),
-          });
-
-          // ✅ Award XP/streak only once per task
-          await awardTaskCompletionOnce(user.uid, task.id);
-        }
-
-        await upsertTaskReminders(task.id, {
-          taskName: task.taskName,
-          startMs: typeof task.startDate === "number" ? task.startDate : null,
-          dueMs: typeof task.dueDate === "number" ? task.dueDate : null,
-          prevStartId: task.notifStartId ?? null,
-          prevDueId: task.notifDueId ?? null,
-        });
+        await awardTaskCompletionOnce(user.uid, task.id);
       }
     } catch (error) {
       console.error("Failed to update task:", error);
@@ -1113,12 +582,6 @@ export default function TaskMenuScreen() {
     }
 
     try {
-      const t = tasks.find((x) => x.id === taskId);
-      if (t) {
-        await cancelNotificationSafe(t.notifStartId ?? null);
-        await cancelNotificationSafe(t.notifDueId ?? null);
-      }
-
       await deleteDoc(doc(db, "Tasks", taskId));
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
       if (selectedTask?.id === taskId) {
@@ -1161,22 +624,6 @@ export default function TaskMenuScreen() {
         }
       );
 
-      if (newCompleted) {
-        await cancelNotificationSafe(subtask.notifDueId ?? null);
-        await updateDoc(
-          doc(db, "Tasks", selectedTask.id, "Subtasks", subtask.id),
-          { notifDueId: null }
-        );
-      } else {
-        if (typeof subtask.dueDate === "number") {
-          await upsertSubtaskDueReminder(selectedTask.id, subtask.id, {
-            subtaskName: subtask.taskName,
-            dueMs: subtask.dueDate,
-            prevDueId: subtask.notifDueId ?? null,
-          });
-        }
-      }
-
       if (newCompleted) await awardSubtaskCompletion(user.uid);
       else await removeSubtaskCompletion(user.uid);
     } catch (error) {
@@ -1198,40 +645,26 @@ export default function TaskMenuScreen() {
     const user = auth.currentUser;
     if (!user) return;
 
-    const docRef = await addDoc(
-      collection(db, "Tasks", selectedTask.id, "Subtasks"),
-      {
-        taskName: subtaskName.trim(),
-        details: subtaskDetails,
-        startDate: subtaskStartDate ? subtaskStartDate.getTime() : null,
-        dueDate: subtaskDueDate.getTime(),
-        completed: false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        CreatedUser: {
-          id: user.uid,
-          name: user.displayName || "User",
-          email: user.email || "",
-        },
-        notifDueId: null,
-      }
-    );
-
-    try {
-      await upsertSubtaskDueReminder(selectedTask.id, docRef.id, {
-        subtaskName: subtaskName.trim(),
-        dueMs: subtaskDueDate.getTime(),
-        prevDueId: null,
-      });
-    } catch {}
+    await addDoc(collection(db, "Tasks", selectedTask.id, "Subtasks"), {
+      taskName: subtaskName.trim(),
+      details: subtaskDetails,
+      startDate: subtaskStartDate ? subtaskStartDate.getTime() : null,
+      dueDate: subtaskDueDate.getTime(),
+      completed: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      CreatedUser: {
+        id: user.uid,
+        name: user.displayName || "User",
+        email: user.email || "",
+      },
+    });
 
     setSubtaskName("");
     setSubtaskDetails("");
     setSubtaskStartDate(null);
     setSubtaskDueDate(null);
   };
-
-  // ✅ keep calculations, just use DatePickerModal UI
 
   const handleDeleteSubtask = async (subtask: any) => {
     if (!selectedTask) return;
@@ -1251,7 +684,6 @@ export default function TaskMenuScreen() {
     }
 
     try {
-      await cancelNotificationSafe(subtask.notifDueId ?? null);
       await deleteDoc(
         doc(db, "Tasks", selectedTask.id, "Subtasks", subtask.id)
       );
@@ -1261,7 +693,7 @@ export default function TaskMenuScreen() {
   };
 
   // ---------- COMMENTS ----------
-  // (unchanged below)
+
   const isMyComment = (c: CommentType) => {
     const user = auth.currentUser;
     return !!user && c?.user?.id === user.uid;
@@ -1533,385 +965,31 @@ export default function TaskMenuScreen() {
     try {
       const user = auth.currentUser;
       if (!user) {
-        Alert.alert("Not logged in", "Please log in to export your tasks.");
+        Alert.alert("Not logged in");
         return;
       }
 
-      const safe = (s: string) => escapeHtml(s || "");
-
-      const isOverduePdf = (due?: number | null, completed?: boolean) => {
-        if (!due || completed) return false;
-        const d = new Date(due);
-        d.setHours(0, 0, 0, 0);
-        const t = new Date();
-        t.setHours(0, 0, 0, 0);
-        return d.getTime() < t.getTime();
-      };
-
-      const fmt = (ms?: number | null) =>
-        typeof ms === "number" ? formatDate(new Date(ms)) : "-";
-
-      // Summary
-      const overdue = tasks.filter((t) =>
-        isOverduePdf(t.dueDate, t.completed)
-      ).length;
-      const active = tasks.filter((t) => !t.completed).length;
-      const completed = tasks.filter((t) => !!t.completed).length;
-
-      const rows = tasks
-        .map((t, i) => {
-          const start = t.startDate ? formatDate(new Date(t.startDate)) : "-";
-          const due = t.dueDate ? formatDate(new Date(t.dueDate)) : "-";
-          const status = t.completed ? "Completed" : "Pending";
-
-          const score =
-            typeof t.priorityScore === "number" ? t.priorityScore : null;
-
-          let priorityLabel = "Low";
-          let priorityClass = "p-low";
-          if (score != null && score >= 100) {
-            priorityLabel = "High";
-            priorityClass = "p-high";
-          } else if (score != null && score >= 60) {
-            priorityLabel = "Medium";
-            priorityClass = "p-med";
-          }
-
-          const isOverdue =
-            !t.completed &&
-            typeof t.dueDate === "number" &&
-            new Date(t.dueDate).setHours(0, 0, 0, 0) <
-              new Date().setHours(0, 0, 0, 0);
-
-          return `<tr class="${isOverdue ? "row-overdue" : ""}">
-      <td class="col-no">${i + 1}</td>
-      <td class="col-task">
-        <div class="task-title ${t.completed ? "task-done" : ""}">
-          ${escapeHtml(t.taskName || "")}
-        </div>
-        ${
-          t.details
-            ? `<div class="task-sub ${
-                t.completed ? "task-done" : ""
-              }">${escapeHtml(t.details)}</div>`
-            : ""
-        }
-      </td>
-      <td class="col-date">${start}</td>
-      <td class="col-date">${due}</td>
-      <td class="col-priority">
-        ${
-          score == null
-            ? `<span class="badge p-low">—</span>`
-            : `<span class="badge ${priorityClass}">${priorityLabel} <span class="badge-muted">(${score})</span></span>`
-        }
-      </td>
-      <td class="col-status">
-        <span class="badge ${t.completed ? "s-done" : "s-pending"}">
-          ${status}
-        </span>
-        ${isOverdue ? `<span class="badge s-overdue">Overdue</span>` : ""}
-      </td>
-    </tr>`;
-        })
-        .join("");
-
-      const generatedAt = new Date().toLocaleString();
-      const accent = MODULE_COLOR;
-
-      const html = `
-<html>
-  <head>
-    <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0" />
-    <style>
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-        background: #070a12;
-        color: #e5e7eb;
-        padding: 20px;
-      }
-
-      /* Page container */
-      .page {
-        max-width: 920px;
-        margin: 0 auto;
-      }
-
-      /* Header */
-      .header {
-        border: 1px solid rgba(56,189,248,0.22);
-        background: linear-gradient(180deg, rgba(2,6,23,1) 0%, rgba(7,12,24,1) 100%);
-        border-radius: 16px;
-        padding: 16px 16px 14px 16px;
-        position: relative;
-        overflow: hidden;
-      }
-      .header:before {
-        content: "";
-        position: absolute;
-        inset: -40px -40px auto -40px;
-        height: 120px;
-        background: radial-gradient(circle at 20% 30%, rgba(56,189,248,0.20), transparent 60%);
-        pointer-events: none;
-      }
-      .header-top {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 12px;
-      }
-      .title {
-        font-size: 18px;
-        font-weight: 800;
-        letter-spacing: 0.3px;
-        margin: 0;
-      }
-      .subtitle {
-        margin-top: 6px;
-        font-size: 12px;
-        color: #9ca3af;
-        line-height: 1.4;
-      }
-      .chip {
-        display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(56,189,248,0.35);
-        background: rgba(56,189,248,0.10);
-        color: #c7f0ff;
-        font-size: 11px;
-        font-weight: 700;
-        white-space: nowrap;
-      }
-      .accent-line {
-        height: 3px;
-        border-radius: 999px;
-        margin-top: 14px;
-        background: linear-gradient(90deg, rgba(56,189,248,0.15), rgba(56,189,248,0.95), rgba(56,189,248,0.15));
-      }
-
-      /* Summary cards */
-      .summary {
-        margin-top: 14px;
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        gap: 12px;
-      }
-      .card {
-        border: 1px solid rgba(148,163,184,0.18);
-        background: rgba(2,6,23,0.85);
-        border-radius: 16px;
-        padding: 12px 12px 10px 12px;
-        position: relative;
-        overflow: hidden;
-      }
-      .card:after {
-        content: "";
-        position: absolute;
-        left: 0; right: 0; bottom: 0;
-        height: 3px;
-        opacity: 0.9;
-      }
-      .card .k {
-        font-size: 11px;
-        color: #94a3b8;
-        font-weight: 700;
-        letter-spacing: 0.3px;
-        text-transform: uppercase;
-      }
-      .card .v {
-        margin-top: 6px;
-        font-size: 22px;
-        font-weight: 900;
-        color: #e5e7eb;
-      }
-      .card .hint {
-        margin-top: 4px;
-        font-size: 11px;
-        color: #94a3b8;
-      }
-      .card.overdue:after { background: rgba(239,68,68,0.95); }
-      .card.active:after { background: rgba(34,197,94,0.95); }
-      .card.done:after { background: rgba(56,189,248,0.95); }
-
-      /* Table container */
-      .table-wrap {
-        margin-top: 14px;
-        border-radius: 16px;
-        overflow: hidden;
-        border: 1px solid rgba(56,189,248,0.18);
-        background: rgba(2,6,23,0.75);
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-      }
-      thead th {
-        text-align: left;
-        padding: 12px 12px;
-        font-size: 11px;
-        color: #b6c3d6;
-        letter-spacing: 0.35px;
-        text-transform: uppercase;
-        border-bottom: 1px solid rgba(30,41,59,0.9);
-        background: rgba(2,6,23,0.95);
-      }
-      tbody td {
-        padding: 11px 12px;
-        border-bottom: 1px solid rgba(30,41,59,0.6);
-        vertical-align: top;
-      }
-      tbody tr {
-        background: rgba(11,18,32,0.35);
-      }
-      tbody tr:nth-child(even) {
-        background: rgba(7,16,30,0.55);
-      }
-      tbody tr:hover { background: rgba(56,189,248,0.06); }
-
-      .row-overdue {
-        background: rgba(239,68,68,0.08) !important;
-      }
-
-      /* Columns */
-      .col-no { width: 40px; color: #94a3b8; font-weight: 800; }
-      .col-date { width: 110px; color: #cbd5e1; }
-      .col-priority { width: 150px; }
-      .col-status { width: 170px; }
-
-      /* Task cell */
-      .task-title {
-        font-weight: 900;
-        color: #e5e7eb;
-        line-height: 1.25;
-      }
-      .task-sub {
-        margin-top: 4px;
-        color: #9ca3af;
-        line-height: 1.35;
-        font-size: 11px;
-      }
-      .task-done { opacity: 0.65; text-decoration: line-through; }
-
-      /* Badges */
-      .badge {
-        display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 800;
-        border: 1px solid rgba(148,163,184,0.22);
-        background: rgba(15,23,42,0.65);
-        color: #e5e7eb;
-        margin-right: 6px;
-        margin-bottom: 6px;
-        white-space: nowrap;
-      }
-      .badge-muted { font-weight: 800; opacity: 0.7; }
-
-      /* Priority colors (subtle, not bright) */
-      .p-high { border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.12); color: #fecaca; }
-      .p-med  { border-color: rgba(96,165,250,0.35); background: rgba(96,165,250,0.12); color: #dbeafe; }
-      .p-low  { border-color: rgba(148,163,184,0.22); background: rgba(148,163,184,0.10); color: #e5e7eb; }
-
-      /* Status badges */
-      .s-done    { border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.12); color: #bbf7d0; }
-      .s-pending { border-color: rgba(250,204,21,0.30); background: rgba(250,204,21,0.10); color: #fef9c3; }
-      .s-overdue { border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.12); color: #fecaca; }
-
-      /* Footer */
-      .footer {
-        margin-top: 12px;
-        display: flex;
-        justify-content: space-between;
-        color: #64748b;
-        font-size: 10px;
-      }
-
-      /* Print spacing (expo-print behaves like print) */
-      @page { margin: 18px; }
-    </style>
-  </head>
-
-  <body>
-    <div class="page">
-      <div class="header">
-        <div class="header-top">
-          <div>
-            <h1 class="title">Task Management • Task List</h1>
-            <div class="subtitle">
-              User: ${escapeHtml(user.email || "")}<br/>
-              Generated: ${new Date().toLocaleString()}
-            </div>
-          </div>
-          <div class="chip">MODULE • ${accent}</div>
-        </div>
-        <div class="accent-line"></div>
-      </div>
-
-      <div class="summary">
-        <div class="card overdue">
-          <div class="k">Overdue</div>
-          <div class="v">${overdueCount}</div>
-          <div class="hint">Pending tasks past due date</div>
-        </div>
-        <div class="card active">
-          <div class="k">Active</div>
-          <div class="v">${activeCount}</div>
-          <div class="hint">Tasks not completed yet</div>
-        </div>
-        <div class="card done">
-          <div class="k">Completed</div>
-          <div class="v">${completedCount}</div>
-          <div class="hint">Finished tasks</div>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Task</th>
-              <th>Start</th>
-              <th>Due</th>
-              <th>Priority</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            ${
-              rows ||
-              `<tr><td colspan="6" style="padding:16px;color:#94a3b8;">No tasks found.</td></tr>`
-            }
-          </tbody>
-        </table>
-      </div>
-
-      <div class="footer">
-        <div>Generated by PEARL • Task Module</div>
-        <div>Theme: Dark Report</div>
-      </div>
-    </div>
-  </body>
-</html>
-`;
+      const html = buildTaskPdfHtml({
+        tasks,
+        userEmail: user.email || "",
+        counts: {
+          overdue: overdueCount,
+          active: activeCount,
+          completed: completedCount,
+        },
+      });
 
       const { uri } = await Print.printToFileAsync({ html });
-      await shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf" });
+      await shareAsync(uri, {
+        UTI: ".pdf",
+        mimeType: "application/pdf",
+      });
     } catch (err: any) {
-      console.error(err);
-      Alert.alert("Error", err?.message ?? "Failed to generate PDF.");
+      Alert.alert("Error", err?.message || "Failed to export PDF");
     }
   };
 
   // ---------- ADD TASK (new task) ----------
-  // ✅ keep calculations, just use DatePickerModal UI
 
   const handleCreateTask = async () => {
     const user = auth.currentUser;
@@ -1937,7 +1015,7 @@ export default function TaskMenuScreen() {
         assigneeCount: 0,
       });
 
-      const docRef = await addDoc(collection(db, "Tasks"), {
+      await addDoc(collection(db, "Tasks"), {
         taskName: name,
         details: newTaskDetails,
         startDate: startMs,
@@ -1953,19 +1031,7 @@ export default function TaskMenuScreen() {
           email: user.email || "",
         },
         guests: [],
-        notifStartId: null,
-        notifDueId: null,
       });
-
-      try {
-        await upsertTaskReminders(docRef.id, {
-          taskName: name,
-          startMs,
-          dueMs,
-          prevStartId: null,
-          prevDueId: null,
-        });
-      } catch {}
 
       setAddOpen(false);
       setNewTaskName("");
@@ -2015,46 +1081,6 @@ export default function TaskMenuScreen() {
     );
   };
 
-  const getPriorityChip = (score?: number) => {
-    if (score == null) return null;
-
-    let label = "Low";
-    let bg = "#e5e7eb";
-    let textColor = "#111827";
-
-    if (score >= 100) {
-      label = "High";
-      bg = "#fee2e2";
-      textColor = "#b91c1c";
-    } else if (score >= 60) {
-      label = "Medium";
-      bg = "#dbeafe";
-      textColor = "#1d4ed8";
-    }
-
-    return (
-      <View
-        style={{
-          paddingHorizontal: 8,
-          paddingVertical: 2,
-          borderRadius: 999,
-          backgroundColor: bg,
-          marginLeft: 8,
-        }}
-      >
-        <Text
-          style={{
-            fontSize: theme.typography.fontSizes.xs,
-            fontWeight: theme.typography.fontWeights.semibold,
-            color: textColor,
-          }}
-        >
-          {label}
-        </Text>
-      </View>
-    );
-  };
-
   const threadRoots = useMemo(() => buildThreadTree(comments), [comments]);
 
   // ---------- STYLES ----------
@@ -2066,11 +1092,10 @@ export default function TaskMenuScreen() {
       StyleSheet.create({
         container: { flex: 1 },
 
-        // ✅ IMPORTANT: keep bottom padding so list doesn't hide behind taskbar
         list: { flex: 1 },
         listContent: {
           paddingHorizontal: theme.spacing.screenPadding,
-          paddingBottom: theme.spacing.xxl + 190, // keeps space for bottom bar + floating add
+          paddingBottom: theme.spacing.xxl + 190,
         },
 
         headerRow: {
@@ -2149,63 +1174,6 @@ export default function TaskMenuScreen() {
           fontWeight: theme.typography.fontWeights.semibold,
           color: theme.colors.textPrimary,
         },
-        calendarOverlay: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: "rgba(2,6,23,0.72)",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 9999,
-          elevation: 9999,
-        },
-        calendarSheet: {
-          width: "92%",
-          maxWidth: 420,
-          borderRadius: 18,
-          padding: 12,
-          backgroundColor: theme.isDark ? "#050B16" : "#F8FAFC",
-          borderWidth: 1,
-          borderColor: `${MODULE_COLOR}55`,
-          shadowColor: MODULE_COLOR,
-          shadowOpacity: theme.isDark ? 0.9 : 0.35,
-          shadowRadius: 18,
-          shadowOffset: { width: 0, height: 10 },
-          elevation: 9999,
-        },
-        calendarHeaderRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 10,
-        },
-        calendarHeaderTitle: {
-          fontSize: 14,
-          fontWeight: "900",
-          color: theme.isDark ? "#E5E7EB" : "#0F172A",
-        },
-        calendarCloseBtn: {
-          width: 34,
-          height: 34,
-          borderRadius: 999,
-          alignItems: "center",
-          justifyContent: "center",
-          borderWidth: 1,
-          borderColor: theme.isDark ? "#1E293B" : "#CBD5E1",
-          backgroundColor: theme.isDark ? "#0B1220" : "#FFFFFF",
-        },
-        calendarNeonLine: {
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 3,
-          borderBottomLeftRadius: 18,
-          borderBottomRightRadius: 18,
-          backgroundColor: MODULE_COLOR,
-          shadowColor: MODULE_COLOR,
-          shadowOpacity: 0.95,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: 0 },
-        },
 
         summaryRow: { flexDirection: "row", columnGap: theme.spacing.sm },
         summaryCard: { flex: 1 },
@@ -2256,6 +1224,7 @@ export default function TaskMenuScreen() {
           marginBottom: theme.spacing.sm,
         },
 
+        // ✅ NEW: “EventList-like” task layout
         taskCard: {
           flexDirection: "row",
           alignItems: "stretch",
@@ -2263,6 +1232,41 @@ export default function TaskMenuScreen() {
           borderRadius: 24,
           marginBottom: theme.spacing.sm,
           overflow: "hidden",
+        },
+        taskLeftColumn: {
+          alignItems: "center",
+          marginRight: theme.spacing.md,
+          paddingTop: 2,
+        },
+        taskDateBubble: {
+          borderRadius: 12,
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: 6,
+          minWidth: 54,
+        },
+        taskDateDay: { fontSize: 18, fontWeight: "800" },
+        taskDateMon: { fontSize: 10, letterSpacing: 1, fontWeight: "800" },
+        taskStatusTag: {
+          borderRadius: 999,
+          paddingHorizontal: 8,
+          paddingVertical: 3,
+        },
+        taskStatusTagText: { fontSize: 10, fontWeight: "800" },
+
+        taskContent: { flex: 1, minWidth: 0 },
+        taskHeaderRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+        },
+        taskTitleRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          flexShrink: 1,
+          minWidth: 0,
         },
         taskTitle: {
           fontSize: theme.typography.fontSizes.md,
@@ -2273,34 +1277,25 @@ export default function TaskMenuScreen() {
           color: theme.colors.textSecondary,
           marginTop: 2,
         },
-        taskContent: { flex: 1 },
-        taskHeaderRow: {
-          flexDirection: "row",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-        },
-        taskTitleRow: {
-          flexDirection: "row",
-          alignItems: "flex-start",
-          flexShrink: 1,
-        },
-        taskMetaRow: {
+        metaRow: {
           flexDirection: "row",
           alignItems: "center",
-          marginTop: 4,
+          marginTop: 6,
           flexWrap: "wrap",
+          columnGap: 10,
+          rowGap: 6,
         },
-        taskMetaText: {
-          fontSize: theme.typography.fontSizes.xs,
-          color: theme.colors.textSecondary,
-          marginRight: 8,
-        },
-        statusPill: {
-          paddingHorizontal: 8,
-          paddingVertical: 2,
+        metaPill: {
+          flexDirection: "row",
+          alignItems: "center",
           borderRadius: 999,
-          alignSelf: "flex-end",
-          marginBottom: 4,
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+          borderWidth: 1,
+        },
+        metaPillText: {
+          fontSize: 11,
+          fontWeight: "700",
         },
 
         // MODAL
@@ -2657,7 +1652,7 @@ export default function TaskMenuScreen() {
           zIndex: 400,
         },
 
-        // ✅✅✅ Taskbar B (applied)
+        // ✅ Taskbar
         bottomBar: {
           position: "absolute",
           left: 16,
@@ -2846,6 +1841,7 @@ export default function TaskMenuScreen() {
             />
           </View>
         </View>
+
         {/* MAIN LIST */}
         <FlatList
           style={styles.list}
@@ -2866,14 +1862,6 @@ export default function TaskMenuScreen() {
                 <Text style={styles.moduleSubtitle}>
                   Stay organized and productive
                 </Text>
-
-                {!!expoPushToken && (
-                  <Text
-                    style={{ color: "#64748B", fontSize: 11, marginTop: 6 }}
-                  >
-                    Push Token: {expoPushToken.slice(0, 18)}...
-                  </Text>
-                )}
               </View>
 
               {/* Date ribbon */}
@@ -3048,6 +2036,49 @@ export default function TaskMenuScreen() {
               ? "rgba(148,163,184,0.45)"
               : accentColor;
 
+            // ✅ “EventList-like” date bubble (use dueDate if exist, else show --)
+            const dateObj =
+              typeof item.dueDate === "number" ? new Date(item.dueDate) : null;
+            const day = dateObj?.getDate().toString().padStart(2, "0") ?? "--";
+            const mon =
+              dateObj
+                ?.toLocaleDateString("en-US", { month: "short" })
+                .toUpperCase() ?? "---";
+
+            const dateBubbleBg = isDark ? "#020617" : "#DBEAFE";
+            const dateBubbleDayColor = isDark ? "#E0F2FE" : "#1D4ED8";
+
+            const statusText = isCompleted
+              ? "DONE"
+              : isOverdue
+              ? "OVERDUE"
+              : "ACTIVE";
+            const statusBg = isCompleted
+              ? "rgba(148,163,184,0.18)"
+              : isOverdue
+              ? "rgba(239,68,68,0.18)"
+              : "rgba(34,197,94,0.18)";
+            const statusColor = isCompleted
+              ? "#9CA3AF"
+              : isOverdue
+              ? "#EF4444"
+              : "#22C55E";
+
+            const startLabel =
+              typeof item.startDate === "number"
+                ? formatDate(new Date(item.startDate))
+                : null;
+            const dueLabel =
+              typeof item.dueDate === "number"
+                ? formatDate(new Date(item.dueDate))
+                : null;
+
+            const assignedCount = Array.isArray(item.assignedTo)
+              ? item.assignedTo.length
+              : item.assignedTo
+              ? 1
+              : 0;
+
             return (
               <TouchableOpacity
                 activeOpacity={0.9}
@@ -3064,15 +2095,62 @@ export default function TaskMenuScreen() {
                     }),
                     {
                       backgroundColor: theme.colors.cardBackground,
-                      opacity: isCompleted ? 0.8 : 1,
+                      opacity: isCompleted ? 0.85 : 1,
                     },
                   ]}
                 >
+                  {/* LEFT COLUMN */}
+                  <View style={styles.taskLeftColumn}>
+                    <View
+                      style={[
+                        styles.taskDateBubble,
+                        { backgroundColor: dateBubbleBg },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.taskDateDay,
+                          { color: dateBubbleDayColor },
+                        ]}
+                      >
+                        {day}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.taskDateMon,
+                          { color: isDark ? "#E5E7EB" : "#6B7280" },
+                        ]}
+                      >
+                        {mon}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.taskStatusTag,
+                        { backgroundColor: statusBg },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.taskStatusTagText,
+                          { color: statusColor },
+                        ]}
+                      >
+                        {statusText}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* MAIN */}
                   <View style={styles.taskContent}>
                     <View style={styles.taskHeaderRow}>
                       <View style={styles.taskTitleRow}>
                         <TouchableOpacity
-                          onPress={() => handleCompleteTaskToggle(item)}
+                          onPress={(e: any) => {
+                            e?.stopPropagation?.();
+                            handleCompleteTaskToggle(item);
+                          }}
                           style={{ marginRight: 10, marginTop: 2 }}
                         >
                           <Ionicons
@@ -3086,7 +2164,7 @@ export default function TaskMenuScreen() {
                           />
                         </TouchableOpacity>
 
-                        <View style={{ flexShrink: 1 }}>
+                        <View style={{ flexShrink: 1, minWidth: 0 }}>
                           <Text
                             style={[
                               styles.taskTitle,
@@ -3119,47 +2197,116 @@ export default function TaskMenuScreen() {
                           )}
                         </View>
                       </View>
-
-                      <View style={{ alignItems: "flex-end", marginLeft: 8 }}>
-                        {isOverdue && !isCompleted && (
-                          <View
-                            style={[
-                              styles.statusPill,
-                              { backgroundColor: "#FEE2E2" },
-                            ]}
-                          >
-                            <Text
-                              style={{
-                                fontSize: theme.typography.fontSizes.xs,
-                                fontWeight:
-                                  theme.typography.fontWeights.semibold,
-                                color: "#B91C1C",
-                              }}
-                            >
-                              OVERDUE
-                            </Text>
-                          </View>
-                        )}
-                        {getPriorityChip(item.priorityScore)}
-                      </View>
                     </View>
 
-                    <View style={styles.taskMetaRow}>
-                      {item.startDate && (
-                        <Text style={styles.taskMetaText}>
-                          Start: {formatDate(new Date(item.startDate))}
-                        </Text>
-                      )}
-                      {item.dueDate && (
-                        <Text style={styles.taskMetaText}>
-                          • Due: {formatDate(new Date(item.dueDate))}
-                        </Text>
-                      )}
+                    {/* Meta pills (cleaner + more readable) */}
+                    <View style={styles.metaRow}>
+                      {startLabel ? (
+                        <View
+                          style={[
+                            styles.metaPill,
+                            {
+                              borderColor: isDark ? "#1F2937" : "#CBD5E1",
+                              backgroundColor: isDark ? "#0B1220" : "#FFFFFF",
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="play-outline"
+                            size={12}
+                            color={theme.colors.textSecondary}
+                            style={{ marginRight: 6 }}
+                          />
+                          <Text
+                            style={[
+                              styles.metaPillText,
+                              { color: theme.colors.textSecondary },
+                            ]}
+                          >
+                            {startLabel}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {dueLabel ? (
+                        <View
+                          style={[
+                            styles.metaPill,
+                            {
+                              borderColor: isOverdue
+                                ? "#EF4444"
+                                : isDark
+                                ? "#1F2937"
+                                : "#CBD5E1",
+                              backgroundColor: isOverdue
+                                ? isDark
+                                  ? "rgba(239,68,68,0.12)"
+                                  : "#FEE2E2"
+                                : isDark
+                                ? "#0B1220"
+                                : "#FFFFFF",
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="time-outline"
+                            size={12}
+                            color={
+                              isOverdue ? "#EF4444" : theme.colors.textSecondary
+                            }
+                            style={{ marginRight: 6 }}
+                          />
+                          <Text
+                            style={[
+                              styles.metaPillText,
+                              {
+                                color: isOverdue
+                                  ? "#EF4444"
+                                  : theme.colors.textSecondary,
+                              },
+                            ]}
+                          >
+                            {dueLabel}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {assignedCount > 0 ? (
+                        <View
+                          style={[
+                            styles.metaPill,
+                            {
+                              borderColor: `${MODULE_COLOR}55`,
+                              backgroundColor: `${MODULE_COLOR}14`,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="people-outline"
+                            size={12}
+                            color={MODULE_COLOR}
+                            style={{ marginRight: 6 }}
+                          />
+                          <Text
+                            style={[
+                              styles.metaPillText,
+                              { color: MODULE_COLOR },
+                            ]}
+                          >
+                            {assignedCount} assignee
+                            {assignedCount > 1 ? "s" : ""}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
                   </View>
 
+                  {/* RIGHT ACTION */}
                   <TouchableOpacity
-                    onPress={() => handleDeleteTask(item.id)}
+                    onPress={(e: any) => {
+                      e?.stopPropagation?.();
+                      handleDeleteTask(item.id);
+                    }}
                     style={{
                       paddingHorizontal: 6,
                       alignItems: "center",
@@ -3169,6 +2316,7 @@ export default function TaskMenuScreen() {
                     <Ionicons name="trash-outline" size={20} color="#F97373" />
                   </TouchableOpacity>
 
+                  {/* Neon bottom line */}
                   <View
                     style={[
                       styles.neonBottomLine,
@@ -3194,6 +2342,8 @@ export default function TaskMenuScreen() {
             </View>
           }
         />
+
+        {/* ADD MENU */}
         <Modal
           visible={showAddMenu}
           transparent
@@ -3307,7 +2457,7 @@ export default function TaskMenuScreen() {
             </View>
           </View>
 
-          {/* My Task */}
+          {/* Task (current) */}
           <TouchableOpacity style={styles.bottomBarItem} disabled>
             <View
               style={[
@@ -3331,7 +2481,7 @@ export default function TaskMenuScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* My Event (current) */}
+          {/* Event */}
           <TouchableOpacity
             style={styles.bottomBarItem}
             onPress={() => router.push("/modules/task-management/EventList")}
@@ -3413,7 +2563,6 @@ export default function TaskMenuScreen() {
               behavior={Platform.OS === "ios" ? "padding" : undefined}
               style={{ flex: 1 }}
             >
-              {/* ✅✅✅ REPLACED CALENDAR MODALS (UI only) */}
               <DatePickerModal
                 visible={calendarTarget !== null}
                 onClose={() => setCalendarTarget(null)}
@@ -3470,6 +2619,7 @@ export default function TaskMenuScreen() {
                   setCalendarTarget(null);
                 }}
               />
+
               <Pressable
                 style={styles.modalBackdrop}
                 onPress={() => setModalVisible(false)}
@@ -3838,11 +2988,7 @@ export default function TaskMenuScreen() {
 
                           <TouchableOpacity
                             onPress={() => setReplyTo(null)}
-                            style={{
-                              position: "absolute",
-                              right: 10,
-                              top: 10,
-                            }}
+                            style={{ position: "absolute", right: 10, top: 10 }}
                           >
                             <Ionicons name="close" size={16} color="#94A3B8" />
                           </TouchableOpacity>

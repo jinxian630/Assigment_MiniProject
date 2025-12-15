@@ -1,323 +1,150 @@
-// src/screens/Task/AddEvent.tsx
-
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   KeyboardAvoidingView,
   TouchableOpacity,
   Image,
-  Modal,
   Platform,
   ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Text, TextInput, Button } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
-import { Calendar } from "react-native-calendars";
 import * as ImagePicker from "expo-image-picker";
 
-import { getAuth, User } from "firebase/auth";
-import { getFirestore, addDoc, collection } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getAuth } from "firebase/auth";
+import { addDoc, collection, getFirestore } from "firebase/firestore";
+import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import {
+  ensureMediaPermission,
+  isValidGmail,
+  addUniqueEmail,
+  removeAtIndex,
+  pickImagesFromLibrary,
+  uploadUrisToFirebaseStorage,
+} from "../task-management/TS FILE/taskSharedForm";
 
-const MODULE_COLOR = "#38BDF8";
+import {
+  MODULE_COLOR,
+  DatePickerModal,
+  formatDateGB,
+} from "../task-management/TS FILE/TaskSharedUI";
 
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
-
-/* ------------------------------------------------------------------ */
-/*  Reusable Date Picker Modal (same style family as AddTask)         */
-/* ------------------------------------------------------------------ */
-
-type DatePickerModalProps = {
-  visible: boolean;
-  onClose: () => void;
-  selectedDate: Date | null;
-  onSelectDate: (date: Date) => void;
-  theme: any;
-  title?: string;
-};
-
-const DatePickerModal: React.FC<DatePickerModalProps> = ({
-  visible,
-  onClose,
-  selectedDate,
-  onSelectDate,
-  theme,
-  title,
-}) => {
-  const initial = selectedDate || new Date();
-  const [year, setYear] = useState(initial.getFullYear());
-  const [month, setMonth] = useState(initial.getMonth() + 1); // 1–12
-  const [calendarCurrent, setCalendarCurrent] = useState(
-    `${year}-${pad2(month)}-01`
-  );
-
-  // Reset when opened (follow last selected or today)
-  useEffect(() => {
-    if (visible) {
-      const base = selectedDate || new Date();
-      const y = base.getFullYear();
-      const m = base.getMonth() + 1;
-      setYear(y);
-      setMonth(m);
-      setCalendarCurrent(`${y}-${pad2(m)}-01`);
-    }
-  }, [visible, selectedDate]);
-
-  // Update current string when year/month changes
-  useEffect(() => {
-    setCalendarCurrent(`${year}-${pad2(month)}-01`);
-  }, [year, month]);
-
-  const goToPrevMonth = () => {
-    setMonth((prev) => {
-      if (prev === 1) {
-        setYear((y) => y - 1);
-        return 12;
-      }
-      return prev - 1;
-    });
-  };
-
-  const goToNextMonth = () => {
-    setMonth((prev) => {
-      if (prev === 12) {
-        setYear((y) => y + 1);
-        return 1;
-      }
-      return prev + 1;
-    });
-  };
-
-  const goToPrevYear = () => setYear((y) => y - 1);
-  const goToNextYear = () => setYear((y) => y + 1);
-
-  const handleDayPress = (day: any) => {
-    const d = new Date(day.dateString);
-    onSelectDate(d);
-    onClose();
-  };
-
-  const selectedKey =
-    selectedDate != null ? selectedDate.toISOString().split("T")[0] : undefined;
-
-  const markedDates =
-    selectedKey != null
-      ? {
-          [selectedKey]: {
-            selected: true,
-            selectedColor: MODULE_COLOR,
-            selectedTextColor: "#0f172a",
-          },
-        }
-      : {};
-
-  return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "rgba(0,0,0,0.95)", // darker for visibility
-          justifyContent: "center",
-          alignItems: "center",
-          paddingHorizontal: 16,
-        }}
-      >
-        <View
-          style={{
-            width: "100%",
-            maxWidth: 420,
-            borderRadius: 20,
-            padding: 20,
-            backgroundColor: theme.colors.card,
-            borderWidth: 1,
-            borderColor: theme.isDark ? "#1f2937" : "#d1d5db",
-            shadowColor: MODULE_COLOR,
-            shadowOpacity: theme.isDark ? 0.55 : 0.35,
-            shadowRadius: 28,
-            shadowOffset: { width: 0, height: 10 },
-            elevation: 16,
-          }}
-        >
-          {title && (
-            <Text
-              style={{
-                fontSize: 17,
-                fontWeight: "700",
-                marginBottom: 12,
-                textAlign: "center",
-                color: theme.colors.textPrimary,
-              }}
-            >
-              {title}
-            </Text>
-          )}
-
-          {/* HEADER (month/year + arrows) */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 14,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              borderRadius: 12,
-              backgroundColor: "#0f172a",
-              borderWidth: 1,
-              borderColor: theme.isDark ? "#1e293b" : "#cbd5e1",
-            }}
-          >
-            {/* Left Controls */}
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <TouchableOpacity onPress={goToPrevYear} style={{ padding: 4 }}>
-                <Ionicons
-                  name="play-back"
-                  size={19}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={goToPrevMonth} style={{ padding: 4 }}>
-                <Ionicons
-                  name="chevron-back"
-                  size={22}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <Text
-              style={{
-                fontSize: 16,
-                fontWeight: "600",
-                color: theme.colors.textPrimary,
-              }}
-            >
-              {MONTH_NAMES[month - 1]} {year}
-            </Text>
-
-            {/* Right Controls */}
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <TouchableOpacity onPress={goToNextMonth} style={{ padding: 4 }}>
-                <Ionicons
-                  name="chevron-forward"
-                  size={22}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={goToNextYear} style={{ padding: 4 }}>
-                <Ionicons
-                  name="play-forward"
-                  size={19}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* CALENDAR */}
-          <Calendar
-            current={calendarCurrent}
-            hideArrows
-            onDayPress={handleDayPress}
-            markedDates={markedDates}
-            theme={{
-              backgroundColor: theme.colors.card,
-              calendarBackground: theme.colors.card,
-              textSectionTitleColor: theme.colors.textSecondary,
-              selectedDayBackgroundColor: MODULE_COLOR,
-              selectedDayTextColor: "#0f172a",
-              todayTextColor: MODULE_COLOR,
-              dayTextColor: theme.colors.textPrimary,
-              textDisabledColor: "#6b7280",
-              monthTextColor: theme.colors.textPrimary,
-            }}
-          />
-
-          {/* CLOSE BUTTON */}
-          <TouchableOpacity
-            onPress={onClose}
-            style={{
-              marginTop: 16,
-              padding: 12,
-              backgroundColor: MODULE_COLOR,
-              borderRadius: 999,
-              alignItems: "center",
-            }}
-          >
-            <Text
-              style={{
-                color: "#0f172a",
-                fontSize: 14,
-                fontWeight: "700",
-              }}
-            >
-              Close
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-/* ------------------------------------------------------------------ */
-/*  Add Event Screen                                                  */
-/* ------------------------------------------------------------------ */
+type ModeType = "physical" | "online";
 
 export default function AddEventScreen() {
   const router = useRouter();
   const { theme, toggleTheme }: any = useTheme();
+  const isDark = theme.isDark;
 
-  // Event fields
   const [title, setTitle] = useState("");
   const [guestInput, setGuestInput] = useState("");
   const [guestList, setGuestList] = useState<string[]>([]);
   const [location, setLocation] = useState("");
-  const [mode, setMode] = useState<"physical" | "online">("physical");
+  const [mode, setMode] = useState<ModeType>("physical");
   const [description, setDescription] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
 
-  // Calendar
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
 
   const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
 
+  const styles = useMemo(() => {
+    const inputShadow = {
+      borderRadius: 10,
+      backgroundColor: theme.colors.card,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      shadowColor: MODULE_COLOR,
+      shadowOpacity: isDark ? 0.55 : 0.2,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 8,
+    };
+
+    return {
+      label: { fontSize: 13, color: theme.colors.textSecondary },
+
+      inputShadow,
+
+      dateBox: {
+        padding: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: 10,
+        marginTop: 2,
+        backgroundColor: theme.colors.card,
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        justifyContent: "space-between" as const,
+        shadowColor: MODULE_COLOR,
+        shadowOpacity: isDark ? 0.55 : 0.35,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 10,
+      },
+
+      chipRow: {
+        flexDirection: "row" as const,
+        flexWrap: "wrap" as const,
+        marginTop: 4,
+      },
+
+      chip: {
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+        backgroundColor: isDark ? "#0f172a" : "#E5F3FF",
+        borderWidth: 1,
+        borderColor: isDark ? "#1f2937" : "#BFDBFE",
+        marginRight: 8,
+        marginBottom: 8,
+      },
+
+      chipText: { fontSize: 11, color: theme.colors.textColor },
+
+      thumbsWrap: {
+        marginTop: 10,
+        flexDirection: "row" as const,
+        flexWrap: "wrap" as const,
+      },
+
+      thumb: {
+        width: 80,
+        height: 80,
+        borderRadius: 10,
+        marginRight: 10,
+        marginBottom: 10,
+      },
+    };
+  }, [isDark, theme]);
+
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS === "web") return;
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") alert("Media library permission is required!");
+    })();
+  }, []);
+
   const handleAddGuest = () => {
     const trimmed = guestInput.trim();
     if (!trimmed) return;
+
     if (!gmailPattern.test(trimmed)) {
       alert("Please enter a valid Gmail address");
       return;
     }
+
     const exists = guestList.some(
       (g) => g.toLowerCase() === trimmed.toLowerCase()
     );
@@ -325,6 +152,7 @@ export default function AddEventScreen() {
       alert("Guest already added");
       return;
     }
+
     setGuestList((prev) => [...prev, trimmed]);
     setGuestInput("");
   };
@@ -333,28 +161,8 @@ export default function AddEventScreen() {
     setGuestList((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const formatDate = (date: Date) =>
-    date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-
-  // Image Picker permission
-  useEffect(() => {
-    (async () => {
-      if (Platform.OS !== "web") {
-        const { status } =
-          await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== "granted") {
-          alert("Media library permission is required!");
-        }
-      }
-    })();
-  }, []);
-
   const pickAttachment = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
+    const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsMultipleSelection: true,
       quality: 1,
@@ -366,23 +174,12 @@ export default function AddEventScreen() {
     }
   };
 
-  const handleAddEvent = async () => {
-    if (!title.trim()) return alert("Event title is required");
-    if (!dueDate) return alert("Please select a date");
-
-    const auth = getAuth();
-    const db = getFirestore();
+  const uploadAttachments = async (uris: string[]) => {
     const storage = getStorage();
-
-    const user = auth.currentUser;
-    if (!user) return alert("Not logged in");
-
-    const createdAt = Date.now();
     const uploadedURLs: string[] = [];
 
-    // Upload attachments
-    for (const file of attachments) {
-      const response = await fetch(file);
+    for (const fileUri of uris) {
+      const response = await fetch(fileUri);
       const blob = await response.blob();
 
       const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -393,7 +190,24 @@ export default function AddEventScreen() {
       uploadedURLs.push(url);
     }
 
+    return uploadedURLs;
+  };
+
+  const handleAddEvent = async () => {
+    if (!title.trim()) return alert("Event title is required");
+    if (!dueDate) return alert("Please select a date");
+
+    const auth = getAuth();
+    const db = getFirestore();
+
+    const user = auth.currentUser;
+    if (!user) return alert("Not logged in");
+
+    const createdAt = Date.now();
+
     try {
+      const uploadedURLs = await uploadAttachments(attachments);
+
       await addDoc(collection(db, "Events"), {
         title,
         guests: guestList,
@@ -421,11 +235,9 @@ export default function AddEventScreen() {
       setDueDate(null);
       router.back();
     } catch (e: any) {
-      alert("Error: " + e.message);
+      alert("Error: " + (e?.message || "Unknown error"));
     }
   };
-
-  const isDark = theme.isDark;
 
   return (
     <KeyboardAvoidingView
@@ -434,7 +246,6 @@ export default function AddEventScreen() {
     >
       <GradientBackground>
         <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-          {/* HEADER */}
           <View
             style={{
               flexDirection: "row",
@@ -451,6 +262,7 @@ export default function AddEventScreen() {
               variant="secondary"
               size="medium"
             />
+
             <Text
               style={{
                 fontSize: 20,
@@ -460,6 +272,7 @@ export default function AddEventScreen() {
             >
               Add Event
             </Text>
+
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <IconButton
                 icon={isDark ? "moon" : "sunny"}
@@ -470,85 +283,36 @@ export default function AddEventScreen() {
             </View>
           </View>
 
-          {/* CONTENT */}
           <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
             keyboardShouldPersistTaps="handled"
           >
-            {/* TITLE */}
-            <Text
-              style={{
-                marginBottom: 4,
-                fontSize: 13,
-                color: theme.colors.textSecondary,
-              }}
-            >
+            {/* IMPORTANT: no style arrays on rapi-ui Text (web crash fix) */}
+            <Text style={{ ...styles.label, marginBottom: 4 }}>
               Event Title
             </Text>
             <TextInput
               value={title}
               onChangeText={setTitle}
               placeholder="Meeting, Birthday, Workshop..."
-              containerStyle={{
-                borderRadius: 10,
-                shadowColor: MODULE_COLOR,
-                shadowOpacity: isDark ? 0.55 : 0.35,
-                shadowRadius: 18,
-                shadowOffset: { width: 5, height: 5 },
-                elevation: 10,
-              }}
+              containerStyle={styles.inputShadow}
             />
 
-            {/* GUESTS */}
-            <Text
-              style={{
-                marginTop: 18,
-                marginBottom: 4,
-                fontSize: 13,
-                color: theme.colors.textSecondary,
-              }}
-            >
+            <Text style={{ ...styles.label, marginTop: 18, marginBottom: 4 }}>
               Guests (Gmail)
             </Text>
 
-            {/* Guest chips */}
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                marginTop: 4,
-                gap: 8,
-              }}
-            >
+            <View style={styles.chipRow}>
               {guestList.map((guest, index) => (
-                <View
-                  key={`${guest}-${index}`}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 999,
-                    backgroundColor: isDark ? "#0f172a" : "#E5F3FF",
-                    borderWidth: 1,
-                    borderColor: isDark ? "#1f2937" : "#BFDBFE",
-                  }}
-                >
+                <View key={`${guest}-${index}`} style={styles.chip}>
                   <Ionicons
                     name="person-circle-outline"
                     size={14}
                     color={MODULE_COLOR}
                     style={{ marginRight: 4 }}
                   />
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      color: theme.colors.textColor,
-                    }}
-                  >
-                    {guest}
-                  </Text>
+                  <Text style={styles.chipText}>{guest}</Text>
                   <TouchableOpacity
                     onPress={() => handleRemoveGuest(index)}
                     style={{ marginLeft: 6 }}
@@ -559,28 +323,19 @@ export default function AddEventScreen() {
               ))}
             </View>
 
-            {/* Guest input row */}
             <View
               style={{
                 flexDirection: "row",
-                gap: 10,
                 marginTop: 10,
                 alignItems: "center",
               }}
             >
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, marginRight: 10 }}>
                 <TextInput
                   value={guestInput}
                   onChangeText={setGuestInput}
                   placeholder="guest@example.com"
-                  containerStyle={{
-                    borderRadius: 10,
-                    shadowColor: MODULE_COLOR,
-                    shadowOpacity: isDark ? 0.55 : 0.35,
-                    shadowRadius: 18,
-                    shadowOffset: { width: 5, height: 5 },
-                    elevation: 10,
-                  }}
+                  containerStyle={styles.inputShadow}
                 />
               </View>
               <Button
@@ -591,70 +346,37 @@ export default function AddEventScreen() {
               />
             </View>
 
-            {/* LOCATION */}
-            <Text
-              style={{
-                marginTop: 18,
-                marginBottom: 4,
-                fontSize: 13,
-                color: theme.colors.textSecondary,
-              }}
-            >
+            <Text style={{ ...styles.label, marginTop: 18, marginBottom: 4 }}>
               Location
             </Text>
             <TextInput
               value={location}
               onChangeText={setLocation}
               placeholder="Location / Online link"
-              containerStyle={{
-                borderRadius: 10,
-                shadowColor: MODULE_COLOR,
-                shadowOpacity: isDark ? 0.55 : 0.35,
-                shadowRadius: 18,
-                shadowOffset: { width: 5, height: 5 },
-                elevation: 10,
-              }}
+              containerStyle={styles.inputShadow}
             />
 
-            {/* MODE */}
-            <Text
-              style={{
-                marginTop: 18,
-                marginBottom: 4,
-                fontSize: 13,
-                color: theme.colors.textSecondary,
-              }}
-            >
+            <Text style={{ ...styles.label, marginTop: 18, marginBottom: 4 }}>
               Mode
             </Text>
-            <View
-              style={{
-                flexDirection: "row",
-                gap: 10,
-                marginVertical: 10,
-              }}
-            >
-              <Button
-                text="Physical"
-                status={mode === "physical" ? "primary" : "info"}
-                onPress={() => setMode("physical")}
-              />
-              <Button
-                text="Online"
-                status={mode === "online" ? "primary" : "info"}
-                onPress={() => setMode("online")}
-              />
+            <View style={{ flexDirection: "row", marginVertical: 10 }}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Button
+                  text="Physical"
+                  status={mode === "physical" ? "primary" : "info"}
+                  onPress={() => setMode("physical")}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button
+                  text="Online"
+                  status={mode === "online" ? "primary" : "info"}
+                  onPress={() => setMode("online")}
+                />
+              </View>
             </View>
 
-            {/* DESCRIPTION */}
-            <Text
-              style={{
-                marginTop: 4,
-                marginBottom: 4,
-                fontSize: 13,
-                color: theme.colors.textSecondary,
-              }}
-            >
+            <Text style={{ ...styles.label, marginTop: 4, marginBottom: 4 }}>
               Description
             </Text>
             <TextInput
@@ -663,45 +385,15 @@ export default function AddEventScreen() {
               placeholder="Event details..."
               multiline
               numberOfLines={3}
-              containerStyle={{
-                borderRadius: 10,
-                shadowColor: MODULE_COLOR,
-                shadowOpacity: isDark ? 0.55 : 0.35,
-                shadowRadius: 18,
-                shadowOffset: { width: 5, height: 5 },
-                elevation: 10,
-              }}
+              containerStyle={styles.inputShadow}
             />
 
-            {/* DATE */}
-            <Text
-              style={{
-                marginTop: 18,
-                marginBottom: 4,
-                fontSize: 13,
-                color: theme.colors.textSecondary,
-              }}
-            >
+            <Text style={{ ...styles.label, marginTop: 18, marginBottom: 4 }}>
               Date
             </Text>
             <TouchableOpacity
               onPress={() => setShowCalendar(true)}
-              style={{
-                padding: 12,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                borderRadius: 10,
-                marginTop: 2,
-                backgroundColor: theme.colors.card,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                shadowColor: MODULE_COLOR,
-                shadowOpacity: isDark ? 0.55 : 0.35,
-                shadowRadius: 18,
-                shadowOffset: { width: 5, height: 5 },
-                elevation: 10,
-              }}
+              style={styles.dateBox}
             >
               <Text
                 style={{
@@ -711,7 +403,7 @@ export default function AddEventScreen() {
                   fontSize: 13,
                 }}
               >
-                {dueDate ? formatDate(dueDate) : "Select date"}
+                {dueDate ? formatDateGB(dueDate) : "Select date"}
               </Text>
               <Ionicons
                 name="calendar-outline"
@@ -720,7 +412,6 @@ export default function AddEventScreen() {
               />
             </TouchableOpacity>
 
-            {/* DATE PICKER MODAL */}
             <DatePickerModal
               visible={showCalendar}
               onClose={() => setShowCalendar(false)}
@@ -730,41 +421,21 @@ export default function AddEventScreen() {
               title="Select Event Date"
             />
 
-            {/* ATTACHMENTS */}
-            <Text
-              style={{
-                marginTop: 22,
-                marginBottom: 6,
-                fontSize: 13,
-                color: theme.colors.textSecondary,
-              }}
-            >
+            <Text style={{ ...styles.label, marginTop: 22, marginBottom: 6 }}>
               Attachments (optional)
             </Text>
             <Button text="Add Attachment" onPress={pickAttachment} />
 
-            <View
-              style={{
-                marginTop: 10,
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 10,
-              }}
-            >
+            <View style={styles.thumbsWrap}>
               {attachments.map((uri, index) => (
                 <Image
-                  key={index}
+                  key={`${uri}-${index}`}
                   source={{ uri }}
-                  style={{
-                    width: 80,
-                    height: 80,
-                    borderRadius: 10,
-                  }}
+                  style={styles.thumb}
                 />
               ))}
             </View>
 
-            {/* SUBMIT */}
             <Button
               text="Create Event"
               status="primary"

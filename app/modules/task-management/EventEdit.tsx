@@ -1,6 +1,4 @@
-// src/screens/Task/EventEdit.tsx
-
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   View,
   ScrollView,
@@ -15,32 +13,54 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Text, Button } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
-import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
 import { Calendar } from "react-native-calendars";
 import * as ImagePicker from "expo-image-picker";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { SafeAreaView } from "react-native-safe-area-context";
 
+import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
+import { SafeAreaView } from "react-native-safe-area-context";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
 
 const MODULE_COLOR = "#38BDF8";
 
+type ModeType = "Online" | "Physical";
+
+const formatDate = (d: Date) =>
+  d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+async function uploadAssetsToStorage(assets: ImagePicker.ImagePickerAsset[]) {
+  const storage = getStorage();
+  const urls: string[] = [];
+
+  for (const asset of assets) {
+    const res = await fetch(asset.uri);
+    const blob = await res.blob();
+
+    const idStr = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const storageRef = ref(storage, `EventAttachments/${idStr}`);
+
+    const snap = await uploadBytes(storageRef, blob);
+    const url = await getDownloadURL(snap.ref);
+    urls.push(url);
+  }
+
+  return urls;
+}
+
 export default function EventEdit() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { theme, toggleTheme }: any = useTheme();
+
   const db = getFirestore();
-  const storage = getStorage();
-
-  const isDarkmode = theme.isDark;
-
-  if (!id) {
-    Alert.alert("Error", "No event selected");
-    router.back();
-    return null;
-  }
+  const isDark = theme.isDark;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -48,7 +68,7 @@ export default function EventEdit() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [mode, setMode] = useState<"Online" | "Physical">("Physical");
+  const [mode, setMode] = useState<ModeType>("Physical");
   const [location, setLocation] = useState("");
 
   const [guests, setGuests] = useState<string[]>([]);
@@ -60,18 +80,17 @@ export default function EventEdit() {
   const [showDateModal, setShowDateModal] = useState(false);
   const [calendarCurrent, setCalendarCurrent] = useState<string>("");
 
-  const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
+  /* ----------------------- THEMED STYLES ------------------------ */
+  const styles = useMemo(() => {
+    const shadow = {
+      shadowColor: MODULE_COLOR,
+      shadowOpacity: isDark ? 0.4 : 0.25,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 10,
+    };
 
-  const formatDate = (d: Date) =>
-    d.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-
-  /* ----------------------- STYLES (THEMED) ----------------------- */
-  const styles = useMemo(
-    () => ({
+    return {
       container: { flex: 1 },
       headerRow: {
         flexDirection: "row" as const,
@@ -90,13 +109,8 @@ export default function EventEdit() {
         flexDirection: "row" as const,
         alignItems: "center" as const,
       },
-      contentScroll: {
-        flex: 1,
-      },
-      contentScrollContainer: {
-        padding: 20,
-        paddingBottom: 40,
-      },
+      contentScroll: { flex: 1 },
+      contentScrollContainer: { padding: 20, paddingBottom: 40 },
       label: {
         marginTop: 10,
         marginBottom: 4,
@@ -112,11 +126,7 @@ export default function EventEdit() {
         marginBottom: 8,
         backgroundColor: theme.colors.card,
         color: theme.colors.textPrimary,
-        shadowColor: MODULE_COLOR,
-        shadowOpacity: theme.isDark ? 0.4 : 0.25,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 10,
+        ...shadow,
       },
       textarea: {
         borderWidth: 1,
@@ -129,11 +139,7 @@ export default function EventEdit() {
         textAlignVertical: "top" as const,
         backgroundColor: theme.colors.card,
         color: theme.colors.textPrimary,
-        shadowColor: MODULE_COLOR,
-        shadowOpacity: theme.isDark ? 0.4 : 0.25,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 10,
+        ...shadow,
       },
       dateButton: {
         padding: 12,
@@ -146,11 +152,7 @@ export default function EventEdit() {
         flexDirection: "row" as const,
         alignItems: "center" as const,
         justifyContent: "space-between" as const,
-        shadowColor: MODULE_COLOR,
-        shadowOpacity: theme.isDark ? 0.4 : 0.25,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 10,
+        ...shadow,
       },
       modeRow: {
         flexDirection: "row" as const,
@@ -164,20 +166,16 @@ export default function EventEdit() {
         borderWidth: 1,
         borderColor: active ? MODULE_COLOR : theme.colors.border,
         backgroundColor: active
-          ? isDarkmode
+          ? isDark
             ? "#0f172a"
             : "#DBEAFE"
           : "transparent",
         alignItems: "center" as const,
-        shadowColor: MODULE_COLOR,
-        shadowOpacity: theme.isDark ? 0.4 : 0.25,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 10,
+        ...shadow,
       }),
       modeChipText: (active: boolean) => ({
         fontSize: 13,
-        fontWeight: active ? "600" : "400",
+        fontWeight: active ? ("600" as const) : ("400" as const),
         color: active ? "#0f172a" : theme.colors.textSecondary,
       }),
       guestChip: {
@@ -186,16 +184,13 @@ export default function EventEdit() {
         paddingHorizontal: 10,
         paddingVertical: 6,
         borderRadius: 999,
-        backgroundColor: isDarkmode ? "#0f172a" : "#E5F3FF",
+        backgroundColor: isDark ? "#0f172a" : "#E5F3FF",
         borderWidth: 1,
-        borderColor: isDarkmode ? "#1f2937" : "#BFDBFE",
+        borderColor: isDark ? "#1f2937" : "#BFDBFE",
         marginRight: 6,
         marginBottom: 6,
       },
-      guestChipText: {
-        fontSize: 11,
-        color: "#0f172a",
-      },
+      guestChipText: { fontSize: 11, color: "#0f172a" },
       guestRow: {
         flexDirection: "row" as const,
         marginBottom: 20,
@@ -211,11 +206,7 @@ export default function EventEdit() {
         paddingVertical: 8,
         backgroundColor: theme.colors.card,
         color: theme.colors.textPrimary,
-        shadowColor: MODULE_COLOR,
-        shadowOpacity: theme.isDark ? 0.4 : 0.25,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 10,
+        ...shadow,
       },
       attachPreviewWrapper: {
         flexDirection: "row" as const,
@@ -227,11 +218,7 @@ export default function EventEdit() {
         marginBottom: 8,
         position: "relative" as const,
       },
-      attachThumb: {
-        width: 70,
-        height: 70,
-        borderRadius: 10,
-      },
+      attachThumb: { width: 70, height: 70, borderRadius: 10 },
       attachRemoveBtn: {
         position: "absolute" as const,
         top: -6,
@@ -259,9 +246,9 @@ export default function EventEdit() {
         padding: 16,
         backgroundColor: theme.colors.card,
         borderWidth: 1,
-        borderColor: isDarkmode ? "#1f2937" : "#d1d5db",
+        borderColor: isDark ? "#1f2937" : "#d1d5db",
         shadowColor: MODULE_COLOR,
-        shadowOpacity: isDarkmode ? 0.55 : 0.35,
+        shadowOpacity: isDark ? 0.55 : 0.35,
         shadowRadius: 26,
         shadowOffset: { width: 0, height: 10 },
         elevation: 16,
@@ -273,32 +260,41 @@ export default function EventEdit() {
         textAlign: "center" as const,
         color: theme.colors.textPrimary,
       },
-    }),
-    [theme]
-  );
+    };
+  }, [theme, isDark]);
 
-  /* ---------------------- PERMISSIONS (MEDIA) --------------------- */
+  /* -------------------- HANDLE MISSING ID SAFELY -------------------- */
+  useEffect(() => {
+    if (id) return;
+    Alert.alert("Error", "No event selected");
+    router.back();
+  }, [id, router]);
+
+  /* ---------------------- MEDIA PERMISSIONS ---------------------- */
   useEffect(() => {
     (async () => {
-      if (Platform.OS !== "web") {
-        const { status } =
-          await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== "granted") {
-          Alert.alert(
-            "Permission required",
-            "Media library access is needed to add attachments."
-          );
-        }
+      if (Platform.OS === "web") return;
+
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission required",
+          "Media library access is needed to add attachments."
+        );
       }
     })();
   }, []);
 
-  /* ------------------------- LOAD EVENT --------------------------- */
+  /* -------------------------- LOAD EVENT -------------------------- */
   useEffect(() => {
+    if (!id) return;
+
     const load = async () => {
       try {
         const refDoc = doc(db, "Events", id);
         const snap = await getDoc(refDoc);
+
         if (!snap.exists()) {
           Alert.alert("Error", "Event not found");
           router.back();
@@ -319,25 +315,17 @@ export default function EventEdit() {
             data.guests
               .split(/[;,]/)
               .map((g: string) => g.trim())
-              .filter((g: string) => g.length > 0)
+              .filter(Boolean)
           );
         } else {
           setGuests([]);
         }
 
-        if (Array.isArray(data.attachments)) {
-          setAttachments(data.attachments);
-        } else {
-          setAttachments([]);
-        }
+        setAttachments(Array.isArray(data.attachments) ? data.attachments : []);
 
         const eventDate = data.date ? new Date(data.date) : new Date();
         setDate(eventDate);
-        setCalendarCurrent(
-          `${eventDate.getFullYear()}-${pad2(eventDate.getMonth() + 1)}-${pad2(
-            eventDate.getDate()
-          )}`
-        );
+        setCalendarCurrent(eventDate.toISOString().split("T")[0]);
       } catch (e) {
         console.error(e);
         Alert.alert("Error", "Failed to load event");
@@ -348,36 +336,34 @@ export default function EventEdit() {
     };
 
     load();
-  }, [id]);
+  }, [id, db, router]);
 
-  /* ------------------------- HANDLERS ----------------------------- */
-
-  const handleSelectDate = (day: any) => {
+  /* --------------------------- HANDLERS --------------------------- */
+  const handleSelectDate = useCallback((day: any) => {
     const d = new Date(day.dateString);
     setDate(d);
     setCalendarCurrent(day.dateString);
     setShowDateModal(false);
-  };
+  }, []);
 
-  const handleAddGuest = () => {
+  const handleAddGuest = useCallback(() => {
     const trimmed = guestInput.trim();
     if (!trimmed) return;
 
-    if (guests.includes(trimmed)) {
+    if (guests.some((g) => g.toLowerCase() === trimmed.toLowerCase())) {
       Alert.alert("Info", "This guest is already added");
       return;
     }
 
     setGuests((prev) => [...prev, trimmed]);
     setGuestInput("");
-  };
+  }, [guestInput, guests]);
 
-  const handleRemoveGuest = (index: number) => {
+  const handleRemoveGuest = useCallback((index: number) => {
     setGuests((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, []);
 
-  // Add / upload attachments
-  const handleAddAttachment = async () => {
+  const handleAddAttachment = useCallback(async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
@@ -388,33 +374,23 @@ export default function EventEdit() {
       if (result.canceled) return;
 
       setUploading(true);
-      const newUrls: string[] = [];
-
-      for (const asset of result.assets) {
-        const response = await fetch(asset.uri);
-        const blob = await response.blob();
-
-        const idStr = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        const storageRef = ref(storage, `EventAttachments/${idStr}`);
-        const snap = await uploadBytes(storageRef, blob);
-        const url = await getDownloadURL(snap.ref);
-        newUrls.push(url);
-      }
-
+      const newUrls = await uploadAssetsToStorage(result.assets);
       setAttachments((prev) => [...prev, ...newUrls]);
     } catch (e: any) {
       console.error(e);
-      Alert.alert("Error", e.message || "Failed to add attachment");
+      Alert.alert("Error", e?.message || "Failed to add attachment");
     } finally {
       setUploading(false);
     }
-  };
+  }, []);
 
-  const handleRemoveAttachment = (index: number) => {
+  const handleRemoveAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, []);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
+    if (!id) return;
+
     if (!title.trim()) {
       Alert.alert("Validation", "Title is required");
       return;
@@ -427,6 +403,7 @@ export default function EventEdit() {
     try {
       setSaving(true);
       const refDoc = doc(db, "Events", id);
+
       await updateDoc(refDoc, {
         title: title.trim(),
         description: description.trim(),
@@ -435,41 +412,55 @@ export default function EventEdit() {
         guests,
         attachments,
         date: date.getTime(),
-        updatedAt: new Date().getTime(),
+        updatedAt: Date.now(),
       });
 
       router.push("/modules/task-management/EventList");
     } catch (e: any) {
       console.error(e);
-      Alert.alert("Error", e.message || "Failed to update event");
+      Alert.alert("Error", e?.message || "Failed to update event");
     } finally {
       setSaving(false);
     }
-  };
+  }, [
+    id,
+    db,
+    title,
+    description,
+    mode,
+    location,
+    guests,
+    attachments,
+    date,
+    router,
+  ]);
 
-  /* ------------------------- LOADING UI --------------------------- */
+  /* ------------------------- LOADING UI -------------------------- */
+  const Header = (
+    <View style={styles.headerRow}>
+      <IconButton
+        icon="arrow-back"
+        onPress={() => router.back()}
+        variant="secondary"
+        size="medium"
+      />
+      <Text style={styles.headerTitle}>Edit Event</Text>
+      <View style={styles.headerRight}>
+        <IconButton
+          icon={isDark ? "moon" : "sunny"}
+          onPress={() => toggleTheme && toggleTheme()}
+          variant="secondary"
+          size="small"
+        />
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
       <GradientBackground>
         <SafeAreaView style={styles.container} edges={["top"]}>
-          <View style={styles.headerRow}>
-            <IconButton
-              icon="arrow-back"
-              onPress={() => router.back()}
-              variant="secondary"
-              size="medium"
-            />
-            <Text style={styles.headerTitle}>Edit Event</Text>
-            <View style={styles.headerRight}>
-              <IconButton
-                icon={isDarkmode ? "moon" : "sunny"}
-                onPress={() => toggleTheme && toggleTheme()}
-                variant="secondary"
-                size="small"
-              />
-            </View>
-          </View>
-
+          {Header}
           <View style={styles.centerLoading}>
             <ActivityIndicator size="large" color={MODULE_COLOR} />
           </View>
@@ -478,36 +469,17 @@ export default function EventEdit() {
     );
   }
 
-  /* --------------------------- MAIN UI ---------------------------- */
+  /* --------------------------- MAIN UI --------------------------- */
   return (
     <GradientBackground>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        {/* HEADER */}
-        <View style={styles.headerRow}>
-          <IconButton
-            icon="arrow-back"
-            onPress={() => router.back()}
-            variant="secondary"
-            size="medium"
-          />
-          <Text style={styles.headerTitle}>Edit Event</Text>
-          <View style={styles.headerRight}>
-            <IconButton
-              icon={isDarkmode ? "moon" : "sunny"}
-              onPress={() => toggleTheme && toggleTheme()}
-              variant="secondary"
-              size="small"
-            />
-          </View>
-        </View>
+        {Header}
 
-        {/* CONTENT */}
         <ScrollView
           style={styles.contentScroll}
           contentContainerStyle={styles.contentScrollContainer}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Title */}
           <Text style={styles.label}>Title</Text>
           <RNTextInput
             value={title}
@@ -517,7 +489,6 @@ export default function EventEdit() {
             style={styles.input}
           />
 
-          {/* Date */}
           <Text style={styles.label}>Date</Text>
           <TouchableOpacity
             onPress={() => setShowDateModal(true)}
@@ -536,7 +507,6 @@ export default function EventEdit() {
             <Ionicons name="calendar-outline" size={18} color={MODULE_COLOR} />
           </TouchableOpacity>
 
-          {/* Mode */}
           <Text style={styles.label}>Mode</Text>
           <View style={styles.modeRow}>
             <TouchableOpacity
@@ -556,7 +526,6 @@ export default function EventEdit() {
             </TouchableOpacity>
           </View>
 
-          {/* Location / Link */}
           <Text style={styles.label}>
             {mode === "Online" ? "Online Link" : "Location"}
           </Text>
@@ -568,7 +537,6 @@ export default function EventEdit() {
             style={styles.input}
           />
 
-          {/* Description */}
           <Text style={styles.label}>Details</Text>
           <RNTextInput
             value={description}
@@ -579,14 +547,9 @@ export default function EventEdit() {
             style={styles.textarea}
           />
 
-          {/* Guests */}
           <Text style={styles.label}>Guests</Text>
           <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              marginBottom: 6,
-            }}
+            style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: 6 }}
           >
             {guests.map((g, index) => (
               <View key={`${g}-${index}`} style={styles.guestChip}>
@@ -607,7 +570,6 @@ export default function EventEdit() {
             ))}
           </View>
 
-          {/* Guest input row */}
           <View style={styles.guestRow}>
             <RNTextInput
               value={guestInput}
@@ -623,7 +585,6 @@ export default function EventEdit() {
             />
           </View>
 
-          {/* Attachments */}
           <Text style={styles.label}>Attachments</Text>
           <Button
             text={uploading ? "Uploading..." : "Add Attachment"}
@@ -634,7 +595,7 @@ export default function EventEdit() {
 
           <View style={styles.attachPreviewWrapper}>
             {attachments.map((uri, index) => (
-              <View key={index} style={styles.attachThumbWrapper}>
+              <View key={`${uri}-${index}`} style={styles.attachThumbWrapper}>
                 <Image source={{ uri }} style={styles.attachThumb} />
                 <TouchableOpacity
                   onPress={() => handleRemoveAttachment(index)}
@@ -646,7 +607,6 @@ export default function EventEdit() {
             ))}
           </View>
 
-          {/* Save button */}
           <Button
             text={saving ? "Saving..." : "Save Event"}
             onPress={handleSave}
@@ -654,7 +614,6 @@ export default function EventEdit() {
           />
         </ScrollView>
 
-        {/* DATE PICKER MODAL */}
         <Modal
           visible={showDateModal}
           transparent

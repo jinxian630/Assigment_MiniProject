@@ -1,14 +1,13 @@
-// src/screens/Task/AddTask.tsx
-
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
   KeyboardAvoidingView,
   Modal,
   ScrollView,
   Platform,
+  Pressable,
+  TouchableOpacity,
 } from "react-native";
-import { TouchableOpacity } from "react-native-gesture-handler";
 import { useRouter } from "expo-router";
 import { Text, TextInput, Button } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,300 +19,72 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { GradientBackground } from "@/components/common/GradientBackground";
 import { IconButton } from "@/components/common/IconButton";
 import { useTheme } from "@/hooks/useTheme";
+import {
+  MODULE_COLOR,
+  DatePickerModal,
+  formatDateGB,
+} from "../task-management/TS FILE/TaskSharedUI";
 
-const MODULE_COLOR = "#38BDF8";
-
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
-
-/* ------------------------------------------------------------------ */
-/*  Reusable Date Picker Modal                                        */
-/* ------------------------------------------------------------------ */
-
-type DatePickerModalProps = {
-  visible: boolean;
-  onClose: () => void;
-  selectedDate: Date | null;
-  onSelectDate: (date: Date) => void;
-  theme: any;
-  title?: string;
-};
-
-const DatePickerModal: React.FC<DatePickerModalProps> = ({
-  visible,
-  onClose,
-  selectedDate,
-  onSelectDate,
-  theme,
-  title,
-}) => {
-  const initial = selectedDate || new Date();
-  const [year, setYear] = useState(initial.getFullYear());
-  const [month, setMonth] = useState(initial.getMonth() + 1); // 1–12
-  const [calendarCurrent, setCalendarCurrent] = useState(
-    `${year}-${pad2(month)}-01`
-  );
-
-  // Reset when opened (follow last selected or today)
-  useEffect(() => {
-    if (visible) {
-      const base = selectedDate || new Date();
-      const y = base.getFullYear();
-      const m = base.getMonth() + 1;
-      setYear(y);
-      setMonth(m);
-      setCalendarCurrent(`${y}-${pad2(m)}-01`);
-    }
-  }, [visible, selectedDate]);
-
-  // Update current string when year/month changes
-  useEffect(() => {
-    setCalendarCurrent(`${year}-${pad2(month)}-01`);
-  }, [year, month]);
-
-  const goToPrevMonth = () => {
-    setMonth((prev) => {
-      if (prev === 1) {
-        setYear((y) => y - 1);
-        return 12;
-      }
-      return prev - 1;
-    });
-  };
-
-  const goToNextMonth = () => {
-    setMonth((prev) => {
-      if (prev === 12) {
-        setYear((y) => y + 1);
-        return 1;
-      }
-      return prev + 1;
-    });
-  };
-
-  const goToPrevYear = () => setYear((y) => y - 1);
-  const goToNextYear = () => setYear((y) => y + 1);
-
-  const handleDayPress = (day: any) => {
-    const d = new Date(day.dateString);
-    onSelectDate(d);
-    onClose();
-  };
-
-  const selectedKey =
-    selectedDate != null ? selectedDate.toISOString().split("T")[0] : undefined;
-
-  const markedDates =
-    selectedKey != null
-      ? {
-          [selectedKey]: {
-            selected: true,
-            selectedColor: MODULE_COLOR,
-            selectedTextColor: "#0f172a",
-          },
-        }
-      : {};
-
-  return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "rgba(0,0,0,0.95)", // darker for visibility
-          justifyContent: "center",
-          alignItems: "center",
-          paddingHorizontal: 16,
-        }}
-      >
-        <View
-          style={{
-            width: "100%",
-            maxWidth: 420,
-            borderRadius: 20,
-            padding: 20,
-            backgroundColor: theme.colors.card,
-            borderWidth: 1,
-            borderColor: theme.isDark ? "#1f2937" : "#d1d5db",
-
-            // Enhanced shadow for visibility
-            shadowColor: MODULE_COLOR,
-            shadowOpacity: theme.isDark ? 0.4 : 0.25,
-            shadowRadius: 20,
-            shadowOffset: { width: 0, height: 8 },
-            elevation: 10,
-          }}
-        >
-          {title && (
-            <Text
-              style={{
-                fontSize: 17,
-                fontWeight: "700",
-                marginBottom: 12,
-                textAlign: "center",
-                color: theme.colors.textPrimary,
-              }}
-            >
-              {title}
-            </Text>
-          )}
-
-          {/* HEADER */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 14,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              borderRadius: 12,
-              backgroundColor: theme.isDark ? "#0f172a" : "#0f172a",
-              borderWidth: 1,
-              borderColor: theme.isDark ? "#1e293b" : "#cbd5e1",
-            }}
-          >
-            {/* Left Controls */}
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <TouchableOpacity onPress={goToPrevYear} style={{ padding: 4 }}>
-                <Ionicons
-                  name="play-back"
-                  size={19}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={goToPrevMonth} style={{ padding: 4 }}>
-                <Ionicons
-                  name="chevron-back"
-                  size={22}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <Text
-              style={{
-                fontSize: 16,
-                fontWeight: "600",
-                color: theme.colors.textPrimary,
-              }}
-            >
-              {MONTH_NAMES[month - 1]} {year}
-            </Text>
-
-            {/* Right Controls */}
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <TouchableOpacity onPress={goToNextMonth} style={{ padding: 4 }}>
-                <Ionicons
-                  name="chevron-forward"
-                  size={22}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={goToNextYear} style={{ padding: 4 }}>
-                <Ionicons
-                  name="play-forward"
-                  size={19}
-                  color={theme.colors.textPrimary}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* CALENDAR */}
-          <Calendar
-            current={calendarCurrent}
-            hideArrows
-            onDayPress={handleDayPress}
-            markedDates={markedDates}
-            theme={{
-              backgroundColor: theme.colors.card,
-              calendarBackground: theme.colors.card,
-              textSectionTitleColor: theme.colors.textSecondary,
-              selectedDayBackgroundColor: MODULE_COLOR,
-              selectedDayTextColor: "#0f172a",
-              todayTextColor: MODULE_COLOR,
-              dayTextColor: theme.colors.textPrimary,
-              textDisabledColor: "#6b7280",
-              monthTextColor: theme.colors.textPrimary,
-            }}
-          />
-
-          {/* CLOSE BUTTON */}
-          <TouchableOpacity
-            onPress={onClose}
-            style={{
-              marginTop: 16,
-              padding: 12,
-              backgroundColor: MODULE_COLOR,
-              borderRadius: 999,
-              alignItems: "center",
-            }}
-          >
-            <Text
-              style={{
-                color: "#0f172a",
-                fontSize: 14,
-                fontWeight: "700",
-              }}
-            >
-              Close
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-/* ------------------------------------------------------------------ */
-/*  Add Task Screen                                                   */
-/* ------------------------------------------------------------------ */
+/* ------------------------Add Task Screen-------------------------------- */
 
 export default function AddTaskScreen() {
   const router = useRouter();
-  const { theme, toggleTheme }: any = useTheme(); // ✅ same as other Task screens
+  const { theme, toggleTheme }: any = useTheme();
 
-  const [taskName, setTaskName] = useState<string>("");
-  const [details, setDetails] = useState<string>("");
+  const [taskName, setTaskName] = useState("");
+  const [details, setDetails] = useState("");
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [startDate, setStartDate] = useState<Date | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
+
   const [showCalendar, setShowCalendar] = useState(false);
   const [showStartCalendar, setShowStartCalendar] = useState(false);
 
-  const [assignedInput, setAssignedInput] = useState<string>("");
+  const [assignedInput, setAssignedInput] = useState("");
   const [assignedList, setAssignedList] = useState<string[]>([]);
 
-  const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
+  const gmailPattern = useMemo(() => /^[a-zA-Z0-9._%+-]+@gmail\.com$/, []);
 
-  const handleAddAssignee = () => {
+  const inputShadow = useMemo(
+    () => ({
+      borderRadius: 10,
+      shadowColor: MODULE_COLOR,
+      shadowOpacity: theme.isDark ? 0.4 : 0.25,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 10,
+    }),
+    [theme.isDark]
+  );
+
+  const formatDate = useCallback(
+    (date: Date) =>
+      date.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }),
+    []
+  );
+
+  const emptyState = useCallback(() => {
+    setTaskName("");
+    setDetails("");
+    setDueDate(null);
+    setStartDate(null);
+    setAssignedInput("");
+    setAssignedList([]);
+  }, []);
+
+  const handleAddAssignee = useCallback(() => {
     const trimmed = assignedInput.trim();
     if (!trimmed) return;
+
     if (!gmailPattern.test(trimmed)) {
       alert("Please enter a valid Gmail address");
       return;
     }
+
     const exists = assignedList.some(
       (email) => email.toLowerCase() === trimmed.toLowerCase()
     );
@@ -321,77 +92,66 @@ export default function AddTaskScreen() {
       alert("This Gmail is already added");
       return;
     }
+
     setAssignedList((prev) => [...prev, trimmed]);
     setAssignedInput("");
-  };
+  }, [assignedInput, assignedList, gmailPattern]);
 
-  const handleRemoveAssignee = (index: number) => {
+  const handleRemoveAssignee = useCallback((index: number) => {
     setAssignedList((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, []);
 
-  const formatDate = (date: Date): string =>
-    date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-
-  const emptyState = () => {
-    setTaskName("");
-    setDetails("");
-    setDueDate(null);
-    setStartDate(null);
-    setAssignedInput("");
-    setAssignedList([]);
-  };
-
-  const handleAddTask = async () => {
+  const handleAddTask = useCallback(async () => {
     if (!taskName.trim()) return alert("Task name is required");
     if (!dueDate) return alert("Please select a due date");
     if (assignedList.length === 0)
       return alert("Please add at least one user's Gmail");
 
+    if (startDate && dueDate && startDate.getTime() > dueDate.getTime()) {
+      return alert("Start date cannot be after due date.");
+    }
+
     setLoading(true);
     const auth = getAuth();
     const db = getFirestore();
 
-    if (auth.currentUser) {
-      const currentUser: User = auth.currentUser;
-      const createdAt = new Date().getTime();
-
-      try {
-        await addDoc(collection(db, "Tasks"), {
-          taskName,
-          details,
-          assignedTo: assignedList,
-          startDate: startDate ? startDate.getTime() : null,
-          dueDate: dueDate.getTime(),
-          completed: false,
-          createdAt,
-          updatedAt: createdAt,
-          reminderSet: true,
-          CreatedUser: {
-            id: currentUser.uid,
-            name: currentUser.displayName,
-            photo: currentUser.photoURL,
-            email: currentUser.email || "",
-          },
-          reminderIds: [],
-        });
-
-        emptyState();
-        setLoading(false);
-        alert("Task added!");
-        router.back();
-      } catch (err: any) {
-        setLoading(false);
-        alert("Error adding task: " + err.message);
-      }
-    } else {
+    if (!auth.currentUser) {
       setLoading(false);
-      alert("You must be logged in to add a task.");
+      return alert("You must be logged in to add a task.");
     }
-  };
+
+    const currentUser: User = auth.currentUser;
+    const createdAt = Date.now();
+
+    try {
+      await addDoc(collection(db, "Tasks"), {
+        taskName: taskName.trim(),
+        details: details.trim(),
+        assignedTo: assignedList,
+        startDate: startDate ? startDate.getTime() : null,
+        dueDate: dueDate.getTime(),
+        completed: false,
+        createdAt,
+        updatedAt: createdAt,
+        reminderSet: true,
+        CreatedUser: {
+          id: currentUser.uid,
+          name: currentUser.displayName,
+          photo: currentUser.photoURL,
+          email: currentUser.email || "",
+        },
+        reminderIds: [],
+      });
+
+      emptyState();
+      setLoading(false);
+      alert("Task added!");
+      router.back();
+    } catch (err: any) {
+      setLoading(false);
+      alert("Error adding task: " + (err?.message || "Unknown error"));
+    }
+  }, [taskName, details, dueDate, startDate, assignedList, emptyState, router]);
 
   return (
     <KeyboardAvoidingView
@@ -400,7 +160,6 @@ export default function AddTaskScreen() {
     >
       <GradientBackground>
         <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-          {/* HEADER */}
           <View
             style={{
               flexDirection: "row",
@@ -428,7 +187,7 @@ export default function AddTaskScreen() {
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <IconButton
-                icon={theme.isDark ? "moon" : "sunny"} // ✅ uses theme.isDark directly
+                icon={theme.isDark ? "moon" : "sunny"}
                 onPress={() => toggleTheme && toggleTheme()}
                 variant="secondary"
                 size="small"
@@ -442,7 +201,6 @@ export default function AddTaskScreen() {
             contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
             keyboardShouldPersistTaps="handled"
           >
-            {/* TASK NAME */}
             <Text
               style={{
                 marginTop: 10,
@@ -457,17 +215,9 @@ export default function AddTaskScreen() {
               placeholder="Enter task name..."
               value={taskName}
               onChangeText={setTaskName}
-              containerStyle={{
-                borderRadius: 10,
-                shadowColor: MODULE_COLOR,
-                shadowOpacity: theme.isDark ? 0.4 : 0.25,
-                shadowRadius: 20,
-                shadowOffset: { width: 0, height: 8 },
-                elevation: 10,
-              }}
+              containerStyle={inputShadow}
             />
 
-            {/* DETAILS */}
             <Text
               style={{
                 marginTop: 18,
@@ -483,17 +233,9 @@ export default function AddTaskScreen() {
               value={details}
               multiline
               onChangeText={setDetails}
-              containerStyle={{
-                borderRadius: 10,
-                shadowColor: MODULE_COLOR,
-                shadowOpacity: theme.isDark ? 0.4 : 0.25,
-                shadowRadius: 20,
-                shadowOffset: { width: 0, height: 8 },
-                elevation: 10,
-              }}
+              containerStyle={inputShadow}
             />
 
-            {/* ASSIGN TO */}
             <Text
               style={{
                 marginTop: 18,
@@ -505,14 +247,8 @@ export default function AddTaskScreen() {
               Assign To (User Gmail)
             </Text>
 
-            {/* Chips */}
             <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                marginTop: 4,
-                gap: 8,
-              }}
+              style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 4 }}
             >
               {assignedList.map((email, index) => (
                 <View
@@ -526,6 +262,8 @@ export default function AddTaskScreen() {
                     backgroundColor: theme.isDark ? "#0f172a" : "#E5F3FF",
                     borderWidth: 1,
                     borderColor: theme.isDark ? "#1f2937" : "#BFDBFE",
+                    marginRight: 8,
+                    marginBottom: 8,
                   }}
                 >
                   <Ionicons
@@ -535,10 +273,7 @@ export default function AddTaskScreen() {
                     style={{ marginRight: 4 }}
                   />
                   <Text
-                    style={{
-                      fontSize: 11,
-                      color: theme.colors.textColor,
-                    }}
+                    style={{ fontSize: 11, color: theme.colors.textPrimary }}
                   >
                     {email}
                   </Text>
@@ -552,28 +287,19 @@ export default function AddTaskScreen() {
               ))}
             </View>
 
-            {/* Assignee input row */}
             <View
               style={{
                 flexDirection: "row",
-                gap: 10,
                 marginTop: 10,
                 alignItems: "center",
               }}
             >
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, marginRight: 10 }}>
                 <TextInput
                   placeholder="Enter user's Gmail..."
                   value={assignedInput}
                   onChangeText={setAssignedInput}
-                  containerStyle={{
-                    borderRadius: 10,
-                    shadowColor: MODULE_COLOR,
-                    shadowOpacity: theme.isDark ? 0.4 : 0.25,
-                    shadowRadius: 20,
-                    shadowOffset: { width: 0, height: 8 },
-                    elevation: 10,
-                  }}
+                  containerStyle={inputShadow}
                 />
               </View>
               <Button
@@ -584,7 +310,6 @@ export default function AddTaskScreen() {
               />
             </View>
 
-            {/* Start Date */}
             <Text
               style={{
                 marginTop: 20,
@@ -607,7 +332,6 @@ export default function AddTaskScreen() {
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
-                borderRadius: 10,
                 shadowColor: MODULE_COLOR,
                 shadowOpacity: theme.isDark ? 0.4 : 0.25,
                 shadowRadius: 20,
@@ -620,7 +344,6 @@ export default function AddTaskScreen() {
                   color: startDate
                     ? theme.colors.textPrimary
                     : theme.colors.textSecondary,
-
                   fontSize: 13,
                 }}
               >
@@ -633,7 +356,6 @@ export default function AddTaskScreen() {
               />
             </TouchableOpacity>
 
-            {/* Due Date */}
             <Text
               style={{
                 marginTop: 20,
@@ -656,7 +378,6 @@ export default function AddTaskScreen() {
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
-                borderRadius: 10,
                 shadowColor: MODULE_COLOR,
                 shadowOpacity: theme.isDark ? 0.4 : 0.25,
                 shadowRadius: 20,
@@ -681,7 +402,6 @@ export default function AddTaskScreen() {
               />
             </TouchableOpacity>
 
-            {/* Add button */}
             <Button
               text={loading ? "Saving..." : "Add Task"}
               onPress={handleAddTask}
@@ -690,7 +410,6 @@ export default function AddTaskScreen() {
             />
           </ScrollView>
 
-          {/* Start Date Picker */}
           <DatePickerModal
             visible={showStartCalendar}
             onClose={() => setShowStartCalendar(false)}
@@ -700,7 +419,6 @@ export default function AddTaskScreen() {
             title="Select Start Date"
           />
 
-          {/* Due Date Picker */}
           <DatePickerModal
             visible={showCalendar}
             onClose={() => setShowCalendar(false)}

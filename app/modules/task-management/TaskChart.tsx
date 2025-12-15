@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   View,
   ActivityIndicator,
@@ -14,6 +14,7 @@ import { useRouter } from "expo-router";
 import { Text } from "react-native-rapi-ui";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
+import TaskBottomBar from "../task-management/TS FILE/TaskBottomBar";
 
 import {
   getFirestore,
@@ -21,7 +22,6 @@ import {
   query,
   onSnapshot,
 } from "firebase/firestore";
-
 import { getAuth } from "firebase/auth";
 
 import { GradientBackground } from "@/components/common/GradientBackground";
@@ -45,6 +45,7 @@ const MONTH_LABELS = [
   "Nov",
   "Dec",
 ];
+
 const createNeonCardShell = (
   accentColor: string,
   theme: any,
@@ -52,30 +53,19 @@ const createNeonCardShell = (
 ) => {
   return {
     borderRadius: 24,
-
-    // ❌ no backgroundColor here – let <Card> / theme handle it
-    // backgroundColor: ...
-
     borderWidth: 1,
     borderColor: accentColor + "66",
-
-    // glow
     shadowColor: accentColor,
     shadowOpacity: theme.isDark ? 0.9 : 0.5,
     shadowRadius: theme.isDark ? 30 : 20,
     shadowOffset: { width: 0, height: 0 },
-
-    // Android elevation
     elevation: theme.isDark ? 18 : 8,
-
     ...extra,
   };
 };
+
 type YearMap = Record<string, number[]>;
 
-/**
- * Same belongsToCurrentUser helper as before
- */
 function belongsToCurrentUser(
   data: any,
   uid: string | null,
@@ -93,7 +83,6 @@ function belongsToCurrentUser(
 
   if (creator && typeof creator === "object") {
     seenAnyUserField = true;
-
     const creatorId = creator.id ?? creator.uid ?? null;
     const creatorEmail = creator.email ?? null;
 
@@ -103,7 +92,6 @@ function belongsToCurrentUser(
 
   if (data?.assignedTo) {
     seenAnyUserField = true;
-
     const assigned = data.assignedTo;
 
     if (typeof assigned === "string") {
@@ -149,12 +137,16 @@ export default function TaskChart() {
   const { theme, toggleTheme }: any = useTheme();
   const db = getFirestore();
   const auth = getAuth();
-  const [showAddMenu, setShowAddMenu] = useState(false);
+
   const isDark = theme?.isDark === true;
 
   const [taskYearCounts, setTaskYearCounts] = useState<YearMap>({});
   const [eventYearCounts, setEventYearCounts] = useState<YearMap>({});
   const [isLoading, setIsLoading] = useState(true);
+
+  const [tasksReady, setTasksReady] = useState(false);
+  const [eventsReady, setEventsReady] = useState(false);
+
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"combined" | "tasks" | "events">(
     "combined"
@@ -163,7 +155,6 @@ export default function TaskChart() {
   const primaryTextColor = isDark ? "#F9FAFB" : "#0f172a";
   const secondaryTextColor = isDark ? "#9CA3AF" : "#6B7280";
 
-  // ---------- STYLES ----------
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -182,20 +173,14 @@ export default function TaskChart() {
           fontWeight: theme.typography.fontWeights.bold,
           color: theme.colors.textPrimary,
         },
-        headerRight: {
-          flexDirection: "row",
-          alignItems: "center",
-        },
+        headerRight: { flexDirection: "row", alignItems: "center" },
 
         contentWrapper: {
           flex: 1,
           paddingHorizontal: theme.spacing.screenPadding,
           paddingTop: 10,
         },
-        contentContainer: {
-          paddingBottom: 120, // more room for bottom pill + FAB
-          flexGrow: 1,
-        },
+        contentContainer: { paddingBottom: 140, flexGrow: 1 },
 
         centerWrapper: {
           flex: 1,
@@ -209,12 +194,7 @@ export default function TaskChart() {
           textAlign: "center",
         },
 
-        // HERO ORB
-        heroWrapper: {
-          alignItems: "center",
-          marginTop: 12,
-          marginBottom: 18,
-        },
+        heroWrapper: { alignItems: "center", marginTop: 12, marginBottom: 18 },
         heroOrbOuter: {
           width: 120,
           height: 120,
@@ -242,7 +222,6 @@ export default function TaskChart() {
           color: theme.colors.textSecondary,
         },
 
-        // Year filter
         yearRowLabel: {
           marginTop: 4,
           marginLeft: 4,
@@ -265,7 +244,6 @@ export default function TaskChart() {
           backgroundColor: isDark ? "#020617" : "#F1F5F9",
           borderColor: isDark ? "#1F2937" : "#CBD5E1",
         },
-
         yearChipActive: {
           paddingHorizontal: 14,
           paddingVertical: 8,
@@ -276,20 +254,17 @@ export default function TaskChart() {
           backgroundColor: isDark ? "#082F49" : "#DBEAFE",
           borderColor: MODULE_COLOR,
         },
-
         yearChipText: {
           fontSize: 13,
           fontWeight: "500",
           color: secondaryTextColor,
         },
-
         yearChipTextActive: {
           fontSize: 13,
           fontWeight: "600",
           color: MODULE_COLOR,
         },
 
-        // Summary row
         summaryRow: {
           flexDirection: "row",
           justifyContent: "space-between",
@@ -304,24 +279,17 @@ export default function TaskChart() {
           backgroundColor: isDark ? "#020617" : "#E0F2FE",
           borderWidth: 1,
           borderColor: isDark ? "#1E3A8A" : "#93C5FD",
-          position: "relative", // for neon bottom line
+          position: "relative",
           overflow: "hidden",
         },
-        summaryLabel: {
-          fontSize: 11,
-          color: secondaryTextColor,
-        },
+        summaryLabel: { fontSize: 11, color: secondaryTextColor },
         summaryValue: {
           marginTop: 2,
           fontSize: 18,
           fontWeight: "700",
           color: primaryTextColor,
         },
-        summarySub: {
-          marginTop: 2,
-          fontSize: 11,
-          color: secondaryTextColor,
-        },
+        summarySub: { marginTop: 2, fontSize: 11, color: secondaryTextColor },
         neonBottomLine: {
           position: "absolute",
           left: 0,
@@ -332,7 +300,6 @@ export default function TaskChart() {
           borderBottomRightRadius: 14,
         },
 
-        // Segmented control
         segmentRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -357,17 +324,13 @@ export default function TaskChart() {
           backgroundColor: isDark ? "#0369A1" : "#DBEAFE",
           marginHorizontal: 4,
         },
-        segmentButtonText: {
-          fontSize: 12,
-          color: secondaryTextColor,
-        },
+        segmentButtonText: { fontSize: 12, color: secondaryTextColor },
         segmentButtonTextActive: {
           fontSize: 12,
           color: MODULE_COLOR,
           fontWeight: "600",
         },
 
-        // Section header
         sectionHeaderRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -389,7 +352,6 @@ export default function TaskChart() {
           color: theme.colors.textPrimary,
         },
 
-        // Chart card (✨ more neon)
         chartCard: {
           borderRadius: 20,
           paddingVertical: 14,
@@ -442,12 +404,8 @@ export default function TaskChart() {
           marginRight: 4,
           backgroundColor: "rgba(34, 197, 94, 1)",
         },
-        legendLabel: {
-          fontSize: 11,
-          color: secondaryTextColor,
-        },
+        legendLabel: { fontSize: 11, color: secondaryTextColor },
 
-        // Insights card
         insightsCard: {
           marginTop: 10,
           borderRadius: 18,
@@ -473,11 +431,7 @@ export default function TaskChart() {
           color: secondaryTextColor,
           marginBottom: 4,
         },
-        bulletRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          marginTop: 2,
-        },
+        bulletRow: { flexDirection: "row", alignItems: "center", marginTop: 2 },
         bulletDot: {
           width: 5,
           height: 5,
@@ -485,111 +439,19 @@ export default function TaskChart() {
           backgroundColor: MODULE_COLOR,
           marginRight: 6,
         },
-        bulletText: {
-          fontSize: 11,
-          color: secondaryTextColor,
-          flexShrink: 1,
-        },
-        /** neon card shell reused – we give background based on theme */
-        neonShellCard: createNeonCardShell(MODULE_COLOR, theme, {
-          padding: theme.spacing.md,
-          backgroundColor: theme.isDark ? "#020617" : "#F9FAFB",
-        }),
-        chipButton: {
-          paddingHorizontal: theme.spacing.md,
-          paddingVertical: theme.spacing.sm,
-          borderRadius: 999,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        chipButtonText: {
-          fontSize: theme.typography.fontSizes.sm,
-          fontWeight: theme.typography.fontWeights.semibold,
-        },
-
-        // 🔵 Floating Add Button
-        floatingAdd: {
-          position: "absolute",
-          top: -34,
-          alignSelf: "center",
-          zIndex: 20,
-          elevation: 20,
-        },
-        floatingAddOuter: {
-          width: 65,
-          height: 65,
-          borderRadius: 32,
-          borderColor: MODULE_COLOR,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: "#000",
-          shadowColor: MODULE_COLOR,
-          shadowOpacity: 1,
-          shadowRadius: 5,
-          shadowOffset: { width: 0, height: 0 },
-        },
-        floatingAddButton: {
-          width: 52,
-          height: 52,
-          borderRadius: 26,
-          backgroundColor: MODULE_COLOR,
-          justifyContent: "center",
-          alignItems: "center",
-          borderWidth: 3,
-          borderColor: MODULE_COLOR + "AA",
-          shadowColor: MODULE_COLOR,
-          shadowOpacity: 0.9,
-          shadowRadius: 5,
-          shadowOffset: { width: 0, height: 0 },
-        },
-
-        // Bottom nav bar
-        bottomBar: {
-          position: "absolute",
-          left: theme.spacing.md,
-          right: theme.spacing.md,
-          bottom: Platform.OS === "ios" ? 16 : 12,
-          flexDirection: "row",
-          justifyContent: "space-around",
-          alignItems: "center",
-          paddingHorizontal: 24,
-          paddingVertical: 10,
-          backgroundColor: isDark
-            ? "rgba(10,10,15,0.98)"
-            : "rgba(15,23,42,0.95)",
-          borderRadius: 26,
-          borderWidth: 1,
-          borderColor: isDark ? "#1F2937" : "#111827",
-          shadowColor: "#000",
-          shadowOpacity: 0.4,
-          shadowRadius: 16,
-          shadowOffset: { width: 0, height: -2 },
-          zIndex: 10,
-          elevation: 10,
-        },
-        bottomBarItem: {
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        bottomBarIconWrapper: {
-          padding: 6,
-          borderRadius: 999,
-        },
-        bottomBarLabel: {
-          fontSize: 11,
-          marginTop: 2,
-          color: theme.colors.textSecondary,
-        },
+        bulletText: { fontSize: 11, color: secondaryTextColor, flexShrink: 1 },
       }),
     [theme, isDark, primaryTextColor, secondaryTextColor]
   );
 
-  // ---------- FIRESTORE LISTENERS ----------
   useEffect(() => {
     const currentUser = auth.currentUser;
     const uid = currentUser?.uid ?? null;
     const email = currentUser?.email ?? null;
+
+    setIsLoading(true);
+    setTasksReady(false);
+    setEventsReady(false);
 
     const qTasks = query(collection(db, "Tasks"));
     const qEvents = query(collection(db, "Events"));
@@ -607,32 +469,27 @@ export default function TaskChart() {
           if (!rawDate) return;
 
           let date: Date | null = null;
-          if (typeof rawDate === "number") {
-            date = new Date(rawDate);
-          } else if (rawDate?.toDate) {
-            date = rawDate.toDate();
-          } else if (typeof rawDate === "string") {
-            date = new Date(rawDate);
-          }
+          if (typeof rawDate === "number") date = new Date(rawDate);
+          else if (rawDate?.toDate) date = rawDate.toDate();
+          else if (typeof rawDate === "string") date = new Date(rawDate);
 
           if (!date || isNaN(date.getTime())) return;
 
-          const yearKey = date.getFullYear().toString();
+          const yearKey = String(date.getFullYear());
           const monthIndex = date.getMonth();
           if (monthIndex < 0 || monthIndex > 11) return;
 
-          if (!yearCounts[yearKey]) {
-            yearCounts[yearKey] = new Array(12).fill(0);
-          }
+          if (!yearCounts[yearKey]) yearCounts[yearKey] = new Array(12).fill(0);
           yearCounts[yearKey][monthIndex] += 1;
         });
 
         setTaskYearCounts(yearCounts);
-        setIsLoading(false);
+        setTasksReady(true);
       },
       (error) => {
         console.error("TaskChart Firestore error (Tasks):", error);
-        setIsLoading(false);
+        setTaskYearCounts({});
+        setTasksReady(true);
       }
     );
 
@@ -649,30 +506,27 @@ export default function TaskChart() {
           if (!rawDate) return;
 
           let date: Date | null = null;
-          if (typeof rawDate === "number") {
-            date = new Date(rawDate);
-          } else if (rawDate?.toDate) {
-            date = rawDate.toDate();
-          } else if (typeof rawDate === "string") {
-            date = new Date(rawDate);
-          }
+          if (typeof rawDate === "number") date = new Date(rawDate);
+          else if (rawDate?.toDate) date = rawDate.toDate();
+          else if (typeof rawDate === "string") date = new Date(rawDate);
 
           if (!date || isNaN(date.getTime())) return;
 
-          const yearKey = date.getFullYear().toString();
+          const yearKey = String(date.getFullYear());
           const monthIndex = date.getMonth();
           if (monthIndex < 0 || monthIndex > 11) return;
 
-          if (!yearCounts[yearKey]) {
-            yearCounts[yearKey] = new Array(12).fill(0);
-          }
+          if (!yearCounts[yearKey]) yearCounts[yearKey] = new Array(12).fill(0);
           yearCounts[yearKey][monthIndex] += 1;
         });
 
         setEventYearCounts(yearCounts);
+        setEventsReady(true);
       },
       (error) => {
         console.error("TaskChart Firestore error (Events):", error);
+        setEventYearCounts({});
+        setEventsReady(true);
       }
     );
 
@@ -682,13 +536,17 @@ export default function TaskChart() {
     };
   }, [db, auth]);
 
-  // ---------- AVAILABLE YEARS + DEFAULT ----------
+  //stop loading only when both are ready
+  useEffect(() => {
+    if (tasksReady && eventsReady) setIsLoading(false);
+  }, [tasksReady, eventsReady]);
+
   const availableYears: string[] = useMemo(() => {
     const set = new Set<string>();
     Object.keys(taskYearCounts).forEach((y) => set.add(y));
     Object.keys(eventYearCounts).forEach((y) => set.add(y));
     const arr = Array.from(set);
-    arr.sort();
+    arr.sort((a, b) => Number(a) - Number(b));
     return arr;
   }, [taskYearCounts, eventYearCounts]);
 
@@ -710,7 +568,6 @@ export default function TaskChart() {
   const allZero =
     taskCounts.every((v) => v === 0) && eventCounts.every((v) => v === 0);
 
-  // ---------- STATS ----------
   const {
     totalTasks,
     totalEvents,
@@ -759,13 +616,9 @@ export default function TaskChart() {
     };
   }, [taskCounts, eventCounts]);
 
-  // ---------- CHART DATA ----------
   let chartSubtitle = "Tasks by start/due date • Events by event date";
-  if (viewMode === "tasks") {
-    chartSubtitle = "Tasks by start/due date";
-  } else if (viewMode === "events") {
-    chartSubtitle = "Events by event date";
-  }
+  if (viewMode === "tasks") chartSubtitle = "Tasks by start/due date";
+  if (viewMode === "events") chartSubtitle = "Events by event date";
 
   const chartData =
     viewMode === "combined"
@@ -810,7 +663,7 @@ export default function TaskChart() {
         };
 
   const screenWidth = Dimensions.get("window").width;
-  const chartWidth = screenWidth - 48;
+  const chartWidth = Math.max(280, screenWidth - 48);
 
   const chartConfig = {
     backgroundColor: isDark ? "#020617" : "#E0F2FE",
@@ -825,15 +678,37 @@ export default function TaskChart() {
       isDark
         ? `rgba(148, 163, 184, ${opacity})`
         : `rgba(55, 65, 81, ${opacity})`,
-    style: {
-      borderRadius: 16,
-    },
-    propsForDots: {
-      r: "3",
-    },
+    style: { borderRadius: 16 },
+    propsForDots: { r: "3" },
   };
 
-  // ---------- RENDER ----------
+  // render chart
+  const renderChart = useCallback(() => {
+    try {
+      return (
+        <LineChart
+          data={chartData as any}
+          width={chartWidth}
+          height={260}
+          chartConfig={chartConfig as any}
+          style={{
+            marginVertical: 8,
+            borderRadius: 16,
+            alignSelf: "center",
+          }}
+          bezier
+        />
+      );
+    } catch (e) {
+      return (
+        <Text style={styles.subtitleText}>
+          Chart preview is not supported on this platform/build.
+          {"\n"}Try Android/iOS emulator/device.
+        </Text>
+      );
+    }
+  }, [chartData, chartWidth, chartConfig, styles.subtitleText]);
+
   return (
     <GradientBackground>
       <SafeAreaView style={styles.container} edges={["top"]}>
@@ -856,7 +731,6 @@ export default function TaskChart() {
           </View>
         </View>
 
-        {/* CONTENT */}
         <ScrollView
           style={styles.contentWrapper}
           contentContainerStyle={styles.contentContainer}
@@ -891,7 +765,6 @@ export default function TaskChart() {
             </View>
           ) : (
             <>
-              {/* HERO ORB */}
               <View style={styles.heroWrapper}>
                 <View style={styles.heroOrbOuter}>
                   <Ionicons
@@ -907,7 +780,6 @@ export default function TaskChart() {
                 </Text>
               </View>
 
-              {/* YEAR FILTER */}
               <Text style={styles.yearRowLabel}>Year</Text>
               <View style={styles.yearFilterRow}>
                 {availableYears.map((year) => {
@@ -932,7 +804,6 @@ export default function TaskChart() {
                 })}
               </View>
 
-              {/* SUMMARY ROW with neon bottom lines */}
               <View style={styles.summaryRow}>
                 <Card style={styles.summaryBox}>
                   <Text style={styles.summaryLabel}>
@@ -951,7 +822,6 @@ export default function TaskChart() {
                         shadowColor: MODULE_COLOR,
                         shadowOpacity: 1,
                         shadowRadius: 12,
-                        shadowOffset: { width: 0, height: 0 },
                       },
                     ]}
                   />
@@ -974,7 +844,6 @@ export default function TaskChart() {
                         shadowColor: "#22C55E",
                         shadowOpacity: 1,
                         shadowRadius: 12,
-                        shadowOffset: { width: 0, height: 0 },
                       },
                     ]}
                   />
@@ -994,74 +863,45 @@ export default function TaskChart() {
                         shadowColor: "#A855F7",
                         shadowOpacity: 1,
                         shadowRadius: 12,
-                        shadowOffset: { width: 0, height: 0 },
                       },
                     ]}
                   />
                 </Card>
               </View>
 
-              {/* SEGMENTED CONTROL */}
               <View style={styles.segmentRow}>
-                <TouchableOpacity
-                  style={
-                    viewMode === "combined"
-                      ? styles.segmentButtonActive
-                      : styles.segmentButton
-                  }
-                  onPress={() => setViewMode("combined")}
-                >
-                  <Text
-                    style={
-                      viewMode === "combined"
-                        ? styles.segmentButtonTextActive
-                        : styles.segmentButtonText
-                    }
-                  >
-                    Combined
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={
-                    viewMode === "tasks"
-                      ? styles.segmentButtonActive
-                      : styles.segmentButton
-                  }
-                  onPress={() => setViewMode("tasks")}
-                >
-                  <Text
-                    style={
-                      viewMode === "tasks"
-                        ? styles.segmentButtonTextActive
-                        : styles.segmentButtonText
-                    }
-                  >
-                    Tasks
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={
-                    viewMode === "events"
-                      ? styles.segmentButtonActive
-                      : styles.segmentButton
-                  }
-                  onPress={() => setViewMode("events")}
-                >
-                  <Text
-                    style={
-                      viewMode === "events"
-                        ? styles.segmentButtonTextActive
-                        : styles.segmentButtonText
-                    }
-                  >
-                    Events
-                  </Text>
-                </TouchableOpacity>
+                {(["combined", "tasks", "events"] as const).map((m) => {
+                  const active = viewMode === m;
+                  const label =
+                    m === "combined"
+                      ? "Combined"
+                      : m === "tasks"
+                      ? "Tasks"
+                      : "Events";
+                  return (
+                    <TouchableOpacity
+                      key={m}
+                      style={
+                        active
+                          ? styles.segmentButtonActive
+                          : styles.segmentButton
+                      }
+                      onPress={() => setViewMode(m)}
+                    >
+                      <Text
+                        style={
+                          active
+                            ? styles.segmentButtonTextActive
+                            : styles.segmentButtonText
+                        }
+                      >
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
-              {/* SECTION HEADER */}
               <View style={styles.sectionHeaderRow}>
                 <View style={styles.sectionHeaderIconWrapper}>
                   <Ionicons
@@ -1075,33 +915,12 @@ export default function TaskChart() {
                 </Text>
               </View>
 
-              {/* MAIN CHART CARD */}
+              {/* CHART */}
               <Card style={styles.chartCard}>
                 <Text style={styles.titleText}>Monthly Activity</Text>
                 <Text style={styles.subtitleText}>{chartSubtitle}</Text>
+                {renderChart()}
 
-                {Platform.OS === "web" ? (
-                  <Text style={styles.subtitleText}>
-                    Chart preview is not fully supported on web.{"\n"}
-                    Please run this screen on an Android/iOS device or emulator
-                    to see the graph.
-                  </Text>
-                ) : (
-                  <LineChart
-                    data={chartData}
-                    width={chartWidth}
-                    height={260}
-                    chartConfig={chartConfig}
-                    style={{
-                      marginVertical: 8,
-                      borderRadius: 16,
-                      alignSelf: "center",
-                    }}
-                    bezier
-                  />
-                )}
-
-                {/* LEGEND */}
                 <View style={styles.legendRow}>
                   {(viewMode === "combined" || viewMode === "tasks") && (
                     <View style={styles.legendItem}>
@@ -1118,7 +937,7 @@ export default function TaskChart() {
                 </View>
               </Card>
 
-              {/* INSIGHTS CARD */}
+              {/* INSIGHTS */}
               <Card style={styles.insightsCard}>
                 <View style={styles.insightsTitleRow}>
                   <Ionicons
@@ -1130,9 +949,10 @@ export default function TaskChart() {
                     Insights for {activeYear}
                   </Text>
                 </View>
+
                 <Text style={styles.insightsHintText}>
-                  Hint: Identify your busiest months and plan tasks or events
-                  earlier so you don&apos;t overload a single period.
+                  Hint: Identify your busiest months and plan earlier so you
+                  don&apos;t overload a single period.
                 </Text>
 
                 <View style={styles.bulletRow}>
@@ -1140,19 +960,13 @@ export default function TaskChart() {
                   <Text style={styles.bulletText}>
                     Busiest month:{" "}
                     <Text
-                      style={{
-                        fontWeight: "600",
-                        color: primaryTextColor,
-                      }}
+                      style={{ fontWeight: "600", color: primaryTextColor }}
                     >
                       {busiestMonthLabel}
                     </Text>{" "}
                     with{" "}
                     <Text
-                      style={{
-                        fontWeight: "600",
-                        color: primaryTextColor,
-                      }}
+                      style={{ fontWeight: "600", color: primaryTextColor }}
                     >
                       {busiestMonthTotal}
                     </Text>{" "}
@@ -1165,10 +979,7 @@ export default function TaskChart() {
                   <Text style={styles.bulletText}>
                     Task vs event balance:{" "}
                     <Text
-                      style={{
-                        fontWeight: "600",
-                        color: primaryTextColor,
-                      }}
+                      style={{ fontWeight: "600", color: primaryTextColor }}
                     >
                       {tasksSharePercent}%
                     </Text>{" "}
@@ -1181,187 +992,22 @@ export default function TaskChart() {
                   <Text style={styles.bulletText}>
                     Average items per month:{" "}
                     <Text
-                      style={{
-                        fontWeight: "600",
-                        color: primaryTextColor,
-                      }}
+                      style={{ fontWeight: "600", color: primaryTextColor }}
                     >
                       {avgTotalPerMonth}
                     </Text>
-                    . Try to keep busy months near this level to avoid overload.
+                    .
                   </Text>
                 </View>
               </Card>
             </>
           )}
         </ScrollView>
-        <Modal
-          visible={showAddMenu}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowAddMenu(false)}
-        >
-          <TouchableOpacity
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.4)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-            activeOpacity={1}
-            onPressOut={() => setShowAddMenu(false)}
-          >
-            <Card
-              style={[
-                styles.neonShellCard,
-                {
-                  width: "70%",
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.neonBottomLine,
-                  {
-                    backgroundColor: MODULE_COLOR,
-                    shadowColor: MODULE_COLOR,
-                    shadowOpacity: 0.9,
-                    shadowRadius: 12,
-                    shadowOffset: { width: 0, height: 0 },
-                  },
-                ]}
-              />
-              <Text
-                style={{
-                  fontSize: theme.typography.fontSizes.md,
-                  fontWeight: theme.typography.fontWeights.bold,
-                  marginBottom: theme.spacing.sm,
-                  color: theme.colors.textPrimary,
-                }}
-              >
-                Add...
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowAddMenu(false);
-                  router.push("/modules/task-management/TaskAdd");
-                }}
-                style={[
-                  styles.chipButton,
-                  {
-                    backgroundColor: MODULE_COLOR,
-                    marginBottom: theme.spacing.sm,
-                  },
-                ]}
-              >
-                <Text style={[styles.chipButtonText, { color: "#fff" }]}>
-                  Add Task
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowAddMenu(false);
-                  router.push("/modules/task-management/EventAdd");
-                }}
-                style={[styles.chipButton, { backgroundColor: "#0256ffff" }]}
-              >
-                <Text
-                  style={[
-                    styles.chipButtonText,
-                    { color: theme.colors.textPrimary },
-                  ]}
-                >
-                  Add Event
-                </Text>
-              </TouchableOpacity>
-            </Card>
-          </TouchableOpacity>
-        </Modal>
 
-        {/* 🔻 Bottom Taskbar (Chart = active) */}
-        <View style={styles.bottomBar}>
-          {/* Center Floating Add Button */}
-          <View style={styles.floatingAdd}>
-            <View style={styles.floatingAddOuter}>
-              <TouchableOpacity
-                style={styles.floatingAddButton}
-                onPress={() => router.push("/modules/task-management/TaskAdd")}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="add" size={34} color="#000" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Task */}
-          <TouchableOpacity
-            style={styles.bottomBarItem}
-            onPress={() => router.push("/modules/task-management")}
-          >
-            <View style={styles.bottomBarIconWrapper}>
-              <Ionicons
-                name="checkmark-done-outline"
-                size={20}
-                color={theme.colors.textSecondary}
-              />
-            </View>
-            <Text style={styles.bottomBarLabel}>Task</Text>
-          </TouchableOpacity>
-
-          {/* Event */}
-          <TouchableOpacity
-            style={styles.bottomBarItem}
-            onPress={() => router.push("/modules/task-management/EventList")}
-          >
-            <View style={styles.bottomBarIconWrapper}>
-              <Ionicons
-                name="calendar-outline"
-                size={20}
-                color={theme.colors.textSecondary}
-              />
-            </View>
-            <Text style={styles.bottomBarLabel}>Event</Text>
-          </TouchableOpacity>
-
-          {/* Productivity */}
-          <TouchableOpacity
-            style={styles.bottomBarItem}
-            onPress={() => router.push("/modules/task-management/Gamification")}
-          >
-            <View style={styles.bottomBarIconWrapper}>
-              <Ionicons
-                name="game-controller-outline"
-                size={20}
-                color={theme.colors.textSecondary}
-              />
-            </View>
-            <Text style={styles.bottomBarLabel}>Productivity</Text>
-          </TouchableOpacity>
-
-          {/* Chart (current) */}
-          <TouchableOpacity style={styles.bottomBarItem} disabled>
-            <View
-              style={[
-                styles.bottomBarIconWrapper,
-                { backgroundColor: `${MODULE_COLOR}22` },
-              ]}
-            >
-              <Ionicons
-                name="stats-chart-outline"
-                size={20}
-                color={MODULE_COLOR}
-              />
-            </View>
-            <Text
-              style={[
-                styles.bottomBarLabel,
-                { color: MODULE_COLOR, fontWeight: "600" },
-              ]}
-            >
-              Chart
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TaskBottomBar
+          active="Chart"
+          onPressAdd={() => setShowAddMenu(true)} // only if you keep the add menu
+        />
       </SafeAreaView>
     </GradientBackground>
   );
