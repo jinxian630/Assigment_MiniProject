@@ -4,7 +4,7 @@ import chromadb
 Merged Insert_Data.py for BOTH Task + Money rules.
 
 - Stores everything in the SAME ChromaDB collection.
-- Adds metadata so your merged API can filter by module/type/userId.
+- Adds metadata so your merged API can filter by module/type/userId.x
 - Optional reset (dangerous) is OFF by default.
 """
 

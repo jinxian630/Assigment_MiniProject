@@ -57,7 +57,7 @@ const MODULE_ACCENT = "#FFD93D";
 const DEFAULT_RAG_HOST =
   Platform.OS === "web"
     ? "http://127.0.0.1:8000" // FastAPI on your PC
-    : "http://10.10.19.245:8000"; // <== use your laptop's IP
+    : "http://192.168.0.8:8000"; // <== use your laptop's IP
 const RAG_HOST_STORAGE_KEY = "@money_rag_host_v1";
 
 // ✅ Your installed Ollama model

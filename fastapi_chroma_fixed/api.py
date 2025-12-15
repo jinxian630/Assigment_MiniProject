@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 import chromadb
 import requests
 import json
+import threading
 
 # =========================
 # Shared DB / collection
@@ -27,6 +28,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ Prevent Money+Task from hitting Ollama concurrently (stability fix)
+OLLAMA_LOCK = threading.Lock()
+
 @app.get("/")
 def root():
     return {"message": "Merged FastAPI backend running", "routes": ["/money-ai", "/task-ai"]}
@@ -36,7 +40,6 @@ def root():
 # Shared helpers
 # ============================================================
 def _where_and(*clauses: Dict[str, Any]) -> Dict[str, Any]:
-    # Chroma where format using $and + $eq
     return {"$and": list(clauses)}
 
 
@@ -53,7 +56,6 @@ class MoneyQueryRequest(BaseModel):
     n_results: int = 2
 
 def _query_money_rules(text: str, n_results: int) -> Dict[str, Any]:
-    # ✅ ONLY retrieve money-management rule docs
     return collection.query(
         query_texts=[text],
         n_results=n_results,
@@ -66,7 +68,6 @@ def _query_money_rules(text: str, n_results: int) -> Dict[str, Any]:
 
 @money_router.post("/search_vectors")
 def money_search_vectors(request: MoneyQueryRequest):
-    # ✅ filtered
     results = _query_money_rules(request.text, request.n_results)
     return {
         "ids": results.get("ids", []),
@@ -77,7 +78,6 @@ def money_search_vectors(request: MoneyQueryRequest):
 
 @money_router.post("/search_rag_model")
 def money_search_rag_model(request: MoneyQueryRequest):
-    # ✅ filtered
     results = _query_money_rules(request.text, request.n_results)
 
     docs = (results.get("documents") or [[]])[0]
@@ -105,58 +105,37 @@ def money_search_rag_model(request: MoneyQueryRequest):
         "- If context is weak, say so and give general best-practice advice.\n"
     )
 
+    # ✅ FIX: Non-streaming request (prevents hanging/locking the next module)
     try:
-        ollama_resp = requests.post(
-            OLLAMA_GENERATE_URL,
-            json={
-                "model": request.model,
-                "prompt": prompt_text,
-                "stream": True,
-                "options": {"num_predict": 220},
-            },
-            stream=True,
-            timeout=(10, 120),
-        )
+        with OLLAMA_LOCK:
+            resp = requests.post(
+                OLLAMA_GENERATE_URL,
+                json={
+                    "model": request.model,
+                    "prompt": prompt_text,
+                    "stream": False,                 # ✅ IMPORTANT
+                    "options": {"num_predict": 220},
+                },
+                timeout=180,
+            )
     except requests.RequestException as e:
-        return {"results": retrieved, "model_answer": "", "ollama_error": f"Request to Ollama failed: {str(e)}"}
-
-    if ollama_resp.status_code != 200:
-        return {"results": retrieved, "model_answer": "", "ollama_error": ollama_resp.text}
-
-    model_answer = ""
-    ollama_error = ""
-
-    for line in ollama_resp.iter_lines():
-        if not line:
-            continue
-        try:
-            data = json.loads(line.decode("utf-8"))
-
-            # normal streamed tokens
-            if "response" in data and data["response"]:
-                model_answer += data["response"]
-
-            # capture Ollama errors if any
-            if "error" in data and data["error"]:
-                ollama_error = str(data["error"])
-        except Exception:
-            pass
-
-    print("OLLAMA status:", ollama_resp.status_code)
-    print("MODEL_ANSWER_LEN:", len(model_answer))
-
-    if ollama_error:
         return {
             "results": retrieved,
             "model_answer": "",
-            "ollama_error": ollama_error,
+            "ollama_error": f"Request to Ollama failed: {str(e)}",
         }
 
-    return {
-        "results": retrieved,
-        "model_answer": model_answer.strip(),
-        "ollama_error": "",
-    }
+    if resp.status_code != 200:
+        return {"results": retrieved, "model_answer": "", "ollama_error": resp.text}
+
+    data = resp.json() if resp.content else {}
+    model_answer = (data.get("response") or "").strip()
+    ollama_error = (data.get("error") or "").strip()
+
+    if ollama_error:
+        return {"results": retrieved, "model_answer": "", "ollama_error": ollama_error}
+
+    return {"results": retrieved, "model_answer": model_answer, "ollama_error": ""}
 
 
 # ============================================================
@@ -222,23 +201,27 @@ def detect_intent(user_text: str) -> str:
     return INTENT_OTHER
 
 def call_ollama(model: str, messages: List[Dict[str, str]], temperature: float, num_ctx: int, num_predict: int) -> str:
-    resp = requests.post(
-        OLLAMA_CHAT_URL,
-        json={
-            "model": model,
-            "messages": messages,
-            "options": {
-                "temperature": temperature,
-                "num_ctx": num_ctx,
-                "num_predict": num_predict,
-            },
-            "stream": False,
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    return ((data.get("message") or {}).get("content") or "").strip()
+    try:
+        with OLLAMA_LOCK:
+            resp = requests.post(
+                OLLAMA_CHAT_URL,
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "options": {
+                        "temperature": temperature,
+                        "num_ctx": num_ctx,
+                        "num_predict": num_predict,
+                    },
+                    "stream": False,
+                },
+                timeout=120,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        return ((data.get("message") or {}).get("content") or "").strip()
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Ollama request failed: {str(e)}")
 
 @task_router.get("/health")
 def task_health():
@@ -289,16 +272,13 @@ def task_chat_rag(request: ChatRequest):
         )
     })
 
-    try:
-        answer = call_ollama(
-            model=request.model,
-            messages=messages,
-            temperature=request.temperature,
-            num_ctx=request.num_ctx,
-            num_predict=request.num_predict,
-        )
-    except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Ollama request failed: {str(e)}")
+    answer = call_ollama(
+        model=request.model,
+        messages=messages,
+        temperature=request.temperature,
+        num_ctx=request.num_ctx,
+        num_predict=request.num_predict,
+    )
 
     return {"intent": intent, "model_answer": answer}
 
@@ -308,11 +288,10 @@ def task_chat_rag(request: ChatRequest):
 # =========================
 app.include_router(money_router)
 app.include_router(task_router)
+
 # =========================
 # BACKWARD-COMPAT ALIASES
-# (so old frontend routes still work)
 # =========================
-
 @app.post("/search_rag_model")
 def search_rag_model_alias(request: MoneyQueryRequest):
     return money_search_rag_model(request)
