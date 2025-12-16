@@ -46,37 +46,57 @@ export function subscribeToLatestMemories(
 ): Unsubscribe {
   try {
     const postsRef = collection(db, "MemoryPosts");
-    
+
     // Try query with orderBy first (requires index)
     const q = query(postsRef, orderBy("startDate", "desc"), limit(limitCount));
 
     return onSnapshot(
       q,
       (snapshot) => {
-        console.log("📖 subscribeToLatestMemories: Received", snapshot.size, "documents");
+        console.log(
+          "📖 subscribeToLatestMemories: Received",
+          snapshot.size,
+          "documents"
+        );
         const list: Memory[] = [];
         snapshot.forEach((doc) => {
           const data = doc.data();
-          console.log("📄 Document:", doc.id, "startDate:", data.startDate, "userId:", data.userId);
+          console.log(
+            "📄 Document:",
+            doc.id,
+            "startDate:",
+            data.startDate,
+            "userId:",
+            data.userId
+          );
           list.push({ id: doc.id, ...data } as Memory);
         });
-        console.log("✅ subscribeToLatestMemories: Total memories loaded:", list.length);
+        console.log(
+          "✅ subscribeToLatestMemories: Total memories loaded:",
+          list.length
+        );
         callback(list);
       },
       (error: any) => {
         console.error("❌ Error in subscribeToLatestMemories:", error);
         console.error("❌ Error code:", error.code);
         console.error("❌ Error message:", error.message);
-        
+
         // If index is missing, try fallback query without orderBy
         if (error.code === "failed-precondition" || error.code === 9) {
-          console.log("⚠️ Index missing, trying fallback query (no orderBy)...");
+          console.log(
+            "⚠️ Index missing, trying fallback query (no orderBy)..."
+          );
           const fallbackQ = query(postsRef, limit(limitCount * 2)); // Get more to sort manually
-          
+
           return onSnapshot(
             fallbackQ,
             (snapshot) => {
-              console.log("📖 Fallback query: Received", snapshot.size, "documents");
+              console.log(
+                "📖 Fallback query: Received",
+                snapshot.size,
+                "documents"
+              );
               const list: Memory[] = [];
               snapshot.forEach((doc) => {
                 list.push({ id: doc.id, ...doc.data() } as Memory);
@@ -85,7 +105,10 @@ export function subscribeToLatestMemories(
               list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
               // Take only the requested limit
               const limited = list.slice(0, limitCount);
-              console.log("✅ Fallback: Total memories loaded:", limited.length);
+              console.log(
+                "✅ Fallback: Total memories loaded:",
+                limited.length
+              );
               callback(limited);
             },
             (fallbackError: any) => {
@@ -112,25 +135,30 @@ export function subscribeToUserMemories(
 ): Unsubscribe {
   try {
     const postsRef = collection(db, "MemoryPosts");
-    
+
     // Use simpler query without orderBy to avoid index requirement
     // We'll sort manually instead
-    const q = query(
-      postsRef,
-      where("userId", "==", userId)
-    );
+    const q = query(postsRef, where("userId", "==", userId));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        console.log("📖 subscribeToUserMemories: Received snapshot with", snapshot.size, "documents");
+        console.log(
+          "📖 subscribeToUserMemories: Received snapshot with",
+          snapshot.size,
+          "documents"
+        );
         const list: Memory[] = [];
         snapshot.forEach((doc) => {
           list.push({ id: doc.id, ...doc.data() } as Memory);
         });
         // Sort manually by startDate descending
         list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
-        console.log("✅ subscribeToUserMemories: Calling callback with", list.length, "memories");
+        console.log(
+          "✅ subscribeToUserMemories: Calling callback with",
+          list.length,
+          "memories"
+        );
         callback(list);
       },
       (error: any) => {
@@ -281,7 +309,7 @@ export async function searchUsers(searchText: string): Promise<any[]> {
     onSnapshot(q, (snapshot) => {
       const users: any[] = [];
       snapshot.forEach((doc) => {
-        const data = { id: doc.id, ...doc.data() };
+        const data = { id: doc.id, ...doc.data() } as any;
         const name = (data.displayName || "").toLowerCase();
         if (name.includes(searchText.toLowerCase())) {
           users.push(data);

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -39,6 +39,7 @@ type FilterModalProps = {
   onApply: (filters: FilterOptions) => void;
   isDarkMode: boolean;
   memories: Memory[];
+  initialFilters?: FilterOptions;
 };
 
 export default function FilterModal({
@@ -47,13 +48,34 @@ export default function FilterModal({
   onApply,
   isDarkMode,
   memories,
+  initialFilters,
 }: FilterModalProps) {
-  const [keyword, setKeyword] = useState("");
-  const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const [keyword, setKeyword] = useState(initialFilters?.keyword || "");
+  const [selectedColor, setSelectedColor] = useState<string | null>(
+    initialFilters?.emotionColor || null
+  );
   const [feelingType, setFeelingType] = useState<
     "stress" | "clarity" | "energy" | "warmth" | null
-  >(null);
-  const [feelingRank, setFeelingRank] = useState<"most" | "least" | null>(null);
+  >(initialFilters?.feelingType || null);
+  const [feelingRank, setFeelingRank] = useState<"most" | "least" | null>(
+    initialFilters?.feelingRank || null
+  );
+
+  // Update state when initialFilters change (when modal opens with existing filters)
+  useEffect(() => {
+    if (visible && initialFilters) {
+      setKeyword(initialFilters.keyword || "");
+      setSelectedColor(initialFilters.emotionColor || null);
+      setFeelingType(initialFilters.feelingType || null);
+      setFeelingRank(initialFilters.feelingRank || null);
+    } else if (visible && !initialFilters) {
+      // Reset when opening without initial filters
+      setKeyword("");
+      setSelectedColor(null);
+      setFeelingType(null);
+      setFeelingRank(null);
+    }
+  }, [visible, initialFilters]);
 
   const colors = {
     background: isDarkMode ? "#020617" : "#FAF5FF",
@@ -69,12 +91,14 @@ export default function FilterModal({
     if (Platform.OS === "ios") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    onApply({
+    const filtersToApply: FilterOptions = {
       keyword: keyword.trim(),
       emotionColor: selectedColor,
       feelingType,
       feelingRank,
-    });
+    };
+    console.log("🔍 FilterModal: Applying filters:", filtersToApply);
+    onApply(filtersToApply);
     onClose();
   };
 
@@ -86,6 +110,13 @@ export default function FilterModal({
     setSelectedColor(null);
     setFeelingType(null);
     setFeelingRank(null);
+    // Apply empty filters to reset
+    onApply({
+      keyword: "",
+      emotionColor: null,
+      feelingType: null,
+      feelingRank: null,
+    });
   };
 
   const handleClose = () => {
@@ -106,8 +137,7 @@ export default function FilterModal({
         <TouchableOpacity
           activeOpacity={1}
           onPress={handleClose}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="box-none"
+          style={StyleSheet.absoluteFillObject}
         />
         <View
           style={[
@@ -117,7 +147,6 @@ export default function FilterModal({
               borderColor: colors.border,
             },
           ]}
-          pointerEvents="box-only"
         >
           {/* Header */}
           <View style={styles.header}>

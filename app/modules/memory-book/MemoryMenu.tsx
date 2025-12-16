@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, ScrollView, TouchableOpacity } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../types/navigation";
+import { MainStackParamList } from "@/types/navigation";
 import {
   Layout,
   TopNav,
@@ -500,7 +500,7 @@ export default function MemoryMenu({ navigation }: Props) {
 
           {/* Stories */}
           <TouchableOpacity
-            onPress={() => navigation.navigate("MemoryStories")}
+            onPress={() => navigation.navigate("MemoryTimeline" as any)}
             style={{
               padding: 16,
               borderRadius: 18,

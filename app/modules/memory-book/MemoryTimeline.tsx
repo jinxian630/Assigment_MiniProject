@@ -157,16 +157,16 @@ export default function MemoryTimeline() {
       return;
     }
 
-    console.log("🔄 MemoryTimeline: Setting up subscription for user:", currentUserId);
+    console.log(
+      "🔄 MemoryTimeline: Setting up subscription for user:",
+      currentUserId
+    );
     const postsRef = collection(db, "MemoryPosts");
 
     // Filter by current user's ID
     // Use query without orderBy first (to avoid index requirement), then sort manually
     // This is more reliable and doesn't require creating a composite index
-    const q = query(
-      postsRef,
-      where("userId", "==", currentUserId)
-    );
+    const q = query(postsRef, where("userId", "==", currentUserId));
 
     const unsubscribe = onSnapshot(
       q,
@@ -175,11 +175,22 @@ export default function MemoryTimeline() {
         const list: MemoryPost[] = [];
         snapshot.forEach((d) => {
           const data = d.data();
-          console.log("📄 Timeline doc:", d.id, "startDate:", data.startDate, "userId:", data.userId);
+          console.log(
+            "📄 Timeline doc:",
+            d.id,
+            "startDate:",
+            data.startDate,
+            "userId:",
+            data.userId
+          );
           list.push({ id: d.id, ...(data as any) });
         });
         // Sort manually by startDate descending (newest first)
-        list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
+        list.sort((a, b) => {
+          const aDate = a.startDate ?? 0;
+          const bDate = b.startDate ?? 0;
+          return bDate - aDate;
+        });
         console.log("✅ MemoryTimeline: Total memories:", list.length);
         setMemories(list);
       },
@@ -232,13 +243,22 @@ export default function MemoryTimeline() {
   }, [activeFilters]);
 
   const handleApplyFilters = (filters: FilterOptions) => {
+    console.log("🔄 Applying filters:", filters);
     setActiveFilters(filters);
     const filtered = applyFilters(memories as any[], filters);
+    console.log(
+      "✅ Filtered memories count:",
+      filtered.length,
+      "out of",
+      memories.length
+    );
 
     if (filtered.length === 0 && memories.length > 0) {
       setTimeout(() => {
         setShowNoResults(true);
       }, 300);
+    } else {
+      setShowNoResults(false);
     }
   };
 
@@ -1330,6 +1350,7 @@ export default function MemoryTimeline() {
           onApply={handleApplyFilters}
           isDarkMode={isDarkMode}
           memories={memories as any[]}
+          initialFilters={activeFilters}
         />
 
         {/* Bottom Navigation */}

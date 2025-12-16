@@ -118,7 +118,7 @@ export async function saveImageToGallery(imageURL: string): Promise<void> {
         }
       }
 
-      if (useMediaLibrary) {
+      if (useMediaLibrary && currentPermission) {
         // Request permissions if not already granted
         if (!currentPermission.granted) {
           try {
@@ -140,7 +140,11 @@ export async function saveImageToGallery(imageURL: string): Promise<void> {
           permissionResult = currentPermission;
         }
 
-        if (useMediaLibrary && permissionResult.status !== "granted") {
+        if (
+          useMediaLibrary &&
+          permissionResult &&
+          permissionResult.status !== "granted"
+        ) {
           if (permissionResult.canAskAgain === false) {
             Alert.alert(
               "Permission Denied",
@@ -182,7 +186,10 @@ export async function saveImageToGallery(imageURL: string): Promise<void> {
         Alert.alert("Success", "Image saved to your gallery!");
         return;
       } catch (error: any) {
-        console.warn("Error saving with media library, falling back to share:", error);
+        console.warn(
+          "Error saving with media library, falling back to share:",
+          error
+        );
         useMediaLibrary = false;
       }
     }

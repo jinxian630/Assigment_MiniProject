@@ -199,41 +199,60 @@ export function subscribeToSavedMemories(
   const savesRef = collection(db, "SavedPosts");
   const q = query(savesRef, where("userId", "==", userId));
 
-  return onSnapshot(q, async (snapshot) => {
-    const memoryIds: string[] = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      if (data.memoryId) {
-        memoryIds.push(data.memoryId);
-      }
-    });
-
-    // Fetch full memory data for each saved ID
-    const memories: Memory[] = [];
-    for (const memoryId of memoryIds) {
-      try {
-        const memoryDoc = await getDoc(doc(db, "MemoryPosts", memoryId));
-        if (memoryDoc.exists()) {
-          memories.push({ id: memoryDoc.id, ...memoryDoc.data() } as Memory);
+  return onSnapshot(
+    q,
+    async (snapshot) => {
+      const memoryIds: string[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.memoryId) {
+          memoryIds.push(data.memoryId);
         }
-      } catch (error) {
-        console.error(`Error fetching memory ${memoryId}:`, error);
+      });
+
+      // If no saved posts, callback immediately with empty array
+      if (memoryIds.length === 0) {
+        callback([]);
+        return;
       }
+
+      // Fetch full memory data for each saved ID
+      const memories: Memory[] = [];
+      for (const memoryId of memoryIds) {
+        try {
+          const memoryDoc = await getDoc(doc(db, "MemoryPosts", memoryId));
+          if (memoryDoc.exists()) {
+            memories.push({ id: memoryDoc.id, ...memoryDoc.data() } as Memory);
+          } else {
+            console.warn(
+              `Memory ${memoryId} not found in MemoryPosts collection`
+            );
+          }
+        } catch (error) {
+          console.error(`Error fetching memory ${memoryId}:`, error);
+        }
+      }
+
+      // Sort by savedAt (most recently saved first)
+      const savedDataMap = new Map<string, number>();
+      snapshot.docs.forEach((d) => {
+        const data = d.data();
+        if (data.memoryId && data.savedAt) {
+          savedDataMap.set(data.memoryId, data.savedAt);
+        }
+      });
+
+      memories.sort((a, b) => {
+        const aSavedAt = savedDataMap.get(a.id) || 0;
+        const bSavedAt = savedDataMap.get(b.id) || 0;
+        return bSavedAt - aSavedAt;
+      });
+
+      callback(memories);
+    },
+    (error) => {
+      console.error("Error subscribing to saved memories:", error);
+      callback([]);
     }
-
-    // Sort by savedAt (most recently saved first)
-    const savedData = snapshot.docs.map((d) => ({
-      id: d.id,
-      memoryId: d.data().memoryId,
-      savedAt: d.data().savedAt,
-    }));
-
-    memories.sort((a, b) => {
-      const aSaved = savedData.find((s) => s.memoryId === a.id);
-      const bSaved = savedData.find((s) => s.memoryId === b.id);
-      return (bSaved?.savedAt || 0) - (aSaved?.savedAt || 0);
-    });
-
-    callback(memories);
-  });
+  );
 }

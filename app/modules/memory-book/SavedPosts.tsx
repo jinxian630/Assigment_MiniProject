@@ -92,17 +92,30 @@ export default function SavedPosts() {
   useEffect(() => {
     const userId = auth.currentUser?.uid || user?.id;
     if (!userId) {
+      console.warn("SavedPosts: No user ID available");
       setLoading(false);
+      setSavedMemories([]);
       return;
     }
 
+    console.log("SavedPosts: Subscribing to saved memories for user:", userId);
+    let isMounted = true;
     const unsubscribe = subscribeToSavedMemories(userId, (memories) => {
-      setSavedMemories(memories);
-      setLoading(false);
+      if (isMounted) {
+        console.log("SavedPosts: Received memories:", memories.length);
+        setSavedMemories(memories);
+        setLoading(false);
+      }
     });
 
-    return () => unsubscribe();
-  }, [user, auth.currentUser]);
+    return () => {
+      console.log("SavedPosts: Unsubscribing from saved memories");
+      isMounted = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [user?.id]);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -131,30 +144,43 @@ export default function SavedPosts() {
   // Show overlay when filters are active and no results
   useEffect(() => {
     const hasActiveFilters =
-      activeFilters.keyword ||
-      activeFilters.emotionColor ||
-      (activeFilters.feelingType && activeFilters.feelingRank);
+      !!activeFilters.keyword ||
+      !!activeFilters.emotionColor ||
+      (!!activeFilters.feelingType && !!activeFilters.feelingRank);
 
     if (
       hasActiveFilters &&
       filteredMemories.length === 0 &&
       savedMemories.length > 0
     ) {
-      // Only show if not already showing
-      if (!showNoResults) {
-        setTimeout(() => {
-          setShowNoResults(true);
-        }, 300);
-      }
-    } else if (filteredMemories.length > 0) {
-      // Hide overlay if results are found
+      // Show overlay after short delay
+      const timeoutId = setTimeout(() => {
+        setShowNoResults(true);
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    } else {
+      // Hide overlay immediately if results are found or no filters
       setShowNoResults(false);
     }
-  }, [filteredMemories, activeFilters, savedMemories.length]);
+  }, [
+    filteredMemories.length,
+    activeFilters.keyword,
+    activeFilters.emotionColor,
+    activeFilters.feelingType,
+    activeFilters.feelingRank,
+    savedMemories.length,
+  ]);
 
   const handleApplyFilters = (filters: FilterOptions) => {
+    console.log("🔄 Applying filters to saved posts:", filters);
     setActiveFilters(filters);
     const filtered = applyFilters(savedMemories, filters);
+    console.log(
+      "✅ Filtered saved memories count:",
+      filtered.length,
+      "out of",
+      savedMemories.length
+    );
 
     if (filtered.length === 0 && savedMemories.length > 0) {
       setTimeout(() => {
@@ -418,6 +444,7 @@ export default function SavedPosts() {
           onApply={handleApplyFilters}
           isDarkMode={isDarkMode}
           memories={savedMemories}
+          initialFilters={activeFilters}
         />
 
         {/* Bottom Navigation */}
@@ -446,10 +473,21 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
   },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   headerTitle: {
     fontSize: Platform.OS === "ios" ? 17 : 16,
     fontWeight: "700",
     flexShrink: 1,
+  },
+  themeToggle: {
+    minWidth: Platform.OS === "ios" ? 44 : 40,
+    minHeight: Platform.OS === "ios" ? 44 : 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
   center: {
     flex: 1,

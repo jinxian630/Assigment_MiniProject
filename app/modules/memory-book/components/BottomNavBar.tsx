@@ -104,7 +104,9 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
       // Navigate to profile with current user ID
       const currentUserId = currentUser?.uid || user?.id;
       if (currentUserId) {
-        router.push(`/modules/memory-book/UserProfile?userId=${currentUserId}` as any);
+        router.push(
+          `/modules/memory-book/UserProfile?userId=${currentUserId}` as any
+        );
       } else {
         router.push("/modules/memory-book/UserProfile" as any);
       }
@@ -141,27 +143,27 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
           },
         ]}
       >
-      {/* Left Navigation Items (3 items) */}
-      <View style={styles.leftNavSection}>
-        {leftNavItems.map((item) => (
-          <InteractiveNavItem
-            key={item.id}
-            icon={item.icon}
-            activeIcon={item.activeIcon}
-            label={item.label}
-            description={item.description}
-            isActive={isActive(item.route, item.isProfile)}
-            onPress={() => handlePress(item.route, item.isProfile)}
-            isDarkMode={isDarkMode}
-            activeColor={PRIMARY_PURPLE}
-            inactiveColor={colors.inactive}
-          />
-        ))}
-      </View>
+        {/* Left Navigation Items (3 items) */}
+        <View style={styles.leftNavSection}>
+          {leftNavItems.map((item) => (
+            <InteractiveNavItem
+              key={item.id}
+              icon={item.icon as keyof typeof Ionicons.glyphMap}
+              activeIcon={item.activeIcon as keyof typeof Ionicons.glyphMap}
+              label={item.label}
+              description={item.description}
+              isActive={isActive(item.route, item.isProfile)}
+              onPress={() => handlePress(item.route, item.isProfile)}
+              isDarkMode={isDarkMode}
+              activeColor={PRIMARY_PURPLE}
+              inactiveColor={colors.inactive}
+            />
+          ))}
+        </View>
 
-      {/* Center Floating Create Button */}
-      <View style={styles.floatingAdd}>
-        <Animated.View
+        {/* Center Floating Create Button */}
+        <View style={styles.floatingAdd}>
+          <Animated.View
             style={[
               styles.floatingAddOuter,
               {
@@ -169,83 +171,94 @@ export default function BottomNavBar({ isDarkMode }: BottomNavBarProps) {
                 transform: [{ scale: createButtonScale }],
               },
             ]}
-          // @ts-ignore - web only
-          onMouseEnter={() => {
-            if (Platform.OS === "web") {
-              Animated.spring(createButtonScale, {
-                toValue: 1.15,
-                useNativeDriver: true,
-                tension: 300,
-                friction: 8,
-              }).start();
-            }
-          }}
-          onMouseLeave={() => {
-            if (Platform.OS === "web") {
-              Animated.spring(createButtonScale, {
-                toValue: 1,
-                useNativeDriver: true,
-                tension: 300,
-                friction: 8,
-              }).start();
-            }
-          }}
-        >
-          <TouchableOpacity
-            style={[
-              styles.floatingAddButton,
-              {
-                backgroundColor: PRIMARY_PURPLE,
-                borderColor: PRIMARY_PURPLE + "AA",
-                shadowColor: PRIMARY_PURPLE,
-              },
-            ]}
-            onPress={handleCreatePress}
-            onPressIn={() => {
-              Animated.spring(createButtonScale, {
-                toValue: 0.9,
-                useNativeDriver: true,
-                tension: 300,
-                friction: 8,
-              }).start();
+            // @ts-ignore - web only
+            onMouseEnter={() => {
+              if (Platform.OS === "web") {
+                Animated.spring(createButtonScale, {
+                  toValue: 1.15,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 8,
+                }).start();
+              }
             }}
-            onPressOut={() => {
-              Animated.spring(createButtonScale, {
-                toValue: 1,
-                useNativeDriver: true,
-                tension: 300,
-                friction: 8,
-              }).start();
+            onMouseLeave={() => {
+              if (Platform.OS === "web") {
+                Animated.spring(createButtonScale, {
+                  toValue: 1,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 8,
+                }).start();
+              }
             }}
-            activeOpacity={1}
-            accessibilityLabel="Create new memory"
-            accessibilityRole="button"
-            accessibilityHint="Opens memory creation screen"
           >
-            <View style={{ width: "100%", height: "100%", justifyContent: "center", alignItems: "center" }}>
-              <Ionicons name="add" size={Platform.OS === "ios" ? 28 : 26} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
+            <TouchableOpacity
+              style={[
+                styles.floatingAddButton,
+                {
+                  backgroundColor: PRIMARY_PURPLE,
+                  borderColor: PRIMARY_PURPLE + "AA",
+                  shadowColor: PRIMARY_PURPLE,
+                },
+              ]}
+              onPress={handleCreatePress}
+              onPressIn={() => {
+                Animated.spring(createButtonScale, {
+                  toValue: 0.9,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 8,
+                }).start();
+              }}
+              onPressOut={() => {
+                Animated.spring(createButtonScale, {
+                  toValue: 1,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 8,
+                }).start();
+              }}
+              activeOpacity={1}
+              accessibilityLabel="Create new memory"
+              accessibilityRole="button"
+              accessibilityHint="Opens memory creation screen"
+            >
+              <View
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Ionicons
+                  name="add"
+                  size={Platform.OS === "ios" ? 28 : 26}
+                  color="#FFFFFF"
+                />
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
 
-      {/* Right Navigation Items (3 items) */}
-      <View style={styles.rightNavSection}>
-        {rightNavItems.map((item) => (
-          <InteractiveNavItem
-            key={item.id}
-            icon={item.icon}
-            activeIcon={item.activeIcon}
-            label={item.label}
-            description={item.description}
-            isActive={isActive(item.route)}
-            onPress={() => handlePress(item.route)}
-            isDarkMode={isDarkMode}
-            activeColor={PRIMARY_PURPLE}
-            inactiveColor={colors.inactive}
-          />
-        ))}
-      </View>
+        {/* Right Navigation Items (3 items) */}
+        <View style={styles.rightNavSection}>
+          {rightNavItems.map((item) => (
+            <InteractiveNavItem
+              key={item.id}
+              icon={item.icon as keyof typeof Ionicons.glyphMap}
+              activeIcon={item.activeIcon as keyof typeof Ionicons.glyphMap}
+              label={item.label}
+              description={item.description}
+              isActive={isActive(item.route)}
+              onPress={() => handlePress(item.route)}
+              isDarkMode={isDarkMode}
+              activeColor={PRIMARY_PURPLE}
+              inactiveColor={colors.inactive}
+            />
+          ))}
+        </View>
       </View>
     </SafeAreaView>
   );

@@ -36,15 +36,11 @@ export default function VoicePlayer({
   const [isLoading, setIsLoading] = useState(false);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(duration || 0);
-  const statusUpdateSubscription = useRef<{ remove: () => void } | null>(null);
+  // Note: setOnPlaybackStatusUpdate returns void in newer versions of expo-av
 
   useEffect(() => {
     return () => {
-      // Cleanup: remove status listener and unload sound
-      if (statusUpdateSubscription.current) {
-        statusUpdateSubscription.current.remove();
-        statusUpdateSubscription.current = null;
-      }
+      // Cleanup: unload sound
       if (sound) {
         sound.unloadAsync().catch((err) => {
           console.error("Error unloading sound:", err);
@@ -75,7 +71,7 @@ export default function VoicePlayer({
       setSound(newSound);
 
       // Set up status update listener and store subscription for cleanup
-      const subscription = newSound.setOnPlaybackStatusUpdate((status) => {
+      newSound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded) {
           setPlaybackPosition(Math.floor(status.positionMillis / 1000));
           setIsPlaying(status.isPlaying);
@@ -83,15 +79,9 @@ export default function VoicePlayer({
           if (status.didJustFinish) {
             setIsPlaying(false);
             setPlaybackPosition(0);
-            // Cleanup subscription when playback finishes
-            if (statusUpdateSubscription.current) {
-              statusUpdateSubscription.current.remove();
-              statusUpdateSubscription.current = null;
-            }
           }
         }
       });
-      statusUpdateSubscription.current = subscription;
     } catch (error: any) {
       console.error("Error loading audio:", error);
       setIsLoading(false);

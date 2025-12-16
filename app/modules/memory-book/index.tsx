@@ -158,7 +158,10 @@ export default function MemoryBookScreen() {
     const followsRef = collection(db, "follows");
 
     // People I follow
-    const qFollowing = query(followsRef, where("followerId", "==", currentUserId));
+    const qFollowing = query(
+      followsRef,
+      where("followerId", "==", currentUserId)
+    );
     const unsubFollowing = onSnapshot(
       qFollowing,
       (snap) => {
@@ -178,7 +181,10 @@ export default function MemoryBookScreen() {
     );
 
     // People who follow me
-    const qFollowers = query(followsRef, where("followingId", "==", currentUserId));
+    const qFollowers = query(
+      followsRef,
+      where("followingId", "==", currentUserId)
+    );
     const unsubFollowers = onSnapshot(
       qFollowers,
       (snap) => {
@@ -198,6 +204,13 @@ export default function MemoryBookScreen() {
   // Subscribe to memories from current user + followed users
   useEffect(() => {
     const currentUserId = auth.currentUser?.uid || authUser?.id || user?.id;
+    if (!currentUserId) {
+      console.log("⚠️ No user ID available, skipping memory subscription");
+      setMemories([]);
+      return;
+    }
+
+    // Ensure currentUserId is not null/undefined before creating array
     if (!currentUserId) {
       console.log("⚠️ No user ID available, skipping memory subscription");
       setMemories([]);
@@ -234,8 +247,16 @@ export default function MemoryBookScreen() {
           }
           list.push({ id: d.id, ...(data as any) });
         });
-        list.sort((a, b) => (b.startDate || 0) - (a.startDate || 0));
-        console.log("📦 Memory feed: total posts from self + followed:", list.length);
+        // Sort by date (newest first), handle undefined startDate safely
+        list.sort((a, b) => {
+          const aDate = a.startDate ?? 0;
+          const bDate = b.startDate ?? 0;
+          return bDate - aDate;
+        });
+        console.log(
+          "📦 Memory feed: total posts from self + followed:",
+          list.length
+        );
         setMemories(list);
       },
       (err) => {

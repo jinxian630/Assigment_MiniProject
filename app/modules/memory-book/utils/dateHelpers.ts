@@ -32,7 +32,8 @@ export function getRelativeTime(timestamp: number): string {
   const years = Math.floor(days / 365);
 
   if (seconds < 60) return "Just now";
-  if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+  if (minutes < 60)
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
   if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
   if (days === 1) return "Yesterday";
   if (days < 7) return `${days} ${days === 1 ? "day" : "days"} ago`;
@@ -47,7 +48,11 @@ export function getRelativeTime(timestamp: number): string {
  * @param useRelative - Whether to use relative time (default: true for < 7 days)
  * @returns Formatted date string
  */
-export function getSmartDate(timestamp: number, useRelative: boolean = true): string {
+export function getSmartDate(
+  timestamp: number | undefined,
+  useRelative: boolean = true
+): string {
+  if (!timestamp) return "Unknown date";
   const now = Date.now();
   const diff = now - timestamp;
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));

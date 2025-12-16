@@ -100,7 +100,7 @@ export default function SearchBar({
         }}
         onBlur={() => setIsFocused(false)}
         accessibilityLabel="Search memories"
-        accessibilityRole="searchbox"
+        accessibilityRole="search"
       />
       {value.length > 0 && (
         <TouchableOpacity
@@ -140,4 +140,3 @@ const styles = StyleSheet.create({
     padding: SPACING.xs,
   },
 });
-

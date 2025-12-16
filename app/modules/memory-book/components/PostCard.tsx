@@ -52,7 +52,7 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
   React.useEffect(() => {
     const checkStatus = async () => {
       const user = auth.currentUser;
-      if (user) {
+      if (user && memory?.id) {
         try {
           const [saved, liked] = await Promise.all([
             isMemorySaved(memory.id, user.uid),
@@ -62,11 +62,14 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
           setIsLiked(liked);
         } catch (error) {
           console.error("Error checking memory status:", error);
+          // Set defaults on error
+          setIsSaved(false);
+          setIsLiked(false);
         }
       }
     };
     checkStatus();
-  }, [memory.id]);
+  }, [memory?.id]);
 
   const colors = {
     background: isDarkMode ? "#020617" : "#FFFFFF",
@@ -182,7 +185,11 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
     if (Platform.OS === "ios") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    await shareMemory(memory.title, memory.description, memory.imageURL);
+    await shareMemory(
+      memory.title || "Memory",
+      memory.description || "",
+      memory.imageURL || ""
+    );
   };
 
   const handleImagePress = () => {
@@ -246,7 +253,7 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
               {memory.CreatedUser?.CreatedUserName || "Unknown User"}
             </Text>
             <Text style={[styles.timestamp, { color: colors.textSoft }]}>
-              {getSmartDate(memory.startDate)}
+              {getSmartDate(memory.startDate ?? Date.now())}
             </Text>
           </View>
         </View>
@@ -439,14 +446,14 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
                 style={[
                   styles.emotionFill,
                   {
-                    width: `${memory.emotionSpectrum.energy}%`,
+                    width: `${memory.emotionSpectrum?.energy ?? 0}%`,
                     backgroundColor: "#f59e0b",
                   },
                 ]}
               />
             </View>
             <Text style={[styles.emotionValue, { color: colors.textSoft }]}>
-              {memory.emotionSpectrum.energy}%
+              {memory.emotionSpectrum?.energy ?? 0}%
             </Text>
           </View>
         </View>

@@ -78,7 +78,9 @@ export function comparePeriods(
 
   if (Math.abs(moodShift) > 5) {
     changes.push({
-      message: `Mood ${moodShift > 0 ? "improved" : "declined"} by ${Math.abs(moodShift).toFixed(1)}%`,
+      message: `Mood ${moodShift > 0 ? "improved" : "declined"} by ${Math.abs(
+        moodShift
+      ).toFixed(1)}%`,
       trend: moodShift > 0 ? "up" : "down",
     });
   }
@@ -88,13 +90,16 @@ export function comparePeriods(
   if (Math.abs(currentCount - previousCount) > 0) {
     const change = currentCount - previousCount;
     changes.push({
-      message: `${change > 0 ? "+" : ""}${change} ${Math.abs(change) === 1 ? "memory" : "memories"} vs previous period`,
+      message: `${change > 0 ? "+" : ""}${change} ${
+        Math.abs(change) === 1 ? "memory" : "memories"
+      } vs previous period`,
       trend: change > 0 ? "up" : "down",
     });
   }
 
   // Compare emotion averages
-  const getAvgEmotion = (memories: Memory[], emotion: keyof typeof memories[0]["emotionSpectrum"]) => {
+  type EmotionKey = "energy" | "stress" | "clarity" | "warmth";
+  const getAvgEmotion = (memories: Memory[], emotion: EmotionKey) => {
     if (memories.length === 0) return 50;
     const total = memories.reduce((sum, m) => {
       return sum + (m.emotionSpectrum?.[emotion] || 50);
@@ -102,17 +107,28 @@ export function comparePeriods(
     return total / memories.length;
   };
 
-  ["energy", "stress", "clarity", "warmth"].forEach((emotion) => {
-    const currentVal = getAvgEmotion(current, emotion as any);
-    const previousVal = getAvgEmotion(previous, emotion as any);
-    const diff = currentVal - previousVal;
-    if (Math.abs(diff) > 10) {
-      changes.push({
-        message: `${emotion.charAt(0).toUpperCase() + emotion.slice(1)} ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toFixed(0)}%`,
-        trend: diff > 0 ? (emotion === "stress" ? "down" : "up") : emotion === "stress" ? "up" : "down",
-      });
+  (["energy", "stress", "clarity", "warmth"] as EmotionKey[]).forEach(
+    (emotion) => {
+      const currentVal = getAvgEmotion(current, emotion);
+      const previousVal = getAvgEmotion(previous, emotion);
+      const diff = currentVal - previousVal;
+      if (Math.abs(diff) > 10) {
+        changes.push({
+          message: `${emotion.charAt(0).toUpperCase() + emotion.slice(1)} ${
+            diff > 0 ? "increased" : "decreased"
+          } by ${Math.abs(diff).toFixed(0)}%`,
+          trend:
+            diff > 0
+              ? emotion === "stress"
+                ? "down"
+                : "up"
+              : emotion === "stress"
+              ? "up"
+              : "down",
+        });
+      }
     }
-  });
+  );
 
   return { changes, moodShift };
 }
@@ -209,50 +225,77 @@ export async function generateComprehensiveInsights(
 
   // Smart data-driven suggestions (always generated)
   const smartSuggestions: string[] = [];
-  
+
   // Stress analysis
   if (avgStress > 70) {
-    smartSuggestions.push("Your stress levels are quite high. Consider trying meditation, deep breathing, or taking short breaks throughout the day.");
+    smartSuggestions.push(
+      "Your stress levels are quite high. Consider trying meditation, deep breathing, or taking short breaks throughout the day."
+    );
   } else if (avgStress > 60) {
-    smartSuggestions.push("You've been experiencing elevated stress. Activities like walking, listening to music, or talking with friends can help.");
+    smartSuggestions.push(
+      "You've been experiencing elevated stress. Activities like walking, listening to music, or talking with friends can help."
+    );
   } else if (avgStress < 30) {
-    smartSuggestions.push("Great job managing stress! You're maintaining a calm and balanced state.");
+    smartSuggestions.push(
+      "Great job managing stress! You're maintaining a calm and balanced state."
+    );
   }
 
   // Energy analysis
   if (avgEnergy < 30) {
-    smartSuggestions.push("Your energy levels are low. Make sure you're getting enough sleep, staying hydrated, and eating nutritious meals.");
+    smartSuggestions.push(
+      "Your energy levels are low. Make sure you're getting enough sleep, staying hydrated, and eating nutritious meals."
+    );
   } else if (avgEnergy < 40) {
-    smartSuggestions.push("Consider activities that boost energy naturally, like morning exercise, sunlight exposure, or engaging hobbies.");
+    smartSuggestions.push(
+      "Consider activities that boost energy naturally, like morning exercise, sunlight exposure, or engaging hobbies."
+    );
   } else if (avgEnergy > 75) {
-    smartSuggestions.push("You're maintaining high energy! Channel this into productive activities and creative projects.");
+    smartSuggestions.push(
+      "You're maintaining high energy! Channel this into productive activities and creative projects."
+    );
   }
 
   // Clarity analysis
   if (avgClarity < 35) {
-    smartSuggestions.push("Your mental clarity could use a boost. Try journaling, organizing your thoughts, or reducing distractions.");
+    smartSuggestions.push(
+      "Your mental clarity could use a boost. Try journaling, organizing your thoughts, or reducing distractions."
+    );
   } else if (avgClarity > 70) {
-    smartSuggestions.push("You're experiencing great mental clarity! This is a good time for important decisions and focused work.");
+    smartSuggestions.push(
+      "You're experiencing great mental clarity! This is a good time for important decisions and focused work."
+    );
   }
 
   // Warmth/Connection analysis
   if (avgWarmth > 75) {
-    smartSuggestions.push("You're feeling very connected and warm. These positive relationships are valuable - keep nurturing them!");
+    smartSuggestions.push(
+      "You're feeling very connected and warm. These positive relationships are valuable - keep nurturing them!"
+    );
   } else if (avgWarmth < 40) {
-    smartSuggestions.push("Consider reaching out to friends or family. Social connections can significantly improve your mood and well-being.");
+    smartSuggestions.push(
+      "Consider reaching out to friends or family. Social connections can significantly improve your mood and well-being."
+    );
   }
 
   // Mood score analysis
   if (moodScore > 75) {
-    smartSuggestions.push("Your overall mood has been excellent! Keep doing what makes you happy and fulfilled.");
+    smartSuggestions.push(
+      "Your overall mood has been excellent! Keep doing what makes you happy and fulfilled."
+    );
   } else if (moodScore < 45) {
-    smartSuggestions.push("Your mood has been lower recently. Remember that it's okay to have difficult days, and consider speaking with someone you trust.");
+    smartSuggestions.push(
+      "Your mood has been lower recently. Remember that it's okay to have difficult days, and consider speaking with someone you trust."
+    );
   }
 
   // Balance check
-  const isBalanced = avgStress < 50 && avgEnergy > 40 && avgEnergy < 70 && avgClarity > 40;
+  const isBalanced =
+    avgStress < 50 && avgEnergy > 40 && avgEnergy < 70 && avgClarity > 40;
   if (isBalanced && smartSuggestions.length === 0) {
-    smartSuggestions.push("Your emotional patterns are well-balanced. Keep tracking your feelings and maintaining this equilibrium!");
+    smartSuggestions.push(
+      "Your emotional patterns are well-balanced. Keep tracking your feelings and maintaining this equilibrium!"
+    );
   }
 
   // Try AI enhancement if available (Ollama first, then OpenAI if configured)
@@ -298,16 +341,22 @@ Generate 1-2 brief, personalized, and supportive suggestions to help improve wel
             .split("\n")
             .map((line: string) => line.replace(/^[-•\d.\s]+/, "").trim())
             .filter((line: string) => line.length > 15 && line.length < 200);
-          
+
           if (lines.length > 0) {
-            suggestions = [...lines.slice(0, 2), ...smartSuggestions.slice(0, 1)].slice(0, 3);
+            suggestions = [
+              ...lines.slice(0, 2),
+              ...smartSuggestions.slice(0, 1),
+            ].slice(0, 3);
             aiSuccess = true;
           }
         }
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
-        if (fetchError.name !== 'AbortError') {
-          console.log("⚠️ Ollama request failed, trying fallback:", fetchError.message);
+        if (fetchError.name !== "AbortError") {
+          console.log(
+            "⚠️ Ollama request failed, trying fallback:",
+            fetchError.message
+          );
         }
       }
     } catch (error: any) {
@@ -327,14 +376,15 @@ Generate 1-2 brief, personalized, and supportive suggestions to help improve wel
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${OPENAI_API_KEY}`,
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
             },
             body: JSON.stringify({
               model: "gpt-3.5-turbo",
               messages: [
                 {
                   role: "system",
-                  content: "You are a thoughtful AI assistant helping users understand their mood patterns. Be warm, supportive, and encouraging.",
+                  content:
+                    "You are a thoughtful AI assistant helping users understand their mood patterns. Be warm, supportive, and encouraging.",
                 },
                 {
                   role: "user",
@@ -357,15 +407,18 @@ Generate 1-2 brief, personalized, and supportive suggestions to help improve wel
               .split("\n")
               .map((line: string) => line.replace(/^[-•\d.\s]+/, "").trim())
               .filter((line: string) => line.length > 15 && line.length < 200);
-            
+
             if (lines.length > 0) {
-              suggestions = [...lines.slice(0, 2), ...smartSuggestions.slice(0, 1)].slice(0, 3);
+              suggestions = [
+                ...lines.slice(0, 2),
+                ...smartSuggestions.slice(0, 1),
+              ].slice(0, 3);
               aiSuccess = true;
             }
           }
         } catch (fetchError: any) {
           clearTimeout(timeoutId);
-          if (fetchError.name !== 'AbortError') {
+          if (fetchError.name !== "AbortError") {
             console.log("⚠️ OpenAI request failed:", fetchError.message);
           }
         }
@@ -385,7 +438,9 @@ Generate 1-2 brief, personalized, and supportive suggestions to help improve wel
 
   // Final fallback
   if (suggestions.length === 0) {
-    suggestions.push("Keep tracking your emotions! Regular reflection helps you understand your patterns better.");
+    suggestions.push(
+      "Keep tracking your emotions! Regular reflection helps you understand your patterns better."
+    );
   }
 
   return {
@@ -492,7 +547,10 @@ export function getHighlights(memories: Memory[]): Highlight[] {
           reason = "High positive energy and emotional clarity";
         } else if (item.memory.likes && item.memory.likes > 5) {
           reason = "Highly liked and engaging memory";
-        } else if (item.memory.description && item.memory.description.length > 100) {
+        } else if (
+          item.memory.description &&
+          item.memory.description.length > 100
+        ) {
           reason = "Detailed and meaningful reflection";
         } else {
           reason = "Notable moment in your timeline";
@@ -510,4 +568,3 @@ export function getHighlights(memories: Memory[]): Highlight[] {
 
   return top;
 }
-
