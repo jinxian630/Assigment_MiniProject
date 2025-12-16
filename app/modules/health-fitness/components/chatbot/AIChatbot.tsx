@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Modal } from 'react-native';
-import { GiftedChat, IMessage, Bubble, InputToolbar } from 'react-native-gifted-chat';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { chatbotStyles, getColors } from './chatbot.styles';
+import CustomChatContainer from './CustomChatContainer';
+import { generateMessageId } from './utils/messageHelpers';
 import {
   CustomMessage,
   ChatbotContext,
@@ -44,7 +45,7 @@ export default function AIChatbot({
   useEffect(() => {
     if (visible && messages.length === 0) {
       const welcomeMessage: CustomMessage = {
-        _id: Date.now(),
+        _id: generateMessageId(),
         text: getWelcomeMessage(),
         createdAt: new Date(),
         user: {
@@ -64,24 +65,26 @@ export default function AIChatbot({
     return "Hi! I'm your AI fitness companion. I'm here to help you optimize your workout based on how you're feeling. Let's get started!";
   };
 
-  const onSend = useCallback(async (newMessages: IMessage[] = []) => {
-    const userMessage = newMessages[0];
-    setMessages(previousMessages => GiftedChat.append(previousMessages, newMessages as CustomMessage[]));
+  const handleSend = useCallback(async (text: string) => {
+    const userMessage: CustomMessage = {
+      _id: generateMessageId(),
+      text,
+      createdAt: new Date(),
+      user: { _id: 1, name: 'You' },
+    };
 
-    // Show typing indicator
+    setMessages(prev => [...prev, userMessage]);
     setIsTyping(true);
 
     try {
-      // Send message to chatbot service
       const response = await chatbotService.sendMessage({
-        message: userMessage.text,
+        message: text,
         context,
         expectToolResponse: true,
       });
 
-      // Create AI response message
       const aiMessage: CustomMessage = {
-        _id: Date.now(),
+        _id: generateMessageId(),
         text: response.message,
         createdAt: new Date(),
         user: {
@@ -92,16 +95,15 @@ export default function AIChatbot({
         toolPayload: response.toolPayload,
       };
 
-      setMessages(previousMessages => GiftedChat.append(previousMessages, [aiMessage]));
+      setMessages(prev => [...prev, aiMessage]);
 
-      // Trigger workout adjustment if needed
       if (response.shouldTriggerAdjustment && response.toolPayload?.toolType === 'plan_adjustment') {
         onWorkoutAdjustment?.(response.toolPayload.data);
       }
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: CustomMessage = {
-        _id: Date.now(),
+        _id: generateMessageId(),
         text: "I'm having trouble responding right now. Please try again.",
         createdAt: new Date(),
         user: {
@@ -110,7 +112,7 @@ export default function AIChatbot({
           avatar: '🤖',
         },
       };
-      setMessages(previousMessages => GiftedChat.append(previousMessages, [errorMessage]));
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsTyping(false);
     }
@@ -119,7 +121,7 @@ export default function AIChatbot({
   // Handle tool skip
   const handleToolSkip = () => {
     const skipMessage: CustomMessage = {
-      _id: Date.now(),
+      _id: generateMessageId(),
       text: "I'll just tell you",
       createdAt: new Date(),
       user: {
@@ -127,13 +129,13 @@ export default function AIChatbot({
         name: 'You',
       },
     };
-    setMessages(previousMessages => GiftedChat.append(previousMessages, [skipMessage]));
+    setMessages(prev => [...prev, skipMessage]);
     setActiveToolType(null);
 
     // AI acknowledges skip
     setTimeout(() => {
       const aiMessage: CustomMessage = {
-        _id: Date.now() + 1,
+        _id: generateMessageId(),
         text: "No problem! Feel free to tell me anything in your own words.",
         createdAt: new Date(),
         user: {
@@ -142,7 +144,7 @@ export default function AIChatbot({
           avatar: '🤖',
         },
       };
-      setMessages(previousMessages => GiftedChat.append(previousMessages, [aiMessage]));
+      setMessages(prev => [...prev, aiMessage]);
     }, 500);
   };
 
@@ -150,7 +152,7 @@ export default function AIChatbot({
   const handleReadinessSubmit = async (data: ReadinessWidgetData) => {
     // Add user confirmation message
     const userMessage: CustomMessage = {
-      _id: Date.now(),
+      _id: generateMessageId(),
       text: `My energy level is ${data.fatigueScore}/10`,
       createdAt: new Date(),
       user: {
@@ -158,7 +160,7 @@ export default function AIChatbot({
         name: 'You',
       },
     };
-    setMessages(previousMessages => GiftedChat.append(previousMessages, [userMessage]));
+    setMessages(prev => [...prev, userMessage]);
 
     setIsTyping(true);
 
@@ -166,7 +168,7 @@ export default function AIChatbot({
       const response = await chatbotService.handleReadinessSubmission(data, context);
 
       const aiMessage: CustomMessage = {
-        _id: Date.now() + 1,
+        _id: generateMessageId(),
         text: response.message,
         createdAt: new Date(),
         user: {
@@ -177,7 +179,7 @@ export default function AIChatbot({
         toolPayload: response.toolPayload,
       };
 
-      setMessages(previousMessages => GiftedChat.append(previousMessages, [aiMessage]));
+      setMessages(prev => [...prev, aiMessage]);
 
       if (response.shouldTriggerAdjustment && response.toolPayload?.toolType === 'plan_adjustment') {
         onWorkoutAdjustment?.(response.toolPayload.data);
@@ -193,7 +195,7 @@ export default function AIChatbot({
   const handleBodyMapperSubmit = async (selection: BodyMapperSelection) => {
     const bodyPartLabel = selection.bodyPart.replace('_', ' ');
     const userMessage: CustomMessage = {
-      _id: Date.now(),
+      _id: generateMessageId(),
       text: `I have ${selection.severity} discomfort in my ${bodyPartLabel}`,
       createdAt: new Date(),
       user: {
@@ -201,7 +203,7 @@ export default function AIChatbot({
         name: 'You',
       },
     };
-    setMessages(previousMessages => GiftedChat.append(previousMessages, [userMessage]));
+    setMessages(prev => [...prev, userMessage]);
 
     setIsTyping(true);
 
@@ -209,7 +211,7 @@ export default function AIChatbot({
       const response = await chatbotService.handleBodyMapperSubmission(selection, context);
 
       const aiMessage: CustomMessage = {
-        _id: Date.now() + 1,
+        _id: generateMessageId(),
         text: response.message,
         createdAt: new Date(),
         user: {
@@ -219,7 +221,7 @@ export default function AIChatbot({
         },
       };
 
-      setMessages(previousMessages => GiftedChat.append(previousMessages, [aiMessage]));
+      setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error('Error handling body mapper submission:', error);
     } finally {
@@ -235,7 +237,7 @@ export default function AIChatbot({
       const response = await chatbotService.handleQuickAction(action, context);
 
       const aiMessage: CustomMessage = {
-        _id: Date.now(),
+        _id: generateMessageId(),
         text: response.message,
         createdAt: new Date(),
         user: {
@@ -246,7 +248,7 @@ export default function AIChatbot({
         toolPayload: response.toolPayload,
       };
 
-      setMessages(previousMessages => GiftedChat.append(previousMessages, [aiMessage]));
+      setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error('Error handling quick action:', error);
     } finally {
@@ -255,12 +257,10 @@ export default function AIChatbot({
   };
 
   // Custom view renderer for tools
-  const renderCustomView = (props: any) => {
-    const { currentMessage } = props;
+  const renderCustomView = (message: CustomMessage) => {
+    if (!message.toolPayload) return null;
 
-    if (!currentMessage.toolPayload) return null;
-
-    const { toolType, data } = currentMessage.toolPayload;
+    const { toolType, data } = message.toolPayload;
 
     // Track active tool type for input placeholder
     if (toolType !== activeToolType) {
@@ -279,67 +279,18 @@ export default function AIChatbot({
     }
   };
 
-  // Custom bubble renderer
-  const renderBubble = (props: any) => {
-    return (
-      <Bubble
-        {...props}
-        wrapperStyle={{
-          left: {
-            backgroundColor: colors.surface,
-          },
-          right: {
-            backgroundColor: MODULE_COLOR,
-          },
-        }}
-        textStyle={{
-          left: {
-            color: colors.text.primary,
-          },
-          right: {
-            color: '#FFFFFF',
-          },
-        }}
-      />
-    );
+  // Get contextual placeholder
+  const getPlaceholder = () => {
+    if (isTyping) return 'AI Coach is typing...';
+    if (activeToolType === 'readiness_check') return 'Or describe how you feel here...';
+    if (activeToolType === 'body_mapper') return 'Or describe your pain here...';
+    return 'Type a message...';
   };
 
-  // Custom input toolbar with contextual placeholder
-  const renderInputToolbar = (props: any) => {
-    const getPlaceholder = () => {
-      if (isTyping) return 'AI Coach is typing...';
-      if (activeToolType === 'readiness_check') return 'Or describe how you feel here...';
-      if (activeToolType === 'body_mapper') return 'Or describe your pain here...';
-      return 'Type a message...';
-    };
-
-    const getHelperText = () => {
-      if (activeToolType) return '💡 Tip: You can type instead of clicking';
-      return '';
-    };
-
-    return (
-      <View>
-        {getHelperText() && (
-          <View style={{ paddingHorizontal: 16, paddingVertical: 4, backgroundColor: colors.accentLight }}>
-            <Text style={{ fontSize: 11, color: colors.text.secondary, textAlign: 'center' }}>
-              {getHelperText()}
-            </Text>
-          </View>
-        )}
-        <InputToolbar
-          {...props}
-          containerStyle={{
-            backgroundColor: colors.background,
-            borderTopColor: colors.border,
-          }}
-          primaryStyle={{
-            alignItems: 'center',
-          }}
-          placeholder={getPlaceholder()}
-        />
-      </View>
-    );
+  // Get helper text
+  const getHelperText = () => {
+    if (activeToolType) return '💡 Tip: You can type instead of clicking';
+    return undefined;
   };
 
   return (
@@ -369,20 +320,16 @@ export default function AIChatbot({
         )}
 
         {/* Chat Interface */}
-        <GiftedChat
+        <CustomChatContainer
           messages={messages}
-          onSend={messages => onSend(messages)}
-          user={{
-            _id: 1,
-            name: 'You',
-          }}
-          renderBubble={renderBubble}
-          renderCustomView={renderCustomView}
-          renderInputToolbar={renderInputToolbar}
+          onSend={handleSend}
+          user={{ _id: 1, name: 'You' }}
           isTyping={isTyping}
-          messagesContainerStyle={{
-            backgroundColor: colors.background,
-          }}
+          renderCustomView={renderCustomView}
+          placeholder={getPlaceholder()}
+          helperText={getHelperText()}
+          isDarkMode={isDarkMode}
+          colors={colors}
         />
 
         {/* Quick Action Chips */}

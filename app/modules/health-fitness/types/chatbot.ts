@@ -1,4 +1,3 @@
-import { IMessage } from 'react-native-gifted-chat';
 import { DailyReadiness } from '@/types/readiness';
 import { AIWorkoutRecommendation } from '@/types/aiPersonalization';
 
@@ -78,10 +77,24 @@ export type MessageToolPayload =
   | { toolType: 'quick_actions'; data?: QuickActionType };
 
 /**
- * Custom message type extending Gifted Chat's IMessage
- * Adds support for embedded interactive tools
+ * Message user information
  */
-export interface CustomMessage extends IMessage {
+export interface MessageUser {
+  _id: number;
+  name: string;
+  avatar?: string;
+}
+
+/**
+ * Custom message type for chatbot
+ * Supports embedded interactive tools
+ */
+export interface CustomMessage {
+  _id: string | number;
+  text: string;
+  createdAt: Date;
+  user: MessageUser;
+  
   // Optional tool payload for rendering custom components
   toolPayload?: MessageToolPayload;
   

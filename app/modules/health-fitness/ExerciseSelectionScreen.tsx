@@ -17,6 +17,7 @@ import { Theme } from '@/constants/theme';
 import { useExercises } from './hooks/useExercises';
 import { ExerciseCategory, DifficultyLevel } from '@/types/workout';
 import ExerciseCard from './components/ExerciseCard';
+import { useThemeMode } from './hooks/useThemeMode';
 
 const MODULE_COLOR = '#4ECDC4';
 
@@ -33,6 +34,9 @@ export default function ExerciseSelectionScreen() {
     category: selectedCategory,
     difficultyLevel: selectedDifficulty,
   });
+
+  // Theme management
+  const { isDarkMode } = useThemeMode();
 
   const categories: ExerciseCategory[] = ['strength', 'cardio', 'flexibility', 'balance'];
   const difficulties: DifficultyLevel[] = ['beginner', 'intermediate', 'advanced'];
@@ -180,7 +184,7 @@ export default function ExerciseSelectionScreen() {
         renderItem={({ item }) => (
           <ExerciseCard
             exercise={item}
-            isDarkMode={false}
+            isDarkMode={isDarkMode}
             onPress={() => handleExercisePress(item.id)}
           />
         )}

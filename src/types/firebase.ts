@@ -8,6 +8,7 @@ export interface FirestoreUser {
   gender: "male" | "female" | "other" | "prefer-not-to-say";
   phoneNumber: string;
   photoURL: string;
+  authProviders: string[]; // Track auth providers: ['password', 'google.com']
   createdAt: any; // Firestore Timestamp
   updatedAt: any; // Firestore Timestamp
 }
@@ -23,6 +24,8 @@ export enum AuthErrorCode {
   NETWORK_ERROR = "auth/network-request-failed",
   USER_DISABLED = "auth/user-disabled",
   OPERATION_NOT_ALLOWED = "auth/operation-not-allowed",
+  POPUP_CLOSED = "auth/popup-closed-by-user",
+  ACCOUNT_EXISTS_DIFFERENT_CREDENTIAL = "auth/account-exists-with-different-credential",
 }
 
 /**
@@ -47,6 +50,10 @@ export const getAuthErrorMessage = (error: FirebaseError): string => {
       return "This account has been disabled";
     case AuthErrorCode.OPERATION_NOT_ALLOWED:
       return "This operation is not allowed";
+    case AuthErrorCode.POPUP_CLOSED:
+      return "Sign-in popup was closed. Please try again";
+    case AuthErrorCode.ACCOUNT_EXISTS_DIFFERENT_CREDENTIAL:
+      return "An account already exists with this email using a different sign-in method";
     default:
       return error.message || "An error occurred. Please try again";
   }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, Switch, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Switch, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +55,11 @@ export default function ProfileScreen() {
       alignItems: 'center',
       justifyContent: 'center',
       ...theme.shadows.medium,
+    },
+    avatarImage: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
     },
     userName: {
       fontSize: theme.typography.fontSizes.xl,
@@ -175,9 +180,16 @@ export default function ProfileScreen() {
           {/* User Info Card */}
           <Card style={styles.userCard}>
             <View style={styles.avatarContainer}>
-              <View style={styles.avatar}>
-                <Ionicons name="person" size={40} color={theme.colors.primary} />
-              </View>
+              {user?.photoURL ? (
+                <Image 
+                  source={{ uri: user.photoURL }} 
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <View style={styles.avatar}>
+                  <Ionicons name="person" size={40} color={theme.colors.primary} />
+                </View>
+              )}
             </View>
             <Text style={styles.userName}>{user?.displayName || 'User'}</Text>
             <Text style={styles.userEmail}>{user?.email || 'user@example.com'}</Text>

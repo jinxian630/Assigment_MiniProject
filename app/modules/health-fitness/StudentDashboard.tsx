@@ -18,6 +18,8 @@ import ReadinessIndicator from './components/ReadinessIndicator';
 import AIRecommendationCard from './components/AIRecommendationCard';
 import AIChatbot from './components/chatbot/AIChatbot';
 import { ChatbotContext } from './types/chatbot';
+import { useThemeMode } from './hooks/useThemeMode';
+import ThemeToggle from './components/ThemeToggle';
 
 import { readinessService } from '@/services/readiness.service';
 import { DailyReadiness } from '@/types/readiness';
@@ -33,6 +35,9 @@ export default function StudentDashboard() {
   const authContext = useContext(AuthContext);
   const { isCoach } = useAuth();
   const userId = authContext?.user?.id || '';
+
+  // Theme management
+  const { isDarkMode, toggleTheme } = useThemeMode();
 
   // Fetch workout session history
   const { sessions, loading, error, refetch } = useSessionHistory(10);
@@ -270,7 +275,10 @@ export default function StudentDashboard() {
               size="medium"
             />
             <Text style={styles.headerTitle}>Health & Fitness</Text>
-            <RoleSwitcher currentRole="student" />
+            <View style={styles.headerRight}>
+              <ThemeToggle isDarkMode={isDarkMode} onToggle={toggleTheme} size="small" />
+              <RoleSwitcher currentRole="student" />
+            </View>
           </View>
 
           {/* Module Icon */}
@@ -348,7 +356,7 @@ export default function StudentDashboard() {
             <ReadinessIndicator
               readinessScore={todayReadiness.calculatedReadinessScore}
               fatigueState={todayReadiness.fatigueState}
-              isDarkMode={false}
+              isDarkMode={isDarkMode}
             />
           )}
 
@@ -358,7 +366,7 @@ export default function StudentDashboard() {
               recommendation={todayReadiness.aiRecommendationSummary}
               fatigueState={todayReadiness.fatigueState}
               readinessScore={todayReadiness.calculatedReadinessScore}
-              isDarkMode={false}
+              isDarkMode={isDarkMode}
             />
           )}
 
@@ -435,7 +443,7 @@ export default function StudentDashboard() {
             onWorkoutAdjustment={(adjustmentData) => {
               console.log('Workout adjustment from chatbot:', adjustmentData);
             }}
-            isDarkMode={false}
+            isDarkMode={isDarkMode}
           />
         )}
 
@@ -494,6 +502,12 @@ const styles = StyleSheet.create({
     fontSize: Theme.typography.fontSizes.xl,
     fontWeight: Theme.typography.fontWeights.bold,
     color: Theme.colors.textPrimary,
+  },
+
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
 
   iconSection: {

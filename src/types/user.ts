@@ -9,6 +9,7 @@ export interface User {
   phoneNumber?: string;
   photoURL?: string; // Firebase Storage download URL
   avatar?: string; // Legacy field for backwards compatibility
+  authProviders?: string[]; // Track auth providers
   createdAt: Date | Timestamp;
   updatedAt?: Date | Timestamp;
 }

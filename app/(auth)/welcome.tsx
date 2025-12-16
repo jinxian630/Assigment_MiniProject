@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GradientBackground } from '@/components/common/GradientBackground';
@@ -11,7 +11,13 @@ const { width, height } = Dimensions.get('window');
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { skipLogin, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
+  
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
 
   // Navigate to tabs when user becomes authenticated
   useEffect(() => {
@@ -22,38 +28,105 @@ export default function WelcomeScreen() {
     }
   }, [isAuthenticated, router]);
 
+  // Entrance animations
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 4,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Continuous rotation animation for icon
+    Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 3000,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, []);
+
   const handleGetStarted = () => {
     router.push('/(auth)/login');
   };
 
-  const handleSkipLogin = () => {
-    console.log('🔘 Skip to Dashboard button clicked');
-    skipLogin();
-    console.log('📍 skipLogin function executed');
-  };
+  const spin = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   return (
     <GradientBackground>
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          {/* Top Section */}
-          <View style={styles.topSection}>
-            <Text style={styles.title}>Group 1{'\n'}Task Management</Text>
+          {/* Top Section with Animation */}
+          <Animated.View 
+            style={[
+              styles.topSection,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <Text style={styles.courseCode}>UCCB2513 Mini Project</Text>
+            <Text style={styles.title}>Group 1</Text>
             <Text style={styles.subtitle}>
               Organize your life with style and simplicity
             </Text>
-          </View>
+          </Animated.View>
 
-          {/* Illustration Placeholder */}
-          <View style={styles.illustrationContainer}>
+          {/* Animated Illustration */}
+          <Animated.View 
+            style={[
+              styles.illustrationContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ scale: scaleAnim }],
+              },
+            ]}
+          >
             <View style={styles.illustrationPlaceholder}>
-              <Text style={styles.illustrationText}>📱</Text>
+              <Animated.Text 
+                style={[
+                  styles.illustrationText,
+                  { transform: [{ rotate: spin }] },
+                ]}
+              >
+                📱
+              </Animated.Text>
               <Text style={styles.illustrationSubtext}>Welcome to your new app</Text>
+              
+              {/* Floating particles */}
+              <View style={[styles.particle, styles.particle1]} />
+              <View style={[styles.particle, styles.particle2]} />
+              <View style={[styles.particle, styles.particle3]} />
             </View>
-          </View>
+          </Animated.View>
 
-          {/* Bottom Section */}
-          <View style={styles.bottomSection}>
+          {/* Bottom Section with Animation */}
+          <Animated.View 
+            style={[
+              styles.bottomSection,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
             {/* Pagination Dots */}
             <View style={styles.pagination}>
               <View style={[styles.dot, styles.dotActive]} />
@@ -69,16 +142,7 @@ export default function WelcomeScreen() {
             >
               Get Started
             </Button>
-
-            <Button
-              variant="outline"
-              onPress={handleSkipLogin}
-              fullWidth
-              icon="apps-outline"
-            >
-              Skip to Dashboard
-            </Button>
-          </View>
+          </Animated.View>
         </View>
       </SafeAreaView>
     </GradientBackground>
@@ -101,12 +165,21 @@ const styles = StyleSheet.create({
     marginTop: Theme.spacing.xxxl,
   },
 
+  courseCode: {
+    fontSize: Theme.typography.fontSizes.md,
+    fontWeight: Theme.typography.fontWeights.semibold,
+    color: Theme.colors.primary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.xs,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+
   title: {
-    fontSize: Theme.typography.fontSizes.xxxl,
+    fontSize: Theme.typography.fontSizes.xxxl + 8,
     fontWeight: Theme.typography.fontWeights.bold,
     color: Theme.colors.textPrimary,
     textAlign: 'center',
-    lineHeight: Theme.typography.fontSizes.xxxl * Theme.typography.lineHeights.tight,
     marginBottom: Theme.spacing.md,
   },
 
@@ -128,15 +201,17 @@ const styles = StyleSheet.create({
   illustrationPlaceholder: {
     width: width * 0.7,
     height: width * 0.7,
-    backgroundColor: `${Theme.colors.primary}10`,
+    backgroundColor: `${Theme.colors.primary}15`,
     borderRadius: Theme.borderRadius.xxl,
     justifyContent: 'center',
     alignItems: 'center',
-    ...Theme.shadows.medium,
+    ...Theme.shadows.large,
+    position: 'relative',
+    overflow: 'hidden',
   },
 
   illustrationText: {
-    fontSize: 80,
+    fontSize: 100,
     marginBottom: Theme.spacing.md,
   },
 
@@ -144,6 +219,36 @@ const styles = StyleSheet.create({
     fontSize: Theme.typography.fontSizes.md,
     color: Theme.colors.textSecondary,
     fontWeight: Theme.typography.fontWeights.medium,
+  },
+
+  particle: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Theme.colors.primary,
+    opacity: 0.3,
+  },
+
+  particle1: {
+    top: 30,
+    left: 40,
+    width: 15,
+    height: 15,
+  },
+
+  particle2: {
+    bottom: 50,
+    right: 30,
+    width: 25,
+    height: 25,
+  },
+
+  particle3: {
+    top: '50%',
+    right: 20,
+    width: 12,
+    height: 12,
   },
 
   bottomSection: {

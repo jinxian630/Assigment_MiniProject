@@ -1,5 +1,5 @@
 import { initializeApp, FirebaseApp, getApps } from "firebase/app";
-import { getAuth, Auth } from "firebase/auth";
+import { getAuth, Auth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore, Firestore } from "firebase/firestore";
 import { getStorage, FirebaseStorage } from "firebase/storage";
 
@@ -19,18 +19,15 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 }
 
 // Initialize Firebase (only if not already initialized)
-// Check if Firebase is already initialized
 const existingApps = getApps();
 let app: FirebaseApp;
 
 if (existingApps.length > 0) {
-  // Use existing app
   app = existingApps[0];
   console.log("✅ Using existing Firebase app");
   console.log("📊 Project ID:", app.options.projectId);
   console.log("🌐 Auth Domain:", app.options.authDomain);
 } else {
-  // Initialize new app
   app = initializeApp(firebaseConfig);
   console.log("✅ Firebase initialized successfully");
   console.log("📊 Project ID:", app.options.projectId);
@@ -43,9 +40,15 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+// Initialize Google Auth Provider
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
 console.log(
   "🔧 Firebase services initialized for project:",
   app.options.projectId
 );
 
-export { app, auth, db, storage };
+export { app, auth, db, storage, googleProvider, GoogleAuthProvider };

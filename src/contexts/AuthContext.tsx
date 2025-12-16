@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
+import { Platform } from 'react-native';
 import { User, LoginCredentials, SignupCredentials } from '@/types/user';
 import { authService } from '@/services/auth.service';
 import { firestoreService } from '@/services/firestore.service';
@@ -10,6 +11,7 @@ interface AuthContextType {
   user: User | null;
   login: (credentials: LoginCredentials) => Promise<void>;
   signup: (credentials: SignupCredentials) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   skipLogin: () => void;
   isLoading: boolean;
@@ -204,6 +206,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     console.log('✅ Auth state updated - isAuthenticated:', true);
   };
 
+  const signInWithGoogle = async (): Promise<void> => {
+    setIsLoading(true);
+    try {
+      console.log('🔐 Google Sign-In initiated');
+      await authService.signInWithGoogle();
+      console.log('✅ Google Sign-In successful');
+      // Auth state listener will handle user data loading
+    } catch (error: any) {
+      console.error('❌ Google Sign-In error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -211,6 +228,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         user,
         login,
         signup,
+        signInWithGoogle,
         logout,
         skipLogin,
         isLoading,

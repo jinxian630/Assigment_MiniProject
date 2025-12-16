@@ -176,9 +176,14 @@ export default function CreateExerciseScreen() {
 
       await workoutService.createExercise(exerciseData, userId, userName);
 
-      Alert.alert('Success', 'Exercise created successfully!', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      // Navigate back to coach dashboard with success parameters
+      router.push({
+        pathname: '/modules/health-fitness/CoachDashboardScreen',
+        params: {
+          exerciseCreated: 'true',
+          exerciseName: name.trim()
+        }
+      });
     } catch (error) {
       console.error('Error creating exercise:', error);
       Alert.alert('Error', 'Failed to create exercise. Please try again.');

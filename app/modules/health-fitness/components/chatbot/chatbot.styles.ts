@@ -10,6 +10,7 @@ export const chatbotColors = {
   light: {
     background: '#FFFFFF',
     surface: '#F9FAFB',
+    primary: MODULE_COLOR,
     border: '#E5E7EB',
     text: {
       primary: '#1F2937',
@@ -25,6 +26,7 @@ export const chatbotColors = {
   dark: {
     background: '#111827',
     surface: '#1F2937',
+    primary: MODULE_COLOR,
     border: '#374151',
     text: {
       primary: '#F9FAFB',
@@ -392,5 +394,121 @@ export const statusBarStyles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+});
+
+/**
+ * Message list styles
+ */
+export const messageListStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  contentContainer: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+});
+
+/**
+ * Message bubble styles
+ */
+export const messageBubbleStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    marginVertical: 4,
+    marginHorizontal: 8,
+  },
+  avatarContainer: {
+    marginRight: 8,
+  },
+  avatar: {
+    fontSize: 20,
+  },
+  bubble: {
+    maxWidth: '75%',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+  },
+  bubbleLeft: {
+    borderBottomLeftRadius: 4,
+  },
+  bubbleRight: {
+    borderBottomRightRadius: 4,
+  },
+  text: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
+});
+
+/**
+ * Chat input styles
+ */
+export const chatInputStyles = StyleSheet.create({
+  container: {
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  helperTextContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  helperText: {
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  textInput: {
+    flex: 1,
+    minHeight: 40,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    fontSize: 15,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.4,
+  },
+});
+
+/**
+ * Typing indicator styles
+ */
+export const typingIndicatorStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  bubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+    flexDirection: 'row',
+    gap: 4,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 });

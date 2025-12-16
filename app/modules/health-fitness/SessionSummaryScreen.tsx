@@ -18,6 +18,7 @@ import { WorkoutSession } from '@/types/workout';
 import { generatePostSessionSummary } from './utils/openRouterHelper';
 import { AISummaryRequest } from './types/safetyCue';
 import AISummaryCard from './components/AISummaryCard';
+import { useThemeMode } from './hooks/useThemeMode';
 
 const MODULE_COLOR = '#4ECDC4';
 
@@ -31,6 +32,9 @@ export default function SessionSummaryScreen() {
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Theme management
+  const { isDarkMode } = useThemeMode();
 
   // Fetch session data
   useEffect(() => {
@@ -258,7 +262,7 @@ export default function SessionSummaryScreen() {
               summary={aiSummary}
               loading={aiLoading}
               error={aiError}
-              isDarkMode={false}
+              isDarkMode={isDarkMode}
             />
           </View>
 

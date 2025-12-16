@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Animated } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { GradientBackground } from '@/components/common/GradientBackground';
@@ -14,19 +14,29 @@ import { workoutService } from '@/services/workout.service';
 import { Course } from '@/types/course';
 import { Exercise } from '@/types/workout';
 import { RoleSwitcher } from './components/RoleSwitcher';
+import { useThemeMode } from './hooks/useThemeMode';
+import ThemeToggle from './components/ThemeToggle';
 
 const MODULE_COLOR = '#4ECDC4';
 
 export default function CoachDashboardScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const authContext = useContext(AuthContext);
   const userId = authContext?.user?.id || '';
   const userName = authContext?.user?.displayName || '';
+  
+  // Theme management
+  const { isDarkMode, toggleTheme } = useThemeMode();
+  
   const [courses, setCourses] = useState<Course[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [roleIssues, setRoleIssues] = useState<string[] | null>(null);
+  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [bannerAnimation] = useState(new Animated.Value(0));
 
   const loadCoachData = useCallback(async () => {
     try {
@@ -93,6 +103,38 @@ export default function CoachDashboardScreen() {
     setRefreshing(false);
   }, [loadCoachData]);
 
+  // Handle success notification when returning from create exercise
+  useEffect(() => {
+    if (params.exerciseCreated === 'true') {
+      const exerciseName = params.exerciseName || 'Exercise';
+      setSuccessMessage(`${exerciseName} created successfully!`);
+      setShowSuccessBanner(true);
+
+      // Animate banner in
+      Animated.spring(bannerAnimation, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 7,
+      }).start();
+
+      // Auto-dismiss after 4 seconds
+      const timer = setTimeout(() => {
+        Animated.timing(bannerAnimation, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          setShowSuccessBanner(false);
+          // Clear the params
+          router.setParams({ exerciseCreated: undefined, exerciseName: undefined });
+        });
+      }, 4000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [params.exerciseCreated, params.exerciseName]);
+
   return (
     <GradientBackground>
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -116,8 +158,53 @@ export default function CoachDashboardScreen() {
               size="medium"
             />
             <Text style={styles.headerTitle}>Coach Dashboard</Text>
-            <RoleSwitcher currentRole="coach" />
+            <View style={styles.headerRight}>
+              <ThemeToggle isDarkMode={isDarkMode} onToggle={toggleTheme} size="small" />
+              <RoleSwitcher currentRole="coach" />
+            </View>
           </View>
+
+          {/* Success Banner */}
+          {showSuccessBanner && (
+            <Animated.View
+              style={[
+                styles.successBanner,
+                {
+                  opacity: bannerAnimation,
+                  transform: [
+                    {
+                      translateY: bannerAnimation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-20, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <View style={styles.successContent}>
+                <View style={styles.successIconContainer}>
+                  <Ionicons name="checkmark-circle" size={28} color="#10B981" />
+                </View>
+                <View style={styles.successTextContainer}>
+                  <Text style={styles.successTitle}>Success!</Text>
+                  <Text style={styles.successMessage}>{successMessage}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    Animated.timing(bannerAnimation, {
+                      toValue: 0,
+                      duration: 200,
+                      useNativeDriver: true,
+                    }).start(() => setShowSuccessBanner(false));
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close" size={24} color="#059669" />
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          )}
 
           {/* Error Banner */}
           {roleIssues && roleIssues.length > 0 && (
@@ -206,6 +293,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: Theme.colors.textPrimary,
+  },
+  
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   statsCard: {
     marginBottom: Theme.spacing.xl,
@@ -300,6 +393,43 @@ const styles = StyleSheet.create({
   errorMessage: {
     fontSize: Theme.typography.fontSizes.sm,
     color: Theme.colors.textSecondary,
+    lineHeight: 18,
+  },
+
+  successBanner: {
+    backgroundColor: '#10B98120',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#10B981',
+    marginBottom: Theme.spacing.md,
+    overflow: 'hidden',
+  },
+  successContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  successIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#10B98130',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successTextContainer: {
+    flex: 1,
+  },
+  successTitle: {
+    fontSize: Theme.typography.fontSizes.md,
+    fontWeight: Theme.typography.fontWeights.bold,
+    color: '#059669',
+    marginBottom: 2,
+  },
+  successMessage: {
+    fontSize: Theme.typography.fontSizes.sm,
+    color: Theme.colors.textPrimary,
     lineHeight: 18,
   },
 });

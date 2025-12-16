@@ -41,6 +41,7 @@ import {
 } from '@/types/aiPersonalization';
 import AIChatbot from './components/chatbot/AIChatbot';
 import { ChatbotContext } from './types/chatbot';
+import { useThemeMode } from './hooks/useThemeMode';
 
 
 const MODULE_COLOR = '#4ECDC4';
@@ -55,6 +56,9 @@ export default function WorkoutSessionScreen() {
   const [loading, setLoading] = useState(true);
   const [showSetInputForm, setShowSetInputForm] = useState(false);
   const [completedSets, setCompletedSets] = useState<WorkoutSet[]>([]);
+
+  // Theme management
+  const { isDarkMode } = useThemeMode();
 
   // Readiness check state
   const [showReadinessCheck, setShowReadinessCheck] = useState(false);
@@ -501,7 +505,7 @@ export default function WorkoutSessionScreen() {
             <SetTimer
               elapsedTime={elapsedTime}
               isActive={currentState === SessionState.ActiveSet}
-              isDarkMode={false}
+              isDarkMode={isDarkMode}
             />
           </View>
 
@@ -512,7 +516,7 @@ export default function WorkoutSessionScreen() {
                 cueText={activeCue.text}
                 priority={activeCue.priority}
                 visible={!!activeCue}
-                isDarkMode={false}
+                isDarkMode={isDarkMode}
                 onReplay={handleReplayCue}
               />
             </View>
@@ -527,7 +531,7 @@ export default function WorkoutSessionScreen() {
               onStop={handleEndSession}
               onStartSet={handleStartSet}
               onCompleteSet={handleCompleteSetPress}
-              isDarkMode={false}
+              isDarkMode={isDarkMode}
             />
           </View>
 
@@ -648,7 +652,7 @@ export default function WorkoutSessionScreen() {
                 </Text>
               </View>
               {sets.map((set, index) => (
-                <SetHistoryCard key={index} set={set} isDarkMode={false} />
+                <SetHistoryCard key={index} set={set} isDarkMode={isDarkMode} />
               ))}
             </View>
           )}
@@ -659,7 +663,7 @@ export default function WorkoutSessionScreen() {
         <ReadinessCheckModal
           visible={showReadinessCheck}
           onSubmit={handleReadinessSubmit}
-          isDarkMode={false}
+          isDarkMode={isDarkMode}
         />
 
         {/* Set Input Form Modal */}
@@ -668,7 +672,7 @@ export default function WorkoutSessionScreen() {
           setNumber={currentSetNumber}
           onSubmit={handleSetInputSubmit}
           onCancel={() => setShowSetInputForm(false)}
-          isDarkMode={false}
+          isDarkMode={isDarkMode}
         />
 
         {/* AI Chatbot Modal */}
@@ -693,7 +697,7 @@ export default function WorkoutSessionScreen() {
                 setTimeout(() => setShowAdjustmentNotification(false), 8000);
               }
             }}
-            isDarkMode={false}
+            isDarkMode={isDarkMode}
           />
         )}
 

@@ -59,7 +59,7 @@ const DEFAULT_ERROR = {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, skipLogin, isAuthenticated, isLoading } = useAuth();
+  const { login, signInWithGoogle, skipLogin, isAuthenticated, isLoading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -159,6 +159,36 @@ export default function LoginScreen() {
     skipLogin();
   };
 
+  const handleGoogleSignIn = async () => {
+    setAuthError(null); // Clear previous errors
+    
+    try {
+      console.log('🔐 Google Sign-In button pressed');
+      await signInWithGoogle();
+      console.log('✅ Google Sign-In successful, navigation should happen automatically');
+      // Navigation handled by useEffect above
+    } catch (error: any) {
+      console.error('❌ Google Sign-In failed:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
+      
+      // Extract Firebase error code and map to user-friendly message
+      const errorCode = error.code || '';
+      const errorInfo = ERROR_MESSAGES[errorCode] || DEFAULT_ERROR;
+      
+      // Add more detail to error message
+      let detailedMessage = errorInfo.message;
+      if (error.message && !errorCode) {
+        detailedMessage = error.message;
+      }
+      
+      setAuthError({
+        title: errorInfo.title,
+        message: detailedMessage,
+      });
+    }
+  };
+
   return (
     <GradientBackground>
       <SafeAreaView style={styles.container}>
@@ -224,25 +254,14 @@ export default function LoginScreen() {
 
               <Button
                 variant="secondary"
-                onPress={() => Alert.alert('Coming Soon', 'Google sign-in will be available soon')}
+                onPress={handleGoogleSignIn}
                 fullWidth
                 icon="logo-google"
-                disabled
+                loading={isLoading}
               >
                 Continue With Google
               </Button>
             </Card>
-
-            {/* Skip Login Button */}
-            <Button
-              variant="outline"
-              onPress={handleSkipLogin}
-              fullWidth
-              icon="apps-outline"
-              style={styles.skipButton}
-            >
-              Skip to Dashboard
-            </Button>
 
             {/* Sign Up Link */}
             <View style={styles.footer}>

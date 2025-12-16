@@ -1,12 +1,14 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   updateProfile,
   User as FirebaseUser,
   UserCredential,
 } from 'firebase/auth';
-import { auth } from '@/config/firebase';
+import { Platform } from 'react-native';
+import { auth, googleProvider } from '@/config/firebase';
 import { LoginCredentials } from '@/types/user';
 import { firestoreService } from './firestore.service';
 import { FirestoreUser } from '@/types/firebase';
@@ -68,6 +70,7 @@ class AuthService {
         gender: userData.gender,
         phoneNumber: userData.phoneNumber,
         photoURL: userData.photoURL || '', // Empty string if no photo yet
+        authProviders: ['password'], // Email/password authentication
       };
 
       // Step 4: Create Firestore user document (with serverTimestamp for createdAt/updatedAt)
@@ -133,6 +136,75 @@ class AuthService {
    */
   getCurrentUser(): FirebaseUser | null {
     return auth.currentUser;
+  }
+
+  /**
+   * Sign in with Google (Web only for now)
+   */
+  async signInWithGoogle(): Promise<UserCredential> {
+    try {
+      console.log('🔐 Starting Google Sign-In...');
+      console.log('📱 Platform:', Platform.OS);
+
+      if (Platform.OS === 'web') {
+        // Web: Use Firebase popup flow
+        const result = await signInWithPopup(auth, googleProvider);
+        console.log('✅ Google Sign-In successful:', result.user.uid);
+        
+        // Handle user profile creation/update
+        await this.handleGoogleAuthResult(result);
+        return result;
+      } else {
+        throw new Error('Google Sign-In is currently only supported on web');
+      }
+    } catch (error) {
+      console.error('❌ Google Sign-In error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Handle Google authentication result
+   * Creates or updates user profile in Firestore
+   */
+  private async handleGoogleAuthResult(result: UserCredential): Promise<void> {
+    try {
+      const user = result.user;
+      
+      // Check if user document already exists
+      const existingUser = await firestoreService.getUserDocument(user.uid);
+      
+      if (existingUser) {
+        console.log('✅ Existing user found, updating auth providers');
+        
+        // Update authProviders if Google not already included
+        const currentProviders = existingUser.authProviders || [];
+        if (!currentProviders.includes('google.com')) {
+          await firestoreService.updateUserDocument(user.uid, {
+            authProviders: [...currentProviders, 'google.com'],
+            photoURL: user.photoURL || existingUser.photoURL,
+          });
+        }
+      } else {
+        console.log('✅ New Google user, creating profile');
+        
+        // Create new user document with Google data
+        const firestoreUserData: Omit<FirestoreUser, 'createdAt' | 'updatedAt'> = {
+          displayName: user.displayName || user.email?.split('@')[0] || 'User',
+          email: user.email || '',
+          birthDate: '', // Will be filled in profile completion
+          gender: 'prefer-not-to-say',
+          phoneNumber: '',
+          photoURL: user.photoURL || '',
+          authProviders: ['google.com'],
+        };
+        
+        await firestoreService.createUserDocument(user.uid, firestoreUserData);
+      }
+    } catch (error) {
+      console.error('❌ Error handling Google auth result:', error);
+      // Don't throw - allow sign-in to succeed even if Firestore update fails
+    }
   }
 }
 
