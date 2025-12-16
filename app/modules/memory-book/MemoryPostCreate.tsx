@@ -184,31 +184,40 @@ export default function MemoryPostCreate() {
       if (!result.canceled && result.assets[0]) {
         const selectedImage = result.assets[0];
 
-        // Optionally resize/crop the image to maintain aspect ratio
-        // This helps with consistency without forcing users through native cropping UI
-        try {
-          const manipulatedImage = await ImageManipulator.manipulateAsync(
-            selectedImage.uri,
-            [
-              {
-                resize: {
-                  width: 1200, // Max width to keep file size reasonable
-                },
-              },
-            ],
-            {
-              compress: 0.9,
-              format: ImageManipulator.SaveFormat.JPEG,
+        // Set image immediately for better UX
+        setImage(selectedImage.uri);
+
+        // Image manipulation - skip on web as it can cause async errors
+        if (Platform.OS === "web") {
+          // On web, use the original image directly (it's already optimized by the browser)
+        } else {
+          // On mobile, optionally resize/crop the image (async, non-blocking)
+          (async () => {
+            try {
+              const manipulatedImage = await ImageManipulator.manipulateAsync(
+                selectedImage.uri,
+                [
+                  {
+                    resize: {
+                      width: 1200, // Max width to keep file size reasonable
+                    },
+                  },
+                ],
+                {
+                  compress: 0.9,
+                  format: ImageManipulator.SaveFormat.JPEG,
+                }
+              );
+              // Update with manipulated image (replaces the original that's already showing)
+              setImage(manipulatedImage.uri);
+            } catch (manipulateError) {
+              // If manipulation fails, keep the original image (already set above)
+              console.warn(
+                "Image manipulation failed, keeping original:",
+                manipulateError
+              );
             }
-          );
-          setImage(manipulatedImage.uri);
-        } catch (manipulateError) {
-          // If manipulation fails, use original image
-          console.warn(
-            "Image manipulation failed, using original:",
-            manipulateError
-          );
-          setImage(selectedImage.uri);
+          })();
         }
       }
     } catch (error: any) {
@@ -760,8 +769,17 @@ export default function MemoryPostCreate() {
         ) : (
           <KeyboardAvoidingView
             style={styles.flex}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+            behavior={
+              Platform.OS === "ios"
+                ? "padding"
+                : Platform.OS === "android"
+                ? "height"
+                : undefined
+            }
+            keyboardVerticalOffset={
+              Platform.OS === "ios" ? 100 : Platform.OS === "android" ? 0 : 0
+            }
+            enabled={Platform.OS !== "web"}
           >
             <ScrollView
               style={styles.flex}

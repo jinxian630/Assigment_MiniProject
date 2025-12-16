@@ -134,10 +134,17 @@ export default function VoiceJournal({
   const [recordingURI, setRecordingURI] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  // Web-specific recording state
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
+    null
+  );
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [selectedMoodTag, setSelectedMoodTag] = useState<string | null>(null);
   const [mode, setMode] = useState<"emoji" | "mood" | "recording">("emoji");
   const [loading, setLoading] = useState(false);
-  const [playbackSound, setPlaybackSound] = useState<Audio.Sound | null>(null);
+  const [playbackSound, setPlaybackSound] = useState<
+    Audio.Sound | HTMLAudioElement | null
+  >(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
   const durationInterval = useRef<NodeJS.Timeout | null>(null);
@@ -156,30 +163,42 @@ export default function VoiceJournal({
   useEffect(() => {
     return () => {
       // Cleanup: stop recording and clear interval
-      if (recording) {
-        recording
-          .getStatusAsync()
-          .then((status) => {
-            if (!status.isDoneRecording) {
-              // Only stop if still recording
-              recording.stopAndUnloadAsync().catch((err: any) => {
-                // Silently ignore if already unloaded
-                if (!err.message?.includes("already been unloaded")) {
-                  console.error("Error cleaning up recording:", err);
-                }
-              });
-            }
-          })
-          .catch(() => {
-            // If getStatusAsync fails, recording is likely already unloaded
-          });
+      if (Platform.OS === "web") {
+        // Web: Stop MediaRecorder
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          try {
+            mediaRecorder.stop();
+          } catch (err) {
+            console.error("Error cleaning up MediaRecorder:", err);
+          }
+        }
+      } else {
+        // Mobile: Stop expo-av recording
+        if (recording) {
+          recording
+            .getStatusAsync()
+            .then((status) => {
+              if (!status.isDoneRecording) {
+                // Only stop if still recording
+                recording.stopAndUnloadAsync().catch((err: any) => {
+                  // Silently ignore if already unloaded
+                  if (!err.message?.includes("already been unloaded")) {
+                    console.error("Error cleaning up recording:", err);
+                  }
+                });
+              }
+            })
+            .catch(() => {
+              // If getStatusAsync fails, recording is likely already unloaded
+            });
+        }
       }
       if (durationInterval.current) {
         clearInterval(durationInterval.current);
         durationInterval.current = null;
       }
     };
-  }, [recording]);
+  }, [recording, mediaRecorder]);
 
   useEffect(() => {
     if (isRecording) {
@@ -221,87 +240,236 @@ export default function VoiceJournal({
     setMode("recording");
   };
 
+  const stopPlayback = async () => {
+    if (playbackSound) {
+      if (Platform.OS === "web") {
+        // Web: Use HTML5 Audio
+        (playbackSound as any).pause();
+        (playbackSound as any).currentTime = 0;
+      } else {
+        // Mobile: Use expo-av
+        await (playbackSound as Audio.Sound).unloadAsync();
+      }
+      setPlaybackSound(null);
+      setIsPlaying(false);
+    }
+  };
+
   const startRecording = async () => {
+    console.log("🎙️ startRecording called");
+    console.log("🎙️ Platform.OS:", Platform.OS);
+
     try {
+      console.log("✅ Starting recording process...");
       // Stop any playback before starting new recording
       if (playbackSound) {
         await stopPlayback();
       }
 
-      // Clean up any existing recording first
-      if (recording) {
+      if (Platform.OS === "web") {
+        // Web: Use MediaRecorder API
+        console.log("🌐 Web platform - using MediaRecorder API");
+
         try {
-          const status = await recording.getStatusAsync();
-          if (!status.isDoneRecording) {
-            await recording.stopAndUnloadAsync();
+          // Request microphone access
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          console.log("✅ Microphone access granted");
+
+          // Create MediaRecorder
+          const recorder = new MediaRecorder(stream, {
+            mimeType: MediaRecorder.isTypeSupported("audio/webm")
+              ? "audio/webm"
+              : MediaRecorder.isTypeSupported("audio/mp4")
+              ? "audio/mp4"
+              : "audio/ogg",
+          });
+
+          const chunks: Blob[] = [];
+          setAudioChunks(chunks);
+
+          recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              chunks.push(event.data);
+              setAudioChunks([...chunks]);
+            }
+          };
+
+          recorder.onstop = async () => {
+            console.log("🛑 MediaRecorder stopped");
+            // Stop all tracks to release microphone
+            stream.getTracks().forEach((track) => track.stop());
+
+            // Create blob from chunks
+            const audioBlob = new Blob(chunks, { type: recorder.mimeType });
+            const audioUrl = URL.createObjectURL(audioBlob);
+
+            console.log(
+              "📁 Audio blob created, URL:",
+              audioUrl.substring(0, 50) + "..."
+            );
+            setRecordingURI(audioUrl);
+
+            // Calculate duration (use the durationCounter which is accurate)
+            const duration = durationCounter.current;
+
+            if (onRecordingComplete) {
+              onRecordingComplete({
+                emoji: selectedEmoji || undefined,
+                feeling: selectedFeeling || undefined,
+                prompt: prompt || undefined,
+                audioURI: audioUrl,
+                duration: duration,
+                moodTag: selectedMoodTag || undefined,
+                timestamp: Date.now(),
+              });
+            }
+          };
+
+          recorder.onerror = (event: any) => {
+            console.error("❌ MediaRecorder error:", event);
+            Alert.alert("Error", "An error occurred while recording.");
+            setIsRecording(false);
+            stream.getTracks().forEach((track) => track.stop());
+          };
+
+          // Start recording
+          recorder.start();
+          console.log("✅ MediaRecorder started");
+
+          setMediaRecorder(recorder);
+          setIsRecording(true);
+          setRecordingDuration(0);
+          durationCounter.current = 0;
+
+          // Start duration counter
+          durationInterval.current = setInterval(() => {
+            durationCounter.current += 1;
+            setRecordingDuration(durationCounter.current);
+            console.log("⏱️ Duration:", durationCounter.current, "seconds");
+
+            // Max duration: 5 minutes (300 seconds)
+            if (durationCounter.current >= 300) {
+              Alert.alert(
+                "Maximum Duration Reached",
+                "You've reached the 5-minute recording limit. The recording will be saved automatically.",
+                [{ text: "OK" }]
+              );
+              stopRecording();
+            }
+          }, 1000) as any;
+        } catch (error: any) {
+          console.error("❌ Failed to start web recording:", error);
+          setIsRecording(false);
+
+          let errorMessage = "Failed to start recording. Please try again.";
+          if (
+            error.name === "NotAllowedError" ||
+            error.name === "PermissionDeniedError"
+          ) {
+            errorMessage =
+              "Microphone permission denied. Please allow microphone access in your browser settings.";
+          } else if (error.name === "NotFoundError") {
+            errorMessage =
+              "No microphone found. Please connect a microphone and try again.";
+          } else if (error.message) {
+            errorMessage = `Failed to start recording: ${error.message}`;
           }
-        } catch (cleanupError: any) {
-          // Ignore cleanup errors - recording might already be unloaded
-          console.log(
-            "Cleanup warning (expected if already unloaded):",
-            cleanupError.message
-          );
+
+          Alert.alert("Error", errorMessage);
         }
-        setRecording(null);
-      }
+      } else {
+        // Mobile: Use expo-av
+        console.log("📱 Mobile platform - using expo-av");
 
-      // Request permissions
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Please allow microphone access to record voice."
-        );
-        return;
-      }
+        // Clean up any existing recording first
+        if (recording) {
+          try {
+            const status = await recording.getStatusAsync();
+            if (!status.isDoneRecording) {
+              await recording.stopAndUnloadAsync();
+            }
+          } catch (cleanupError: any) {
+            // Ignore cleanup errors - recording might already be unloaded
+            console.log(
+              "Cleanup warning (expected if already unloaded):",
+              cleanupError.message
+            );
+          }
+          setRecording(null);
+        }
 
-      // Configure audio mode - ensure recording is enabled
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-      });
-
-      // Small delay to ensure previous recording is fully cleaned up
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Start recording
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-
-      setRecording(newRecording);
-      setIsRecording(true);
-      setRecordingDuration(0);
-      durationCounter.current = 0;
-
-      // Start duration counter - use ref to persist counter value
-      durationInterval.current = setInterval(() => {
-        durationCounter.current += 1;
-        setRecordingDuration(durationCounter.current);
-        console.log("⏱️ Duration:", durationCounter.current, "seconds");
-
-        // Max duration: 5 minutes (300 seconds)
-        if (durationCounter.current >= 300) {
+        // Request permissions
+        console.log("🎤 Requesting audio permissions...");
+        const { status } = await Audio.requestPermissionsAsync();
+        console.log("🎤 Permission status:", status);
+        if (status !== "granted") {
+          console.log("❌ Permission denied");
           Alert.alert(
-            "Maximum Duration Reached",
-            "You've reached the 5-minute recording limit. The recording will be saved automatically.",
-            [{ text: "OK" }]
+            "Permission Required",
+            "Please allow microphone access to record voice."
           );
-          stopRecording();
+          return;
         }
-      }, 1000) as any; // Update every second
+
+        // Configure audio mode - ensure recording is enabled
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+        });
+
+        // Small delay to ensure previous recording is fully cleaned up
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Start recording
+        console.log("🎙️ Creating recording...");
+        const { recording: newRecording } = await Audio.Recording.createAsync(
+          Audio.RecordingOptionsPresets.HIGH_QUALITY
+        );
+        console.log("✅ Recording created successfully");
+
+        setRecording(newRecording);
+        setIsRecording(true);
+        setRecordingDuration(0);
+        durationCounter.current = 0;
+        console.log("✅ Recording state updated, should see recording UI now");
+
+        // Start duration counter - use ref to persist counter value
+        durationInterval.current = setInterval(() => {
+          durationCounter.current += 1;
+          setRecordingDuration(durationCounter.current);
+          console.log("⏱️ Duration:", durationCounter.current, "seconds");
+
+          // Max duration: 5 minutes (300 seconds)
+          if (durationCounter.current >= 300) {
+            Alert.alert(
+              "Maximum Duration Reached",
+              "You've reached the 5-minute recording limit. The recording will be saved automatically.",
+              [{ text: "OK" }]
+            );
+            stopRecording();
+          }
+        }, 1000) as any; // Update every second
+      }
     } catch (error: any) {
-      console.error("Failed to start recording:", error);
+      console.error("❌ Failed to start recording:", error);
+      console.error("❌ Error message:", error.message);
+      console.error("❌ Error name:", error.name);
+      console.error("❌ Error stack:", error.stack);
 
       // Clear recording state on error
       setRecording(null);
+      setMediaRecorder(null);
       setIsRecording(false);
 
       let errorMessage = "Failed to start recording. Please try again.";
       if (error.message?.includes("Only one Recording object")) {
         errorMessage =
           "Please wait a moment and try again. Another recording is being cleaned up.";
+      } else if (error.message) {
+        errorMessage = `Failed to start recording: ${error.message}`;
       }
 
       Alert.alert("Error", errorMessage);
@@ -309,134 +477,175 @@ export default function VoiceJournal({
   };
 
   const stopRecording = async () => {
-    if (!recording) {
-      console.log("❌ No recording to stop");
-      return;
+    console.log("🛑 stopRecording called");
+    console.log("🛑 Platform.OS:", Platform.OS);
+    console.log("🛑 isRecording:", isRecording);
+    console.log("🛑 recording exists:", !!recording);
+    console.log("🛑 mediaRecorder exists:", !!mediaRecorder);
+
+    setIsRecording(false);
+
+    // Stop the interval first to prevent further updates
+    if (durationInterval.current) {
+      clearInterval(durationInterval.current);
+      durationInterval.current = null;
     }
 
-    try {
-      console.log("🛑 Stopping recording...");
-      setIsRecording(false);
-
-      // Stop the interval first to prevent further updates
-      if (durationInterval.current) {
-        clearInterval(durationInterval.current);
-        durationInterval.current = null;
-      }
-
-      // Get status to get actual duration from recording (more accurate)
-      const status = await recording.getStatusAsync();
-      let actualDuration = durationCounter.current;
-
-      // Get actual duration from recording status if available
-      // RecordingStatus has canRecord, isDoneRecording, durationMillis
-      if (
-        status.durationMillis !== undefined &&
-        status.durationMillis !== null
-      ) {
-        actualDuration = Math.floor(status.durationMillis / 1000);
-        console.log(
-          "⏱️ Actual duration from status:",
-          actualDuration,
-          "seconds"
-        );
-        setRecordingDuration(actualDuration);
-        durationCounter.current = actualDuration;
-      } else {
-        console.log("⏱️ Using counter duration:", actualDuration, "seconds");
-      }
-
-      // Stop the recording first - URI is available after stopping
-      let uri: string | null = null;
-      if (!status.isDoneRecording) {
-        console.log("🛑 Stopping and unloading recording...");
-        await recording.stopAndUnloadAsync();
-        // Get URI AFTER stopping - this is when it becomes available
-        uri = recording.getURI();
-        console.log("📁 Recording URI after stop:", uri);
-      } else {
-        console.log("🛑 Recording already stopped");
-        uri = recording.getURI();
-        console.log("📁 Recording URI:", uri);
-      }
-
-      setRecordingURI(uri);
-      setRecording(null);
-
-      console.log(
-        "✅ Recording stopped. URI:",
-        uri,
-        "Duration:",
-        actualDuration
-      );
-
-      if (uri && onRecordingComplete) {
-        console.log("📤 Calling onRecordingComplete with:", {
-          audioURI: uri,
-          duration: actualDuration,
-          emoji: selectedEmoji,
-          feeling: selectedFeeling,
-        });
-        onRecordingComplete({
-          emoji: selectedEmoji || undefined,
-          feeling: selectedFeeling || undefined,
-          prompt: prompt || undefined,
-          audioURI: uri,
-          duration: actualDuration,
-          moodTag: selectedMoodTag || undefined,
-          timestamp: Date.now(),
-        });
-      } else {
-        console.warn("⚠️ No URI or callback:", {
-          uri,
-          hasCallback: !!onRecordingComplete,
-        });
-      }
-    } catch (error: any) {
-      console.error("Failed to stop recording:", error);
-      // If recording is already unloaded, that's okay - just get the URI if we can
-      if (recording) {
+    if (Platform.OS === "web") {
+      // Web: Stop MediaRecorder
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
         try {
-          const uri = recording.getURI();
-          if (uri) {
-            setRecordingURI(uri);
-            setRecording(null);
-            if (onRecordingComplete) {
-              onRecordingComplete({
-                emoji: selectedEmoji || undefined,
-                feeling: selectedFeeling || undefined,
-                prompt: prompt || undefined,
-                audioURI: uri,
-                duration: recordingDuration,
-                moodTag: selectedMoodTag || undefined,
-                timestamp: Date.now(),
-              });
-            }
-          }
-        } catch {
-          // If we can't get URI either, just clear the recording
-          setRecording(null);
+          console.log("🛑 Stopping MediaRecorder...");
+          mediaRecorder.stop();
+          setMediaRecorder(null);
+          console.log(
+            "✅ MediaRecorder stopped - onstop handler will create URI"
+          );
+        } catch (error: any) {
+          console.error("❌ Error stopping MediaRecorder:", error);
+          Alert.alert("Error", "Failed to stop recording.");
         }
+      } else {
+        console.log("❌ No active MediaRecorder to stop");
       }
-      if (!error.message?.includes("already been unloaded")) {
-        Alert.alert("Error", "Failed to stop recording.");
+    } else {
+      // Mobile: Stop expo-av recording
+      if (!recording) {
+        console.log("❌ No recording to stop");
+        return;
+      }
+
+      try {
+        console.log("🛑 Stopping mobile recording...");
+
+        // Get status to get actual duration from recording (more accurate)
+        const status = await recording.getStatusAsync();
+        let actualDuration = durationCounter.current;
+
+        // Get actual duration from recording status if available
+        if (
+          status.durationMillis !== undefined &&
+          status.durationMillis !== null
+        ) {
+          actualDuration = Math.floor(status.durationMillis / 1000);
+          console.log(
+            "⏱️ Actual duration from status:",
+            actualDuration,
+            "seconds"
+          );
+          setRecordingDuration(actualDuration);
+          durationCounter.current = actualDuration;
+        } else {
+          console.log("⏱️ Using counter duration:", actualDuration, "seconds");
+        }
+
+        // Get URI BEFORE stopping - URI is available while recording is active
+        // After stopAndUnloadAsync(), the recording object is unloaded and getURI() returns null
+        let uri: string | null = null;
+        if (!status.isDoneRecording) {
+          // Get URI first, then stop
+          uri = recording.getURI();
+          console.log("📁 Recording URI before stop:", uri);
+          console.log("🛑 Stopping and unloading recording...");
+          await recording.stopAndUnloadAsync();
+        } else {
+          console.log("🛑 Recording already stopped");
+          // Try to get URI even if already stopped (might still be available)
+          uri = recording.getURI();
+          console.log("📁 Recording URI:", uri);
+        }
+
+        setRecordingURI(uri);
+        setRecording(null);
+
+        console.log(
+          "✅ Recording stopped. URI:",
+          uri,
+          "Duration:",
+          actualDuration
+        );
+
+        if (uri && onRecordingComplete) {
+          console.log("📤 Calling onRecordingComplete with:", {
+            audioURI: uri,
+            duration: actualDuration,
+            emoji: selectedEmoji,
+            feeling: selectedFeeling,
+          });
+          onRecordingComplete({
+            emoji: selectedEmoji || undefined,
+            feeling: selectedFeeling || undefined,
+            prompt: prompt || undefined,
+            audioURI: uri,
+            duration: actualDuration,
+            moodTag: selectedMoodTag || undefined,
+            timestamp: Date.now(),
+          });
+        } else {
+          console.warn("⚠️ No URI or callback:", {
+            uri,
+            hasCallback: !!onRecordingComplete,
+          });
+        }
+      } catch (error: any) {
+        console.error("Failed to stop recording:", error);
+        // If recording is already unloaded, that's okay - just get the URI if we can
+        if (recording) {
+          try {
+            const uri = recording.getURI();
+            if (uri) {
+              setRecordingURI(uri);
+              setRecording(null);
+              if (onRecordingComplete) {
+                onRecordingComplete({
+                  emoji: selectedEmoji || undefined,
+                  feeling: selectedFeeling || undefined,
+                  prompt: prompt || undefined,
+                  audioURI: uri,
+                  duration: recordingDuration,
+                  moodTag: selectedMoodTag || undefined,
+                  timestamp: Date.now(),
+                });
+              }
+            }
+          } catch {
+            // If we can't get URI either, just clear the recording
+            setRecording(null);
+          }
+        }
+        if (!error.message?.includes("already been unloaded")) {
+          Alert.alert("Error", "Failed to stop recording.");
+        }
       }
     }
   };
 
   const reset = async () => {
     // Stop and clean up any active recording
-    if (recording) {
-      try {
-        const status = await recording.getStatusAsync();
-        if (!status.isDoneRecording) {
-          await recording.stopAndUnloadAsync();
+    if (Platform.OS === "web") {
+      // Web: Stop MediaRecorder
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        try {
+          mediaRecorder.stop();
+        } catch (error: any) {
+          console.log("Reset cleanup warning:", error.message);
         }
-      } catch (error: any) {
-        // Ignore errors - recording might already be unloaded
-        console.log("Reset cleanup warning:", error.message);
       }
-      setRecording(null);
+      setMediaRecorder(null);
+    } else {
+      // Mobile: Stop expo-av recording
+      if (recording) {
+        try {
+          const status = await recording.getStatusAsync();
+          if (!status.isDoneRecording) {
+            await recording.stopAndUnloadAsync();
+          }
+        } catch (error: any) {
+          // Ignore errors - recording might already be unloaded
+          console.log("Reset cleanup warning:", error.message);
+        }
+        setRecording(null);
+      }
     }
 
     // Clear interval
@@ -466,51 +675,70 @@ export default function VoiceJournal({
     if (!recordingURI) return;
 
     try {
-      // Stop any existing playback
-      if (playbackSound) {
-        await playbackSound.unloadAsync();
-        setPlaybackSound(null);
-        setIsPlaying(false);
-      }
-
-      // Configure audio mode for playback
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-      });
-
-      // Load and play the recording
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: recordingURI },
-        { shouldPlay: true }
-      );
-
-      setPlaybackSound(sound);
-
-      // Set up status listener
-      // Note: setOnPlaybackStatusUpdate doesn't return a subscription object
-      // We'll handle cleanup by unsetting the callback when needed
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded) {
-          setIsPlaying(status.isPlaying);
-          if (status.didJustFinish) {
-            setIsPlaying(false);
-            sound.unloadAsync();
-            setPlaybackSound(null);
-          }
+      if (Platform.OS === "web") {
+        // Web: Use HTML5 Audio
+        if (playbackSound) {
+          // If using HTML5 audio, stop it first
+          (playbackSound as any).pause();
+          (playbackSound as any).currentTime = 0;
+          setPlaybackSound(null);
+          setIsPlaying(false);
         }
-      });
+
+        const audio = new (window as any).Audio(recordingURI);
+        audio.onended = () => {
+          setIsPlaying(false);
+          setPlaybackSound(null);
+        };
+        audio.onerror = () => {
+          Alert.alert("Error", "Could not play recording. Please try again.");
+          setIsPlaying(false);
+          setPlaybackSound(null);
+        };
+
+        await audio.play();
+        setPlaybackSound(audio as any);
+        setIsPlaying(true);
+      } else {
+        // Mobile: Use expo-av
+        // Stop any existing playback
+        if (playbackSound) {
+          await (playbackSound as Audio.Sound).unloadAsync();
+          setPlaybackSound(null);
+          setIsPlaying(false);
+        }
+
+        // Configure audio mode for playback
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+        });
+
+        // Load and play the recording
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: recordingURI },
+          { shouldPlay: true }
+        );
+
+        setPlaybackSound(sound);
+
+        // Set up status listener
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded) {
+            setIsPlaying(status.isPlaying);
+            if (status.didJustFinish) {
+              setIsPlaying(false);
+              sound.unloadAsync();
+              setPlaybackSound(null);
+            }
+          }
+        });
+      }
     } catch (error: any) {
       console.error("Error playing recording:", error);
       Alert.alert("Error", "Could not play recording. Please try again.");
-    }
-  };
-
-  const stopPlayback = async () => {
-    if (playbackSound) {
-      await playbackSound.unloadAsync();
-      setPlaybackSound(null);
       setIsPlaying(false);
+      setPlaybackSound(null);
     }
   };
 
@@ -518,9 +746,15 @@ export default function VoiceJournal({
   useEffect(() => {
     return () => {
       if (playbackSound) {
-        // Unset status update listener before unloading
-        playbackSound.setOnPlaybackStatusUpdate(null);
-        playbackSound.unloadAsync().catch(console.error);
+        if (Platform.OS === "web") {
+          // Web: Stop HTML5 Audio
+          (playbackSound as any).pause();
+          (playbackSound as any).src = "";
+        } else {
+          // Mobile: Unset status update listener before unloading (not web, so must be mobile)
+          (playbackSound as Audio.Sound).setOnPlaybackStatusUpdate(null);
+          (playbackSound as Audio.Sound).unloadAsync().catch(console.error);
+        }
       }
     };
   }, [playbackSound]);
@@ -618,7 +852,10 @@ export default function VoiceJournal({
             <View style={styles.recordingContainer}>
               {!isRecording ? (
                 <TouchableOpacity
-                  onPress={startRecording}
+                  onPress={() => {
+                    console.log("🎙️ Start Recording button pressed");
+                    startRecording();
+                  }}
                   style={[
                     styles.recordButton,
                     {

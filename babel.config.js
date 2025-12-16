@@ -1,18 +1,20 @@
-module.exports = function(api) {
+module.exports = function (api) {
   api.cache(true);
   return {
-    presets: ['babel-preset-expo'],
+    presets: ["babel-preset-expo"],
     plugins: [
       // react-native-dotenv removed - using native Expo environment variables
       [
-        'module-resolver',
+        "module-resolver",
         {
-          root: ['./'],
+          root: ["./"],
           alias: {
-            '@': './src'
-          }
-        }
-      ]
-    ]
+            "@": "./src",
+          },
+        },
+      ],
+      // react-native-reanimated plugin MUST be listed last
+      "react-native-reanimated/plugin",
+    ],
   };
 };

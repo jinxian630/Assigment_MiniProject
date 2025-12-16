@@ -26,6 +26,9 @@ const EMOTION_COLORS = [
   { name: "White", value: "#e2e8f0" },
 ];
 
+// Safety check to prevent crashes if EMOTION_COLORS becomes undefined
+const SAFE_EMOTION_COLORS = Array.isArray(EMOTION_COLORS) ? EMOTION_COLORS : [];
+
 type FilterOptions = {
   keyword: string;
   emotionColor: string | null;
@@ -50,6 +53,43 @@ export default function FilterModal({
   memories,
   initialFilters,
 }: FilterModalProps) {
+  // Defensive check - if React Native internals are broken, render minimal UI
+  if (typeof Platform === "undefined" || Platform.OS === undefined) {
+    console.warn(
+      "⚠️ FilterModal: Platform API unavailable, rendering fallback"
+    );
+    return (
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <View style={{ backgroundColor: "#fff", padding: 20 }}>
+            <Text>Filter unavailable - please restart the app</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              style={{
+                marginTop: 10,
+                padding: 10,
+                backgroundColor: "#9333EA",
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{ color: "#fff", textAlign: "center" }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
   const [keyword, setKeyword] = useState(initialFilters?.keyword || "");
   const [selectedColor, setSelectedColor] = useState<string | null>(
     initialFilters?.emotionColor || null
@@ -193,39 +233,48 @@ export default function FilterModal({
                 Filter by Color Theme
               </Text>
               <View style={styles.colorGrid}>
-                {EMOTION_COLORS.map((color) => (
+                {SAFE_EMOTION_COLORS.map((color, index) => (
                   <TouchableOpacity
-                    key={color.value}
+                    key={color?.value || `color-${index}`}
                     onPress={() => {
                       if (Platform.OS === "ios") {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       }
                       setSelectedColor(
-                        selectedColor === color.value ? null : color.value
+                        selectedColor === color?.value
+                          ? null
+                          : color?.value || null
                       );
                     }}
                     style={[
                       styles.colorOption,
                       {
-                        backgroundColor: color.value,
+                        backgroundColor: color?.value || "#cccccc",
                         borderColor:
-                          selectedColor === color.value
+                          selectedColor === color?.value
                             ? PRIMARY_PURPLE
                             : colors.border,
-                        borderWidth: selectedColor === color.value ? 3 : 2,
-                        shadowColor:
-                          selectedColor === color.value
-                            ? PRIMARY_PURPLE
-                            : "#000",
-                        shadowOpacity:
-                          selectedColor === color.value ? 0.8 : 0.2,
-                        shadowRadius: selectedColor === color.value ? 8 : 4,
-                        shadowOffset: { width: 0, height: 0 },
-                        elevation: selectedColor === color.value ? 8 : 2,
+                        borderWidth: selectedColor === color?.value ? 3 : 2,
+                        // Simplified shadow to avoid RN internal API issues
+                        ...(selectedColor === color?.value
+                          ? {
+                              shadowColor: PRIMARY_PURPLE,
+                              shadowOpacity: 0.8,
+                              shadowRadius: 8,
+                              shadowOffset: { width: 0, height: 0 },
+                              elevation: 8,
+                            }
+                          : {
+                              shadowColor: "#000",
+                              shadowOpacity: 0.2,
+                              shadowRadius: 4,
+                              shadowOffset: { width: 0, height: 0 },
+                              elevation: 2,
+                            }),
                       },
                     ]}
                   >
-                    {selectedColor === color.value && (
+                    {selectedColor === color?.value && (
                       <Ionicons name="checkmark" size={20} color="#000" />
                     )}
                   </TouchableOpacity>

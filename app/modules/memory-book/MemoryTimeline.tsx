@@ -1343,15 +1343,17 @@ export default function MemoryTimeline() {
           )}
         </ScrollView>
 
-        {/* Filter Modal */}
-        <FilterModal
-          visible={showFilterModal}
-          onClose={() => setShowFilterModal(false)}
-          onApply={handleApplyFilters}
-          isDarkMode={isDarkMode}
-          memories={memories as any[]}
-          initialFilters={activeFilters}
-        />
+        {/* Filter Modal - wrapped in try-catch via ErrorBoundary */}
+        {showFilterModal && (
+          <FilterModal
+            visible={showFilterModal}
+            onClose={() => setShowFilterModal(false)}
+            onApply={handleApplyFilters}
+            isDarkMode={isDarkMode}
+            memories={memories as any[]}
+            initialFilters={activeFilters}
+          />
+        )}
 
         {/* Bottom Navigation */}
         <BottomNavBar isDarkMode={isDarkMode} />
