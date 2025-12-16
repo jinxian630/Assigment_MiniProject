@@ -19,6 +19,7 @@ import {
   getDownloadURL,
   deleteObject,
 } from "firebase/storage";
+import { Platform } from "react-native";
 import { db, storage } from "@/config/firebase";
 import { Memory } from "./memoryHelpers";
 import { extractStoragePathFromURL } from "./storageHelpers";
@@ -244,8 +245,33 @@ export async function uploadMemoryImage(imageUri: string): Promise<string> {
   const filename = `memory_${Date.now()}.jpg`;
   const storageRef = ref(storage, `MemoryImages/${filename}`);
 
-  const response = await fetch(imageUri);
-  const blob = await response.blob();
+  let blob: Blob;
+
+  if (Platform.OS === "web") {
+    // Web: use fetch to get blob
+    const response = await fetch(imageUri);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.statusText}`);
+    }
+    const fetchedBlob = await response.blob();
+    // Ensure proper MIME type
+    const blobType = fetchedBlob.type || "image/jpeg";
+    blob = new Blob([fetchedBlob], { type: blobType });
+  } else {
+    // Mobile: use XMLHttpRequest for better compatibility with local URIs
+    blob = await new Promise<Blob>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = () => {
+        resolve(xhr.response);
+      };
+      xhr.onerror = () => {
+        reject(new Error("Failed to load image"));
+      };
+      xhr.responseType = "blob";
+      xhr.open("GET", imageUri, true);
+      xhr.send();
+    });
+  }
 
   await uploadBytes(storageRef, blob);
   return await getDownloadURL(storageRef);

@@ -1479,8 +1479,15 @@ export default function UserProfile() {
           onRequestClose={() => setEditModalVisible(false)}
         >
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            behavior={
+              Platform.OS === "ios"
+                ? "padding"
+                : Platform.OS === "android"
+                ? "height"
+                : undefined
+            }
             style={styles.modalOverlay}
+            enabled={Platform.OS !== "web"}
           >
             <View
               style={[

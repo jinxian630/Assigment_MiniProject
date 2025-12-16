@@ -216,257 +216,264 @@ export default function PostCard({ memory, isDarkMode }: PostCardProps) {
   const emotionColor = memory.emotionColor || PRIMARY_PURPLE;
 
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.background,
-          borderColor: emotionColor + (isDarkMode ? "66" : "CC"),
-          transform: [{ scale: scaleAnim }],
-        },
-      ]}
+    <TouchableOpacity
+      activeOpacity={0.95}
+      onPress={handlePress}
+      accessibilityLabel={`View memory: ${memory.title || "Untitled"}`}
+      accessibilityRole="button"
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.userInfo}>
-          {memory.CreatedUser?.CreatedUserPhoto ? (
-            <Image
-              source={{ uri: memory.CreatedUser.CreatedUserPhoto }}
-              style={styles.avatar}
-            />
-          ) : (
-            <View
-              style={[
-                styles.avatar,
-                styles.avatarPlaceholder,
-                {
-                  backgroundColor: colors.chipBg,
-                  borderColor: emotionColor + "66",
-                },
-              ]}
-            >
-              <Ionicons name="person" size={16} color={emotionColor} />
+      <Animated.View
+        style={[
+          styles.container,
+          {
+            backgroundColor: colors.background,
+            borderColor: emotionColor + (isDarkMode ? "66" : "CC"),
+            transform: [{ scale: scaleAnim }],
+          },
+        ]}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.userInfo}>
+            {memory.CreatedUser?.CreatedUserPhoto ? (
+              <Image
+                source={{ uri: memory.CreatedUser.CreatedUserPhoto }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.avatar,
+                  styles.avatarPlaceholder,
+                  {
+                    backgroundColor: colors.chipBg,
+                    borderColor: emotionColor + "66",
+                  },
+                ]}
+              >
+                <Ionicons name="person" size={16} color={emotionColor} />
+              </View>
+            )}
+            <View style={styles.userText}>
+              <Text style={[styles.username, { color: colors.text }]}>
+                {memory.CreatedUser?.CreatedUserName || "Unknown User"}
+              </Text>
+              <Text style={[styles.timestamp, { color: colors.textSoft }]}>
+                {getSmartDate(memory.startDate ?? Date.now())}
+              </Text>
             </View>
-          )}
-          <View style={styles.userText}>
-            <Text style={[styles.username, { color: colors.text }]}>
-              {memory.CreatedUser?.CreatedUserName || "Unknown User"}
-            </Text>
-            <Text style={[styles.timestamp, { color: colors.textSoft }]}>
-              {getSmartDate(memory.startDate ?? Date.now())}
-            </Text>
           </View>
-        </View>
-        <View style={styles.headerActions}>
-          {isOwnPost && (
+          <View style={styles.headerActions}>
+            {isOwnPost && (
+              <InteractiveButton
+                onPress={() => {
+                  router.push({
+                    pathname: "/modules/memory-book/MemoryPostCreate",
+                    params: { editId: memory.id },
+                  });
+                }}
+                icon="create-outline"
+                description="Edit this memory's title, description, and mood"
+                variant="ghost"
+                size="sm"
+                isDarkMode={isDarkMode}
+                iconColor={colors.textSoft}
+                style={styles.editButton}
+                noBorder={true}
+                accessibilityLabel="Edit memory"
+                accessibilityHint="Opens edit screen for this memory"
+              />
+            )}
             <InteractiveButton
-              onPress={() => {
-                router.push({
-                  pathname: "/modules/memory-book/MemoryPostCreate",
-                  params: { editId: memory.id },
-                });
-              }}
-              icon="create-outline"
-              description="Edit this memory's title, description, and mood"
+              onPress={handleShare}
+              icon="share-outline"
+              description="Share this memory via email, messages, or social media"
               variant="ghost"
               size="sm"
               isDarkMode={isDarkMode}
               iconColor={colors.textSoft}
-              style={styles.editButton}
+              style={styles.shareButton}
               noBorder={true}
-              accessibilityLabel="Edit memory"
-              accessibilityHint="Opens edit screen for this memory"
+              accessibilityLabel="Share memory"
+              accessibilityHint="Shares this memory with other apps"
             />
-          )}
-          <InteractiveButton
-            onPress={handleShare}
-            icon="share-outline"
-            description="Share this memory via email, messages, or social media"
-            variant="ghost"
-            size="sm"
-            isDarkMode={isDarkMode}
-            iconColor={colors.textSoft}
-            style={styles.shareButton}
-            noBorder={true}
-            accessibilityLabel="Share memory"
-            accessibilityHint="Shares this memory with other apps"
-          />
+          </View>
         </View>
-      </View>
 
-      {/* Image */}
-      {memory.imageURL && (
-        <TouchableOpacity
-          onPress={handleImagePress}
-          activeOpacity={0.95}
-          accessibilityLabel="View image"
-          accessibilityRole="imagebutton"
-          accessibilityHint="Double tap to view full screen image"
-        >
-          <Image
-            source={{ uri: memory.imageURL }}
-            style={styles.image}
-            onError={() => {
-              console.warn("Failed to load image:", memory.imageURL);
-            }}
-          />
-        </TouchableOpacity>
-      )}
+        {/* Image */}
+        {memory.imageURL && (
+          <TouchableOpacity
+            onPress={handleImagePress}
+            activeOpacity={0.95}
+            accessibilityLabel="View image"
+            accessibilityRole="imagebutton"
+            accessibilityHint="Double tap to view full screen image"
+          >
+            <Image
+              source={{ uri: memory.imageURL }}
+              style={styles.image}
+              onError={() => {
+                console.warn("Failed to load image:", memory.imageURL);
+              }}
+            />
+          </TouchableOpacity>
+        )}
 
-      {/* Actions */}
-      <View style={styles.actions}>
-        <View style={styles.actionLeft}>
+        {/* Actions */}
+        <View style={styles.actions} pointerEvents="box-none">
+          <View style={styles.actionLeft} pointerEvents="box-none">
+            <InteractiveButton
+              onPress={handleLike}
+              icon={isLiked ? "heart" : "heart-outline"}
+              description={isLiked ? "Unlike this memory" : "Like this memory"}
+              variant="ghost"
+              size="sm"
+              isDarkMode={isDarkMode}
+              iconColor={isLiked ? "#ef4444" : colors.text}
+              iconSize={Platform.OS === "ios" ? 24 : 22}
+              style={{
+                minWidth: Platform.OS === "ios" ? 44 : 40,
+                minHeight: Platform.OS === "ios" ? 44 : 40,
+              }}
+              noBorder={true}
+              accessibilityLabel={isLiked ? "Unlike memory" : "Like memory"}
+              accessibilityHint={
+                isLiked ? "Remove your like" : "Like this memory"
+              }
+            />
+            <View style={{ position: "relative" }}>
+              <InteractiveButton
+                onPress={handlePress}
+                icon="chatbubble-outline"
+                description={`View ${
+                  memory.comments || 0
+                } comments on this memory`}
+                variant="ghost"
+                size="sm"
+                isDarkMode={isDarkMode}
+                iconColor={colors.text}
+                iconSize={Platform.OS === "ios" ? 24 : 22}
+                style={[
+                  styles.actionButton,
+                  {
+                    minWidth: Platform.OS === "ios" ? 44 : 40,
+                    minHeight: Platform.OS === "ios" ? 44 : 40,
+                  },
+                ]}
+                noBorder={true}
+                accessibilityLabel="View comments"
+                accessibilityHint={`${
+                  memory.comments || 0
+                } comments on this memory`}
+              />
+              {memory.comments && memory.comments > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{memory.comments}</Text>
+                </View>
+              )}
+            </View>
+          </View>
           <InteractiveButton
-            onPress={handleLike}
-            icon={isLiked ? "heart" : "heart-outline"}
-            description={isLiked ? "Unlike this memory" : "Like this memory"}
+            onPress={handleSave}
+            icon={isSaved ? "bookmark" : "bookmark-outline"}
+            description={isSaved ? "Unsave" : "Save"}
             variant="ghost"
             size="sm"
             isDarkMode={isDarkMode}
-            iconColor={isLiked ? "#ef4444" : colors.text}
+            disabled={saving}
+            iconColor={isSaved ? PRIMARY_PURPLE : colors.text}
             iconSize={Platform.OS === "ios" ? 24 : 22}
             style={{
               minWidth: Platform.OS === "ios" ? 44 : 40,
               minHeight: Platform.OS === "ios" ? 44 : 40,
             }}
             noBorder={true}
-            accessibilityLabel={isLiked ? "Unlike memory" : "Like memory"}
+            accessibilityLabel={isSaved ? "Remove from saved" : "Save memory"}
             accessibilityHint={
-              isLiked ? "Remove your like" : "Like this memory"
+              isSaved ? "Unsave this memory" : "Save this memory for later"
             }
           />
-          <View style={{ position: "relative" }}>
-            <InteractiveButton
-              onPress={handlePress}
-              icon="chatbubble-outline"
-              description={`View ${
-                memory.comments || 0
-              } comments on this memory`}
-              variant="ghost"
-              size="sm"
-              isDarkMode={isDarkMode}
-              iconColor={colors.text}
-              iconSize={Platform.OS === "ios" ? 24 : 22}
-              style={[
-                styles.actionButton,
-                {
-                  minWidth: Platform.OS === "ios" ? 44 : 40,
-                  minHeight: Platform.OS === "ios" ? 44 : 40,
-                },
-              ]}
-              noBorder={true}
-              accessibilityLabel="View comments"
-              accessibilityHint={`${
-                memory.comments || 0
-              } comments on this memory`}
-            />
-            {memory.comments && memory.comments > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{memory.comments}</Text>
-              </View>
-            )}
-          </View>
         </View>
-        <InteractiveButton
-          onPress={handleSave}
-          icon={isSaved ? "bookmark" : "bookmark-outline"}
-          description={isSaved ? "Unsave" : "Save"}
-          variant="ghost"
-          size="sm"
-          isDarkMode={isDarkMode}
-          disabled={saving}
-          iconColor={isSaved ? PRIMARY_PURPLE : colors.text}
-          iconSize={Platform.OS === "ios" ? 24 : 22}
-          style={{
-            minWidth: Platform.OS === "ios" ? 44 : 40,
-            minHeight: Platform.OS === "ios" ? 44 : 40,
-          }}
-          noBorder={true}
-          accessibilityLabel={isSaved ? "Remove from saved" : "Save memory"}
-          accessibilityHint={
-            isSaved ? "Unsave this memory" : "Save this memory for later"
-          }
-        />
-      </View>
 
-      {/* Likes */}
-      {likeCount > 0 && (
-        <Text style={[styles.likes, { color: colors.text }]}>
-          {likeCount} {likeCount === 1 ? "like" : "likes"}
-        </Text>
-      )}
-
-      {/* Caption */}
-      <View style={styles.caption}>
-        <Text style={[styles.captionText, { color: colors.text }]}>
-          <Text style={styles.captionUsername}>
-            {memory.CreatedUser?.CreatedUserName || "Unknown"}{" "}
+        {/* Likes */}
+        {likeCount > 0 && (
+          <Text style={[styles.likes, { color: colors.text }]}>
+            {likeCount} {likeCount === 1 ? "like" : "likes"}
           </Text>
-          {memory.title}
-        </Text>
-      </View>
+        )}
 
-      {/* Description */}
-      {memory.description && (
-        <Text
-          style={[styles.description, { color: colors.textSoft }]}
-          numberOfLines={2}
-        >
-          {memory.description}
-        </Text>
-      )}
-
-      {/* Comments */}
-      {memory.comments && memory.comments > 0 && (
-        <TouchableOpacity onPress={handlePress}>
-          <Text style={[styles.viewComments, { color: colors.textSoft }]}>
-            View all {memory.comments}{" "}
-            {memory.comments === 1 ? "comment" : "comments"}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Emotion Spectrum Preview */}
-      {memory.emotionSpectrum && (
-        <View
-          style={[
-            styles.emotionPreview,
-            {
-              backgroundColor: colors.chipBg,
-              borderColor: emotionColor + "44",
-            },
-          ]}
-        >
-          <View style={styles.emotionRow}>
-            <Ionicons name="flash" size={12} color="#f59e0b" />
-            <View
-              style={[styles.emotionBar, { backgroundColor: colors.border }]}
-            >
-              <View
-                style={[
-                  styles.emotionFill,
-                  {
-                    width: `${memory.emotionSpectrum?.energy ?? 0}%`,
-                    backgroundColor: "#f59e0b",
-                  },
-                ]}
-              />
-            </View>
-            <Text style={[styles.emotionValue, { color: colors.textSoft }]}>
-              {memory.emotionSpectrum?.energy ?? 0}%
+        {/* Caption */}
+        <View style={styles.caption}>
+          <Text style={[styles.captionText, { color: colors.text }]}>
+            <Text style={styles.captionUsername}>
+              {memory.CreatedUser?.CreatedUserName || "Unknown"}{" "}
             </Text>
-          </View>
+            {memory.title}
+          </Text>
         </View>
-      )}
 
-      {/* Image Zoom Viewer */}
-      <ImageZoomViewer
-        visible={showImageZoom}
-        imageURL={memory.imageURL || ""}
-        onClose={() => setShowImageZoom(false)}
-        onShare={handleShareImage}
-      />
-    </Animated.View>
+        {/* Description */}
+        {memory.description && (
+          <Text
+            style={[styles.description, { color: colors.textSoft }]}
+            numberOfLines={2}
+          >
+            {memory.description}
+          </Text>
+        )}
+
+        {/* Comments */}
+        {memory.comments && memory.comments > 0 && (
+          <TouchableOpacity onPress={handlePress}>
+            <Text style={[styles.viewComments, { color: colors.textSoft }]}>
+              View all {memory.comments}{" "}
+              {memory.comments === 1 ? "comment" : "comments"}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Emotion Spectrum Preview */}
+        {memory.emotionSpectrum && (
+          <View
+            style={[
+              styles.emotionPreview,
+              {
+                backgroundColor: colors.chipBg,
+                borderColor: emotionColor + "44",
+              },
+            ]}
+          >
+            <View style={styles.emotionRow}>
+              <Ionicons name="flash" size={12} color="#f59e0b" />
+              <View
+                style={[styles.emotionBar, { backgroundColor: colors.border }]}
+              >
+                <View
+                  style={[
+                    styles.emotionFill,
+                    {
+                      width: `${memory.emotionSpectrum?.energy ?? 0}%`,
+                      backgroundColor: "#f59e0b",
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[styles.emotionValue, { color: colors.textSoft }]}>
+                {memory.emotionSpectrum?.energy ?? 0}%
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Image Zoom Viewer */}
+        <ImageZoomViewer
+          visible={showImageZoom}
+          imageURL={memory.imageURL || ""}
+          onClose={() => setShowImageZoom(false)}
+          onShare={handleShareImage}
+        />
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 

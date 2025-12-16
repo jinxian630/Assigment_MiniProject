@@ -438,8 +438,17 @@ export default function MemoryPostDetail() {
         ) : (
           <KeyboardAvoidingView
             style={styles.flex}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 80}
+            behavior={
+              Platform.OS === "ios"
+                ? "padding"
+                : Platform.OS === "android"
+                ? "height"
+                : undefined
+            }
+            keyboardVerticalOffset={
+              Platform.OS === "ios" ? 100 : Platform.OS === "android" ? 80 : 0
+            }
+            enabled={Platform.OS !== "web"}
           >
             <ScrollView
               style={styles.scrollView}
