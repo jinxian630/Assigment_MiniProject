@@ -57,6 +57,12 @@ import {
 } from "./utils/sharedUI";
 import { buildTaskIndexStyles } from "./TaskStyles";
 import { buildTaskPdfHtml } from "./utils/pdfUtils";
+import {
+  notifyAssignees,
+  initializeNotifications,
+  sendTestNotification,
+  setupNotificationListener,
+} from "./utils/notifications";
 
 // Type definitions
 
@@ -318,6 +324,42 @@ export default function TaskMenuScreen() {
   };
 
   // Data loading
+
+  // Initialize notifications and setup Firestore listener on mount
+  useEffect(() => {
+    let unsubscribeNotifications: (() => void) | null = null;
+
+    initializeNotifications()
+      .then((granted) => {
+        if (granted) {
+          console.log("✅ Notification permissions granted");
+
+          // Setup Firestore listener for notifications
+          const user = auth.currentUser;
+          if (user?.email) {
+            unsubscribeNotifications = setupNotificationListener(user.email);
+            console.log("✅ Firestore notification listener setup");
+          }
+        } else {
+          console.warn("⚠️ Notification permissions not granted");
+          Alert.alert(
+            "Notifications",
+            "Please enable notifications in your device settings to receive task updates."
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("❌ Failed to initialize notifications:", error);
+      });
+
+    // Cleanup: unsubscribe when component unmounts
+    return () => {
+      if (unsubscribeNotifications) {
+        unsubscribeNotifications();
+        console.log("🔇 Notification listener unsubscribed");
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "Tasks"), orderBy("createdAt", "desc"));
@@ -775,6 +817,36 @@ export default function TaskMenuScreen() {
         mentions,
       });
 
+      // Notify assignees, creator, and guests about the new comment
+      const assignees = Array.isArray(selectedTask.assignedTo)
+        ? selectedTask.assignedTo
+        : selectedTask.assignedTo
+        ? [selectedTask.assignedTo]
+        : [];
+
+      const guests = Array.isArray(selectedTask.guests)
+        ? selectedTask.guests
+        : [];
+
+      const creatorEmail = selectedTask.CreatedUser?.email;
+
+      if (user.email) {
+        // Create notifications in Firestore for assignees (they will receive on their devices)
+        await notifyAssignees(
+          assignees,
+          creatorEmail,
+          guests,
+          user.email,
+          selectedTask.taskName,
+          user.displayName || "User",
+          "comment",
+          cleanText,
+          selectedTask.id
+        ).catch((error) => {
+          console.error("Notification error (non-critical):", error);
+        });
+      }
+
       setCommentText("");
       setReplyTo(null);
     } catch (e) {
@@ -954,6 +1026,37 @@ export default function TaskMenuScreen() {
           email: user.email || "",
         },
       });
+
+      // Notify assignees, creator, and guests about the new chat message
+      const assignees = Array.isArray(selectedTask.assignedTo)
+        ? selectedTask.assignedTo
+        : selectedTask.assignedTo
+        ? [selectedTask.assignedTo]
+        : [];
+
+      const guests = Array.isArray(selectedTask.guests)
+        ? selectedTask.guests
+        : [];
+
+      const creatorEmail = selectedTask.CreatedUser?.email;
+
+      if (user.email) {
+        // Create notifications in Firestore for assignees (they will receive on their devices)
+        await notifyAssignees(
+          assignees,
+          creatorEmail,
+          guests,
+          user.email,
+          selectedTask.taskName,
+          user.displayName || "User",
+          "chat",
+          clean,
+          selectedTask.id
+        ).catch((error) => {
+          console.error("Notification error (non-critical):", error);
+        });
+      }
+
       setChatText("");
     } catch (e) {
       Alert.alert("Error", "Failed to send chat message.");
@@ -1229,6 +1332,30 @@ export default function TaskMenuScreen() {
           />
           <Text style={styles.headerTitle}>My Task</Text>
           <View style={styles.headerRight}>
+            <IconButton
+              icon="notifications-outline"
+              onPress={async () => {
+                try {
+                  console.log("🔔 Test notification button pressed");
+                  const notificationId = await sendTestNotification();
+                  console.log("✅ Notification ID returned:", notificationId);
+                  Alert.alert(
+                    "Test Notification",
+                    `Notification scheduled! ID: ${notificationId}\n\nA notification should appear in 1 second. Check your notification tray!`
+                  );
+                } catch (error: any) {
+                  console.error("❌ Test notification error details:", error);
+                  const errorMessage =
+                    error?.message || String(error) || "Unknown error";
+                  Alert.alert(
+                    "Notification Error",
+                    `${errorMessage}\n\nTroubleshooting:\n1. Check device settings → Notifications\n2. Make sure you're on a physical device\n3. Check console logs for details`
+                  );
+                }
+              }}
+              variant="secondary"
+              size="small"
+            />
             <IconButton
               icon={theme.isDark ? "moon" : "sunny"}
               onPress={() => toggleTheme && toggleTheme()}
