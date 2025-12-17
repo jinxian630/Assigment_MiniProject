@@ -1,11 +1,5 @@
 // app/modules/task-management/TaskMenuScreen.tsx
-import React, {
-  useEffect,
-  useMemo,
-  useState,
-  useCallback,
-  useRef,
-} from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -18,7 +12,6 @@ import {
   TextInput as RNTextInput,
   ScrollView,
   Platform,
-  Dimensions,
   Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,11 +19,6 @@ import { useRouter } from "expo-router";
 import * as Print from "expo-print";
 import { shareAsync } from "expo-sharing";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  awardTaskCompletionOnce,
-  awardSubtaskCompletion,
-  removeSubtaskCompletion,
-} from "./utils/gamification";
 import {
   getFirestore,
   collection,
@@ -49,7 +37,6 @@ import { IconButton } from "@/components/common/IconButton";
 import { Card } from "@/components/common/Card";
 import { useTheme } from "@/hooks/useTheme";
 
-const { width: SCREEN_W } = Dimensions.get("window");
 import {
   MODULE_COLOR,
   DatePickerModal,
@@ -58,140 +45,33 @@ import {
 import { buildTaskIndexStyles } from "./TaskStyles";
 import { buildTaskPdfHtml } from "./utils/pdfUtils";
 import {
-  notifyAssignees,
   initializeNotifications,
   sendTestNotification,
   setupNotificationListener,
 } from "./utils/notifications";
+import {
+  awardTaskCompletionOnce,
+  awardSubtaskCompletion,
+} from "./utils/gamification";
+import {
+  canUserSeeTask,
+  computePriorityScore,
+  isOverdue,
+} from "./utils/taskUtils";
+import { buildThreadTree } from "./utils/commentUtils";
+import { useTaskOperations } from "./hooks/useTaskOperations";
+import { useCommentHandlers } from "./hooks/useCommentHandlers";
+import { useChatHandlers } from "./hooks/useChatHandlers";
+import { useMentions } from "./hooks/useMentions";
 
-// Type definitions
-
-type TaskType = {
-  id: string;
-  taskName: string;
-  details?: string;
-  startDate?: number | null;
-  dueDate?: number | null;
-  assignedTo?: string | string[];
-  completed?: boolean;
-  createdAt: number;
-  updatedAt: number;
-  CreatedUser: { id: string; name: string; email?: string };
-  priorityScore?: number;
-  guests?: string[];
-};
-
-type CommentType = {
-  id: string;
-  text: string;
-  createdAt: number;
-  updatedAt?: number;
-  user: { id: string; name: string; email?: string };
-  parentId?: string | null;
-  mentions?: string[];
-};
-
-type ChatMessageType = {
-  id: string;
-  text: string;
-  createdAt: number;
-  user: { id: string; name: string; email?: string };
-};
-
-type FilterType = "all" | "active" | "completed" | "overdue";
-type CommentNode = CommentType & { replies: CommentNode[] };
-
-type CalendarTarget =
-  | "taskStart"
-  | "taskDue"
-  | "subtaskStart"
-  | "subtaskDue"
-  | "newStart"
-  | "newDue"
-  | null;
-
-// Permission checks
-
-const canUserSeeTask = (task: TaskType, user: any | null): boolean => {
-  if (!user) return false;
-
-  const uid = user.uid;
-  const email = (user.email || "").toLowerCase();
-
-  if (task?.CreatedUser?.id === uid) return true;
-
-  const assignedList: string[] = Array.isArray(task.assignedTo)
-    ? task.assignedTo
-    : task.assignedTo
-    ? [task.assignedTo]
-    : [];
-
-  if (
-    assignedList.some(
-      (addr) => typeof addr === "string" && addr.toLowerCase() === email
-    )
-  ) {
-    return true;
-  }
-
-  if (Array.isArray(task.guests)) {
-    const guestEmails = task.guests
-      .filter((g) => typeof g === "string")
-      .map((g) => g.toLowerCase());
-    if (guestEmails.includes(email)) return true;
-  }
-
-  return false;
-};
-
-const canUserCommentOnTask = (task: TaskType, user: any | null): boolean => {
-  return canUserSeeTask(task, user);
-};
-
-// Priority calculation
-
-const computePriorityScore = (params: {
-  dueDate?: number | null;
-  startDate?: number | null;
-  completed?: boolean;
-  assigneeCount?: number;
-}) => {
-  const { dueDate, startDate, completed, assigneeCount = 0 } = params;
-
-  if (completed) return 0;
-
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const todayStart = now.getTime();
-
-  let score = 10;
-
-  if (typeof dueDate === "number") {
-    const d = new Date(dueDate);
-    d.setHours(0, 0, 0, 0);
-    const diffDays = Math.floor(
-      (d.getTime() - todayStart) / (24 * 60 * 60 * 1000)
-    );
-
-    if (diffDays < 0) {
-      score = 100 + Math.min(30, Math.abs(diffDays) * 3);
-    } else if (diffDays === 0) {
-      score = 90;
-    } else {
-      score = Math.max(20, 80 - diffDays * 4);
-    }
-  } else {
-    score = 15;
-  }
-
-  if (startDate && startDate <= todayStart) score += 5;
-  score += Math.min(15, assigneeCount * 3);
-
-  if (score < 0) score = 0;
-  if (score > 150) score = 150;
-
-  return Math.round(score);
-};
+import type {
+  TaskType,
+  CommentType,
+  ChatMessageType,
+  FilterType,
+  CommentNode,
+  CalendarTarget,
+} from "./utils/types";
 
 const summaryCardStyle = (
   theme: any,
@@ -211,38 +91,6 @@ const summaryCardStyle = (
     paddingHorizontal: theme.spacing.sm,
     backgroundColor: theme.isDark ? "#020617" : "#F9FAFB",
   });
-};
-
-const extractMentions = (text: string): string[] => {
-  const matches = text.match(/@([a-zA-Z0-9._%+-]+@gmail\.com)/g) || [];
-  const emails = matches.map((m) => m.slice(1).toLowerCase());
-  return Array.from(new Set(emails));
-};
-
-const escapeHtml = (s: string) =>
-  (s || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-// Comment thread handling
-
-const buildThreadTree = (items: CommentType[]): CommentNode[] => {
-  const map = new Map<string, CommentNode>();
-  items.forEach((c) => map.set(c.id, { ...c, replies: [] }));
-
-  const roots: CommentNode[] = [];
-
-  map.forEach((node) => {
-    const pid = node.parentId ? String(node.parentId) : "";
-    if (pid && map.has(pid)) map.get(pid)!.replies.push(node);
-    else roots.push(node);
-  });
-
-  const sortRec = (arr: CommentNode[]) => {
-    arr.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-    arr.forEach((n) => sortRec(n.replies));
-  };
-  sortRec(roots);
-
-  return roots;
 };
 
 // Main component
@@ -284,13 +132,6 @@ export default function TaskMenuScreen() {
 
   const [calendarTarget, setCalendarTarget] = useState<CalendarTarget>(null);
 
-  // comments
-  const [comments, setComments] = useState<CommentType[]>([]);
-  const [commentText, setCommentText] = useState<string>("");
-  const [replyTo, setReplyTo] = useState<CommentType | null>(null);
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingCommentText, setEditingCommentText] = useState<string>("");
-
   // ✅ Expand/collapse
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggleExpand = (id: string) =>
@@ -301,21 +142,57 @@ export default function TaskMenuScreen() {
 
   // ✅ Task chat drawer
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessageType[]>([]);
-  const [chatText, setChatText] = useState("");
 
-  // mention suggestions
-  const [showMentionBox, setShowMentionBox] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
+  // Custom hooks
+  const { handleCompleteTaskToggle, handleDeleteTask, handleSaveMainTask } =
+    useTaskOperations();
+
+  const {
+    comments,
+    commentText,
+    setCommentText,
+    replyTo,
+    setReplyTo,
+    editingCommentId,
+    editingCommentText,
+    setEditingCommentText,
+    handleAddComment,
+    handleDeleteComment,
+    startEditComment,
+    cancelEditComment,
+    saveEditComment,
+    isMyComment,
+  } = useCommentHandlers(selectedTask);
+
+  const { chatMessages, chatText, setChatText, handleSendChat } =
+    useChatHandlers(selectedTask);
+
+  const {
+    showMentionBox,
+    mentionQuery,
+    filteredMentionCandidates,
+    handleChangeCommentText: handleMentionTextChange,
+    insertMention: insertMentionHandler,
+  } = useMentions(selectedTask, commentText);
+
+  const handleChangeCommentText = (t: string) => {
+    handleMentionTextChange(t, setCommentText);
+  };
+
+  const insertMention = (email: string) => {
+    insertMentionHandler(email, setCommentText);
+  };
 
   const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
 
-  const formatDate = (date: Date) =>
-    date.toLocaleDateString("en-GB", {
+  const formatDate = (date: Date | null) => {
+    if (!date) return "Set date";
+    return date.toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
     });
+  };
 
   const formatTime = (ms?: number) => {
     if (!ms) return "";
@@ -382,21 +259,12 @@ export default function TaskMenuScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Load subtasks (comments and chat are handled by hooks)
   useEffect(() => {
-    if (!selectedTask?.id) return;
-
-    const unsubComments = onSnapshot(
-      query(
-        collection(db, "Tasks", selectedTask.id, "Comments"),
-        orderBy("createdAt", "asc")
-      ),
-      (snapshot) => {
-        const all: CommentType[] = snapshot.docs.map(
-          (docSnap) => ({ id: docSnap.id, ...docSnap.data() } as CommentType)
-        );
-        setComments(all);
-      }
-    );
+    if (!selectedTask?.id) {
+      setSubtasks([]);
+      return;
+    }
 
     const unsubSubtasks = onSnapshot(
       query(
@@ -411,37 +279,12 @@ export default function TaskMenuScreen() {
       }
     );
 
-    const unsubChat = onSnapshot(
-      query(
-        collection(db, "Tasks", selectedTask.id, "ChatMessages"),
-        orderBy("createdAt", "asc")
-      ),
-      (snapshot) => {
-        const all: ChatMessageType[] = snapshot.docs.map(
-          (docSnap) =>
-            ({ id: docSnap.id, ...docSnap.data() } as ChatMessageType)
-        );
-        setChatMessages(all);
-      }
-    );
-
-    return () => {
-      unsubComments();
-      unsubSubtasks();
-      unsubChat();
-    };
+    return () => unsubSubtasks();
   }, [selectedTask?.id, db]);
 
   useEffect(() => {
-    setEditingCommentId(null);
-    setEditingCommentText("");
-    setCommentText("");
-    setReplyTo(null);
     setExpanded({});
-    setShowMentionBox(false);
-    setMentionQuery("");
     setChatOpen(false);
-    setChatText("");
   }, [selectedTask?.id]);
 
   useEffect(() => {
@@ -475,25 +318,11 @@ export default function TaskMenuScreen() {
 
   // Filtering and overdue tasks
 
-  const today = useMemo(() => {
-    const t = new Date();
-    t.setHours(0, 0, 0, 0);
-    return t;
-  }, []);
-  const todayStart = today.getTime();
-
-  const isTimestampOverdue = (due?: number | null) => {
-    if (typeof due !== "number") return false;
-    const d = new Date(due);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime() < todayStart;
-  };
-
   const filteredTasks = useMemo(() => {
     let list = tasks;
 
     list = list.filter((t) => {
-      const overdue = isTimestampOverdue(t.dueDate ?? undefined);
+      const overdue = isOverdue(t.dueDate ?? undefined);
       switch (filter) {
         case "active":
           return !t.completed;
@@ -520,7 +349,7 @@ export default function TaskMenuScreen() {
   }, [tasks, filter]);
 
   const overdueCount = filteredTasks.filter(
-    (t) => !t.completed && isTimestampOverdue(t.dueDate ?? undefined)
+    (t) => !t.completed && isOverdue(t.dueDate ?? undefined)
   ).length;
   const activeCount = filteredTasks.filter((t) => !t.completed).length;
   const completedCount = filteredTasks.filter((t) => t.completed).length;
@@ -549,93 +378,44 @@ export default function TaskMenuScreen() {
     setMainAssignedList((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSaveMainTask = async () => {
+  // Task operations handlers
+  const handleSaveMainTaskWrapper = useCallback(() => {
     if (!selectedTask) return;
+    handleSaveMainTask(
+      selectedTask,
+      editingTaskName,
+      editingTaskDetails,
+      taskStartDate,
+      taskDueDate,
+      mainAssignedList
+    );
+  }, [
+    selectedTask,
+    editingTaskName,
+    editingTaskDetails,
+    taskStartDate,
+    taskDueDate,
+    mainAssignedList,
+    handleSaveMainTask,
+  ]);
 
-    const trimmedName = editingTaskName.trim();
-    if (!trimmedName) {
-      Alert.alert("Error", "Task name cannot be empty");
-      return;
-    }
-
-    try {
-      const startTimestamp = taskStartDate ? taskStartDate.getTime() : null;
-      const dueTimestamp = taskDueDate ? taskDueDate.getTime() : null;
-      const assigneeCount = mainAssignedList.length;
-
-      const priorityScore = computePriorityScore({
-        dueDate: dueTimestamp ?? undefined,
-        startDate: startTimestamp ?? undefined,
-        completed: selectedTask.completed,
-        assigneeCount,
-      });
-
-      const ref = doc(db, "Tasks", selectedTask.id);
-
-      await updateDoc(ref, {
-        taskName: trimmedName,
-        details: editingTaskDetails,
-        startDate: startTimestamp,
-        dueDate: dueTimestamp,
-        assignedTo: mainAssignedList,
-        priorityScore,
-        updatedAt: Date.now(),
-      });
-
-      Alert.alert("Saved", "Task updated successfully.");
-    } catch (error) {
-      console.error("Failed to update task:", error);
-      Alert.alert("Error", "Failed to update task");
-    }
-  };
-
-  const handleCompleteTaskToggle = async (task: TaskType) => {
-    if (!task) return;
-
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Not logged in", "Please log in to update tasks.");
-      return;
-    }
-
-    try {
-      const newCompleted = !task.completed;
-
-      await updateDoc(doc(db, "Tasks", task.id), {
-        completed: newCompleted,
-        updatedAt: Date.now(),
-      });
-
-      if (newCompleted) {
-        await awardTaskCompletionOnce(user.uid, task.id);
-      }
-    } catch (error) {
-      console.error("Failed to update task:", error);
-      Alert.alert("Error", "Failed to update task");
-    }
-  };
-
-  const handleDeleteTask = async (taskId: string) => {
-    if (!taskId) return;
-
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Not logged in", "Please log in to delete tasks.");
-      return;
-    }
-
-    try {
-      await deleteDoc(doc(db, "Tasks", taskId));
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      if (selectedTask?.id === taskId) {
-        setSelectedTask(null);
-        setModalVisible(false);
-      }
-    } catch (error) {
-      console.error("Failed to delete task:", error);
-      Alert.alert("Error", "Failed to delete task");
-    }
-  };
+  const handleDeleteTaskWrapper = useCallback(
+    async (taskId: string) => {
+      await handleDeleteTask(
+        taskId,
+        () => {
+          if (selectedTask?.id === taskId) {
+            setSelectedTask(null);
+            setModalVisible(false);
+          }
+        },
+        (id) => {
+          setTasks((prev) => prev.filter((t) => t.id !== id));
+        }
+      );
+    },
+    [selectedTask, handleDeleteTask]
+  );
 
   // Subtask operations
 
@@ -667,8 +447,9 @@ export default function TaskMenuScreen() {
         }
       );
 
-      if (newCompleted) await awardSubtaskCompletion(user.uid);
-      else await removeSubtaskCompletion(user.uid);
+      if (newCompleted) {
+        await awardSubtaskCompletion(user.uid);
+      }
     } catch (error) {
       Alert.alert("Error", "Failed to update subtask");
     }
@@ -735,249 +516,8 @@ export default function TaskMenuScreen() {
     }
   };
 
-  // Comment management
-
-  const isMyComment = (c: CommentType) => {
-    const user = auth.currentUser;
-    return !!user && c?.user?.id === user.uid;
-  };
-
-  const handleDeleteComment = async (comment: CommentType) => {
-    if (!selectedTask) return;
-
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Not logged in", "Please log in to manage comments.");
-      return;
-    }
-
-    if (!isMyComment(comment)) {
-      Alert.alert("Permission denied", "You can only delete your own comment.");
-      return;
-    }
-    if (!canUserCommentOnTask(selectedTask, user)) {
-      Alert.alert(
-        "Permission denied",
-        "You cannot manage comments for this task."
-      );
-      return;
-    }
-
-    try {
-      await deleteDoc(
-        doc(db, "Tasks", selectedTask.id, "Comments", comment.id)
-      );
-    } catch (e) {
-      Alert.alert("Error", "Failed to delete comment.");
-    }
-  };
-
-  const handleAddComment = async () => {
-    if (!selectedTask) return;
-
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Not logged in", "Please log in to comment.");
-      return;
-    }
-
-    if (!canUserCommentOnTask(selectedTask, user)) {
-      Alert.alert(
-        "Permission denied",
-        "Only creator, assignees, and invited guests can comment."
-      );
-      return;
-    }
-
-    if (!commentText.trim()) return;
-
-    if (editingCommentId) {
-      Alert.alert(
-        "Editing",
-        "Finish editing first before adding a new comment."
-      );
-      return;
-    }
-
-    try {
-      const now = Date.now();
-      const cleanText = commentText.trim();
-      const mentions = extractMentions(cleanText);
-
-      await addDoc(collection(db, "Tasks", selectedTask.id, "Comments"), {
-        text: cleanText,
-        createdAt: now,
-        updatedAt: now,
-        user: {
-          id: user.uid,
-          name: user.displayName || "User",
-          email: user.email || "",
-        },
-        parentId: replyTo?.id ?? null,
-        mentions,
-      });
-
-      // Notify assignees, creator, and guests about the new comment
-      const assignees = Array.isArray(selectedTask.assignedTo)
-        ? selectedTask.assignedTo
-        : selectedTask.assignedTo
-        ? [selectedTask.assignedTo]
-        : [];
-
-      const guests = Array.isArray(selectedTask.guests)
-        ? selectedTask.guests
-        : [];
-
-      const creatorEmail = selectedTask.CreatedUser?.email;
-
-      if (user.email) {
-        // Create notifications in Firestore for assignees (they will receive on their devices)
-        await notifyAssignees(
-          assignees,
-          creatorEmail,
-          guests,
-          user.email,
-          selectedTask.taskName,
-          user.displayName || "User",
-          "comment",
-          cleanText,
-          selectedTask.id
-        ).catch((error) => {
-          console.error("Notification error (non-critical):", error);
-        });
-      }
-
-      setCommentText("");
-      setReplyTo(null);
-    } catch (e) {
-      Alert.alert("Error", "Failed to add comment.");
-    }
-  };
-
-  const startEditComment = (comment: CommentType) => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    if (!isMyComment(comment)) {
-      Alert.alert("Permission denied", "You can only edit your own comment.");
-      return;
-    }
-
-    setEditingCommentId(comment.id);
-    setEditingCommentText(comment.text);
-  };
-
-  const cancelEditComment = () => {
-    setEditingCommentId(null);
-    setEditingCommentText("");
-  };
-
-  const saveEditComment = async () => {
-    if (!selectedTask || !editingCommentId) return;
-
-    const user = auth.currentUser;
-    if (!user) return;
-
-    if (!canUserCommentOnTask(selectedTask, user)) {
-      Alert.alert(
-        "Permission denied",
-        "Only creator, assignees, and invited guests can comment."
-      );
-      return;
-    }
-
-    const newText = editingCommentText.trim();
-    if (!newText) {
-      Alert.alert("Invalid", "Comment cannot be empty.");
-      return;
-    }
-
-    try {
-      const mentions = extractMentions(newText);
-
-      await updateDoc(
-        doc(db, "Tasks", selectedTask.id, "Comments", editingCommentId),
-        {
-          text: newText,
-          updatedAt: Date.now(),
-          mentions,
-        }
-      );
-
-      cancelEditComment();
-    } catch (e) {
-      Alert.alert("Error", "Failed to update comment.");
-    }
-  };
-
-  // User mentions
-
-  const getMentionCandidates = useCallback(() => {
-    const emails = new Set<string>();
-
-    if (selectedTask?.CreatedUser?.email)
-      emails.add(String(selectedTask.CreatedUser.email).toLowerCase());
-
-    const assigned = Array.isArray(selectedTask?.assignedTo)
-      ? selectedTask!.assignedTo
-      : selectedTask?.assignedTo
-      ? [selectedTask.assignedTo]
-      : [];
-
-    assigned.forEach(
-      (e) => typeof e === "string" && emails.add(e.toLowerCase())
-    );
-    (selectedTask?.guests || []).forEach(
-      (e) => typeof e === "string" && emails.add(e.toLowerCase())
-    );
-
-    return Array.from(emails);
-  }, [selectedTask]);
-
-  const mentionCandidates = useMemo(
-    () => getMentionCandidates(),
-    [getMentionCandidates]
-  );
-
-  const filteredMentionCandidates = useMemo(() => {
-    const q = mentionQuery.trim().toLowerCase();
-    if (!q) return mentionCandidates.slice(0, 6);
-    return mentionCandidates.filter((e) => e.includes(q)).slice(0, 6);
-  }, [mentionCandidates, mentionQuery]);
-
-  const handleChangeCommentText = (t: string) => {
-    setCommentText(t);
-
-    const lastAt = t.lastIndexOf("@");
-    if (lastAt === -1) {
-      setShowMentionBox(false);
-      setMentionQuery("");
-      return;
-    }
-
-    const afterAt = t.slice(lastAt + 1);
-    if (afterAt.includes(" ") || afterAt.includes("\n")) {
-      setShowMentionBox(false);
-      setMentionQuery("");
-      return;
-    }
-
-    setShowMentionBox(true);
-    setMentionQuery(afterAt);
-  };
-
-  const insertMention = (email: string) => {
-    const t = commentText;
-    const lastAt = t.lastIndexOf("@");
-    if (lastAt === -1) return;
-
-    const newText = t.slice(0, lastAt) + `@${email} `;
-    setCommentText(newText);
-    setShowMentionBox(false);
-    setMentionQuery("");
-  };
-
-  const renderMentionText = (text: string, stylesObj: any) => {
+  // Render mention text helper
+  const renderMentionText = useCallback((text: string, stylesObj: any) => {
     const parts = (text || "").split(/(@[a-zA-Z0-9._%+-]+@gmail\.com)/g);
 
     return (
@@ -993,75 +533,9 @@ export default function TaskMenuScreen() {
         })}
       </Text>
     );
-  };
+  }, []);
 
-  // Task chat
-
-  const handleSendChat = async () => {
-    if (!selectedTask) return;
-
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Not logged in", "Please log in to chat.");
-      return;
-    }
-    if (!canUserCommentOnTask(selectedTask, user)) {
-      Alert.alert(
-        "Permission denied",
-        "Only creator, assignees, and invited guests can chat."
-      );
-      return;
-    }
-
-    const clean = chatText.trim();
-    if (!clean) return;
-
-    try {
-      await addDoc(collection(db, "Tasks", selectedTask.id, "ChatMessages"), {
-        text: clean,
-        createdAt: Date.now(),
-        user: {
-          id: user.uid,
-          name: user.displayName || "User",
-          email: user.email || "",
-        },
-      });
-
-      // Notify assignees, creator, and guests about the new chat message
-      const assignees = Array.isArray(selectedTask.assignedTo)
-        ? selectedTask.assignedTo
-        : selectedTask.assignedTo
-        ? [selectedTask.assignedTo]
-        : [];
-
-      const guests = Array.isArray(selectedTask.guests)
-        ? selectedTask.guests
-        : [];
-
-      const creatorEmail = selectedTask.CreatedUser?.email;
-
-      if (user.email) {
-        // Create notifications in Firestore for assignees (they will receive on their devices)
-        await notifyAssignees(
-          assignees,
-          creatorEmail,
-          guests,
-          user.email,
-          selectedTask.taskName,
-          user.displayName || "User",
-          "chat",
-          clean,
-          selectedTask.id
-        ).catch((error) => {
-          console.error("Notification error (non-critical):", error);
-        });
-      }
-
-      setChatText("");
-    } catch (e) {
-      Alert.alert("Error", "Failed to send chat message.");
-    }
-  };
+  // Chat handlers are now in useChatHandlers hook
 
   // PDF generation
 
@@ -1230,8 +704,7 @@ export default function TaskMenuScreen() {
               <TouchableOpacity
                 onPress={() => {
                   setReplyTo(node);
-                  setEditingCommentId(null);
-                  setEditingCommentText("");
+                  cancelEditComment();
                 }}
               >
                 <Ionicons
@@ -1549,11 +1022,11 @@ export default function TaskMenuScreen() {
           }
           renderItem={({ item }) => {
             const isCompleted = !!item.completed;
-            const isOverdue = isTimestampOverdue(item.dueDate ?? undefined);
+            const isOverdueTask = isOverdue(item.dueDate ?? undefined);
 
             let accentColor = MODULE_COLOR;
             if (isCompleted) accentColor = "#9CA3AF";
-            else if (isOverdue) accentColor = "#EF4444";
+            else if (isOverdueTask) accentColor = "#EF4444";
 
             const neonColor = isCompleted
               ? "rgba(148,163,184,0.45)"
@@ -1573,17 +1046,17 @@ export default function TaskMenuScreen() {
 
             const statusText = isCompleted
               ? "DONE"
-              : isOverdue
+              : isOverdueTask
               ? "OVERDUE"
               : "ACTIVE";
             const statusBg = isCompleted
               ? "rgba(148,163,184,0.18)"
-              : isOverdue
+              : isOverdueTask
               ? "rgba(239,68,68,0.18)"
               : "rgba(34,197,94,0.18)";
             const statusColor = isCompleted
               ? "#9CA3AF"
-              : isOverdue
+              : isOverdueTask
               ? "#EF4444"
               : "#22C55E";
 
@@ -1758,7 +1231,7 @@ export default function TaskMenuScreen() {
                   <TouchableOpacity
                     onPress={(e: any) => {
                       e?.stopPropagation?.();
-                      handleDeleteTask(item.id);
+                      handleDeleteTaskWrapper(item.id);
                     }}
                     style={{
                       paddingHorizontal: 6,
@@ -2098,8 +1571,7 @@ export default function TaskMenuScreen() {
                       <TouchableOpacity
                         onPress={() => {
                           setModalVisible(false);
-                          setEditingCommentId(null);
-                          setEditingCommentText("");
+                          cancelEditComment();
                           setChatOpen(false);
                         }}
                         style={{ padding: 4 }}
@@ -2509,7 +1981,7 @@ export default function TaskMenuScreen() {
                     {/* Save & Delete */}
                     <View style={{ marginTop: 16 }}>
                       <TouchableOpacity
-                        onPress={handleSaveMainTask}
+                        onPress={handleSaveMainTaskWrapper}
                         style={[
                           styles.chipButton,
                           { backgroundColor: MODULE_COLOR },
@@ -2524,7 +1996,8 @@ export default function TaskMenuScreen() {
 
                       <TouchableOpacity
                         onPress={() =>
-                          selectedTask && handleDeleteTask(selectedTask.id)
+                          selectedTask &&
+                          handleDeleteTaskWrapper(selectedTask.id)
                         }
                         style={[
                           styles.chipButton,

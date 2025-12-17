@@ -45,4 +45,6 @@ export type CalendarTarget =
   | "taskDue"
   | "subtaskStart"
   | "subtaskDue"
+  | "newStart"
+  | "newDue"
   | null;

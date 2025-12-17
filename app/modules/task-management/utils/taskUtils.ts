@@ -147,6 +147,16 @@ export const isTaskAssignedToUser = (
 };
 
 /**
+ * Checks if a user can comment on a task (wrapper for canUserSeeTask)
+ */
+export const canUserCommentOnTask = (
+  task: TaskType,
+  user: any | null
+): boolean => {
+  return canUserSeeTask(task, user);
+};
+
+/**
  * Extracts @mentions from text (Gmail format)
  */
 export const extractMentions = (text: string): string[] => {

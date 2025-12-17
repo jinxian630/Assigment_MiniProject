@@ -1,4 +1,5 @@
 import type { CommentType, CommentNode } from "./types";
+import { isTaskAssignedToUser } from "./taskUtils";
 
 /**
  * Builds a thread tree from a flat list of comments
@@ -33,18 +34,4 @@ export const canUserCommentOnTask = (task: any, user: any | null): boolean => {
   return (
     task?.CreatedUser?.id === user.uid || isTaskAssignedToUser(task, user.email)
   );
-};
-
-// Helper function reference (should be imported from taskUtils, but avoiding circular dependency)
-const isTaskAssignedToUser = (task: any, email: string | null): boolean => {
-  if (!email) return false;
-  const assigned = task.assignedTo;
-  if (!assigned) return false;
-  const emailLower = email.toLowerCase();
-  if (Array.isArray(assigned)) {
-    return assigned.some(
-      (e: any) => typeof e === "string" && e.toLowerCase() === emailLower
-    );
-  }
-  return typeof assigned === "string" && assigned.toLowerCase() === emailLower;
 };
