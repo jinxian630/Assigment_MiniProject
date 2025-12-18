@@ -279,6 +279,53 @@ export default function AIInsightsPage() {
     return getHighlights(filteredMemories);
   }, [filteredMemories]);
 
+  // Get memories to revisit (1+ days old, worth reflecting on)
+  const memoriesToRevisit = useMemo(() => {
+    if (memories.length === 0) return [];
+
+    const now = Date.now();
+    const oneDayMs = 1 * 24 * 60 * 60 * 1000; // Minimum 1 day old
+    const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+
+    return memories
+      .filter((m) => {
+        const daysSinceMs = now - m.startDate;
+        // Between 1 day and 1 year old
+        return daysSinceMs >= oneDayMs && daysSinceMs <= oneYearMs;
+      })
+      .map((memory) => {
+        const daysSince = Math.floor(
+          (now - memory.startDate) / (24 * 60 * 60 * 1000)
+        );
+        let prompt = "";
+
+        if (daysSince >= 365) {
+          prompt = "It's been a year since this moment";
+        } else if (daysSince >= 180) {
+          prompt = "6 months ago you wrote this";
+        } else if (daysSince >= 90) {
+          prompt = "3 months have passed since this memory";
+        } else if (daysSince >= 60) {
+          prompt = "2 months ago you captured this";
+        } else if (daysSince >= 30) {
+          prompt = "A month ago you captured this";
+        } else if (daysSince >= 7) {
+          prompt = `${daysSince} days ago you felt this way`;
+        } else if (daysSince >= 1) {
+          prompt =
+            daysSince === 1
+              ? "Yesterday you wrote this"
+              : `${daysSince} days ago`;
+        } else {
+          prompt = "Recently you captured this";
+        }
+
+        return { memory, daysSince, prompt };
+      })
+      .sort((a, b) => b.daysSince - a.daysSince) // Oldest first
+      .slice(0, 3); // Top 3
+  }, [memories]);
+
   if (loading) {
     return (
       <GradientBackground>
@@ -923,6 +970,110 @@ export default function AIInsightsPage() {
                 </View>
               )}
 
+              {/* Memory Revisit / Time Capsule Section */}
+              {memoriesToRevisit.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeaderRow}>
+                    <Ionicons
+                      name="time-outline"
+                      size={22}
+                      color={PRIMARY_PURPLE}
+                    />
+                    <Text
+                      style={[
+                        styles.sectionTitle,
+                        { color: colors.text, marginBottom: 0, marginLeft: 8 },
+                      ]}
+                    >
+                      Time to Revisit
+                    </Text>
+                  </View>
+                  <Text
+                    style={[styles.revisitSubtitle, { color: colors.textSoft }]}
+                  >
+                    Reflect on these moments from your past
+                  </Text>
+                  {memoriesToRevisit.map((item, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      onPress={() => {
+                        router.push({
+                          pathname: "/modules/memory-book/MemoryPostDetail",
+                          params: { memoryId: item.memory.id },
+                        });
+                      }}
+                      style={[
+                        styles.revisitCard,
+                        createNeonCardShell("#f59e0b", isDarkMode, {
+                          padding: 0,
+                          overflow: "hidden",
+                        }),
+                        { backgroundColor: colors.surface },
+                      ]}
+                    >
+                      <View style={styles.revisitContent}>
+                        {item.memory.imageURL && (
+                          <Image
+                            source={{ uri: item.memory.imageURL }}
+                            style={styles.revisitImage}
+                          />
+                        )}
+                        <View style={styles.revisitTextContent}>
+                          <View
+                            style={[
+                              styles.revisitBadge,
+                              { backgroundColor: "#f59e0b20" },
+                            ]}
+                          >
+                            <Ionicons
+                              name="hourglass-outline"
+                              size={12}
+                              color="#f59e0b"
+                            />
+                            <Text
+                              style={[
+                                styles.revisitBadgeText,
+                                { color: "#f59e0b" },
+                              ]}
+                            >
+                              {item.prompt}
+                            </Text>
+                          </View>
+                          <Text
+                            style={[
+                              styles.revisitTitle,
+                              { color: colors.text },
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {item.memory.title}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.revisitDescription,
+                              { color: colors.textSoft },
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {item.memory.description}
+                          </Text>
+                          <View style={styles.revisitAction}>
+                            <Text
+                              style={[
+                                styles.revisitActionText,
+                                { color: PRIMARY_PURPLE },
+                              ]}
+                            >
+                              Tap to revisit →
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
               {/* AI Suggestions */}
               {insights?.suggestions && insights.suggestions.length > 0 && (
                 <View style={styles.section}>
@@ -1316,5 +1467,62 @@ const styles = StyleSheet.create({
   legendText: {
     fontSize: 12,
     fontWeight: "500",
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  revisitSubtitle: {
+    fontSize: 13,
+    marginBottom: 16,
+    marginLeft: 30,
+  },
+  revisitCard: {
+    marginBottom: 12,
+    borderRadius: 16,
+  },
+  revisitContent: {
+    flexDirection: "row",
+  },
+  revisitImage: {
+    width: 100,
+    height: 100,
+    resizeMode: "cover",
+  },
+  revisitTextContent: {
+    flex: 1,
+    padding: 12,
+    justifyContent: "center",
+  },
+  revisitBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+    marginBottom: 6,
+    gap: 4,
+  },
+  revisitBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  revisitTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  revisitDescription: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  revisitAction: {
+    marginTop: 8,
+  },
+  revisitActionText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
